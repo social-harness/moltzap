@@ -1,6 +1,7 @@
+import * as SqlClient from "@effect/sql/SqlClient";
+import { EndpointStoreError, storeOperation } from "../database/index.js";
+import { Effect } from "effect";
 /** @file Detached staged and completed re-anchor projections. */
-
-import type { DatabaseSync } from "node:sqlite";
 import type { RecoveredReanchor, StagedReanchor } from "../types.js";
 import {
   readBytes,
@@ -9,7 +10,6 @@ import {
   requireEqual,
   requireSameBytes,
 } from "../database/index.js";
-
 /**
  * Projects one staged or completed recoverable re-anchor.
  *
@@ -30,30 +30,32 @@ export function readRecoveredReanchor(
       : { canonicalCompletedReanchor }),
   });
 }
-
 /**
  * Reads an optional staged re-anchor by stable body hash.
  *
- * @param database Exclusively owned endpoint database.
  * @param conversationId Opaque conversation identity.
  * @param anchorHash Stable private anchor hash.
  * @returns The detached staged re-anchor when present.
  */
 export function findStagedReanchor(
-  database: DatabaseSync,
   conversationId: string,
   anchorHash: string,
-): StagedReanchor | undefined {
-  const row = database
-    .prepare(
+): Effect.Effect<
+  StagedReanchor | undefined,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const row = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       `SELECT conversation_id, anchor_hash, previous_anchor_hash,
               router_instance_id, selected_record_hash, canonical_body
        FROM reanchors WHERE conversation_id = ? AND anchor_hash = ?`,
-    )
-    .get(conversationId, anchorHash);
-  return row === undefined ? undefined : readStagedReanchor(row);
+      [conversationId, anchorHash],
+    ))[0];
+    return row === undefined ? undefined : readStagedReanchor(row);
+  }).pipe(storeOperation);
 }
-
 /**
  * Requires two re-anchors with one hash to have identical body bindings.
  *
@@ -71,7 +73,6 @@ export function requireSameReanchor(
   requireEqual(left.selectedRecordHash, right.selectedRecordHash);
   requireSameBytes(left.canonicalBody, right.canonicalBody);
 }
-
 /**
  * Projects one staged re-anchor body.
  *

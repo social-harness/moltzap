@@ -1,6 +1,7 @@
+import * as SqlClient from "@effect/sql/SqlClient";
+import { EndpointStoreError, storeOperation } from "../database/index.js";
+import { Effect } from "effect";
 /** @file Certified record cores and their separately retained signer evidence. */
-
-import type { DatabaseSync } from "node:sqlite";
 import type {
   CertifiedRecord,
   ProtocolEvidence,
@@ -14,65 +15,65 @@ import {
   requireSameBytes,
   StoreSignal,
 } from "../database/index.js";
-
 /**
  * Projects one complete certified record and its separate evidence maps.
  *
- * @param database Exclusively owned endpoint database.
  * @param row SQLite result row for the certified record core.
  * @returns The detached complete certified record.
  */
 export function readCertifiedRecord(
-  database: DatabaseSync,
   row: Readonly<Record<string, unknown>>,
-): CertifiedRecord {
-  const staged = readStagedRecord(row);
-  const actionEvidence = readEvidenceForSubject(
-    database,
-    staged.conversationId,
-    "action",
-    staged.actionHash,
-  );
-  const durabilityEvidence = readEvidenceForSubject(
-    database,
-    staged.conversationId,
-    "durability",
-    staged.recordHash,
-  );
-  if (actionEvidence.length === 0 || durabilityEvidence.length === 0) {
-    throw new StoreSignal("corrupt");
-  }
-  return Object.freeze({
-    ...staged,
-    actionEvidence,
-    durabilityEvidence,
-  });
+): Effect.Effect<CertifiedRecord, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const staged = readStagedRecord(row);
+    const actionEvidence = yield* readEvidenceForSubject(
+      staged.conversationId,
+      "action",
+      staged.actionHash,
+    );
+    const durabilityEvidence = yield* readEvidenceForSubject(
+      staged.conversationId,
+      "durability",
+      staged.recordHash,
+    );
+    if (actionEvidence.length === 0 || durabilityEvidence.length === 0) {
+      throw new StoreSignal("corrupt");
+    }
+    return Object.freeze({
+      ...staged,
+      actionEvidence,
+      durabilityEvidence,
+    });
+  }).pipe(storeOperation);
 }
-
 /**
  * Reads an optional staged record by stable private hash.
  *
- * @param database Exclusively owned endpoint database.
  * @param conversationId Opaque conversation identity.
  * @param recordHash Stable private record hash.
  * @returns The detached staged record when present.
  */
 export function findStagedRecord(
-  database: DatabaseSync,
   conversationId: string,
   recordHash: string,
-): StagedRecord | undefined {
-  const row = database
-    .prepare(
+): Effect.Effect<
+  StagedRecord | undefined,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const row = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       `SELECT conversation_id, record_hash, previous_record_hash,
               membership_hash, anchor_hash, action_hash, author_agent_id,
               msg_id, canonical_record_core
        FROM staged_records WHERE conversation_id = ? AND record_hash = ?`,
-    )
-    .get(conversationId, recordHash);
-  return row === undefined ? undefined : readStagedRecord(row);
+      [conversationId, recordHash],
+    ))[0];
+    return row === undefined ? undefined : readStagedRecord(row);
+  }).pipe(storeOperation);
 }
-
 /**
  * Projects one exact staged record core.
  *
@@ -95,7 +96,6 @@ export function readStagedRecord(
     canonicalRecordCore: readBytes(row, "canonical_record_core"),
   });
 }
-
 /**
  * Requires two records with one stable hash to have identical bindings.
  *
@@ -116,7 +116,6 @@ export function requireSameRecord(
   requireEqual(left.msgId, right.msgId);
   requireSameBytes(left.canonicalRecordCore, right.canonicalRecordCore);
 }
-
 /**
  * Projects one stable evidence value.
  *
@@ -134,7 +133,6 @@ export function readProtocolEvidence(
     canonicalEvidence: readBytes(row, "canonical_evidence"),
   });
 }
-
 function readEvidenceKind(
   row: Readonly<Record<string, unknown>>,
 ): ProtocolEvidence["kind"] {
@@ -149,32 +147,34 @@ function readEvidenceKind(
   }
   return kind;
 }
-
 /**
  * Reads one ordered signer evidence map from its separate store rows.
  *
- * @param database Exclusively owned endpoint database.
  * @param conversationId Conversation whose evidence is retained.
  * @param kind Separate evidence domain to read.
  * @param subjectId Action, record, request, or anchor identity.
  * @returns Detached evidence ordered by signer key.
  */
 function readEvidenceForSubject(
-  database: DatabaseSync,
   conversationId: string,
   kind: ProtocolEvidence["kind"],
   subjectId: string,
-): readonly ProtocolEvidence[] {
-  return Object.freeze(
-    database
-      .prepare(
+): Effect.Effect<
+  readonly ProtocolEvidence[],
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    return Object.freeze(
+      (yield* database.unsafe<Readonly<Record<string, unknown>>>(
         `SELECT conversation_id, evidence_kind, subject_id,
                 evidence_key, canonical_evidence
          FROM protocol_evidence
          WHERE conversation_id = ? AND evidence_kind = ? AND subject_id = ?
          ORDER BY evidence_key COLLATE BINARY`,
-      )
-      .all(conversationId, kind, subjectId)
-      .map(readProtocolEvidence),
-  );
+        [conversationId, kind, subjectId],
+      )).map(readProtocolEvidence),
+    );
+  }).pipe(storeOperation);
 }

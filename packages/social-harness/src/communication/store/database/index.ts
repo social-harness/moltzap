@@ -1,21 +1,17 @@
 /** @file Stable internal boundary for SQLite state and closed value checks. */
 
-/** SQLite ownership, transaction, and lifecycle primitives. */
+/** SQL schema, transaction and closed failure boundaries. */
 export {
-  closeStoreState,
   createCommunicationTables,
   inspectStoreState,
-  openStoreState,
-  runStoreOperation,
-  type StoreOpening,
-  type StoreState,
+  storeOperation,
   transaction,
+  type StoreOpening,
 } from "./schema.js";
 /** Closed failures and exact canonical-value helpers. */
 export {
   copyBytes,
   EndpointStoreError,
-  mintContinuation,
   mintDeliveryToken,
   readBytes,
   readInteger,
@@ -28,5 +24,4 @@ export {
   requireSameOptionalBytes,
   requireText,
   StoreSignal,
-  validateContinuation,
 } from "./values.js";

@@ -1,7 +1,10 @@
+import * as SqlClient from "@effect/sql/SqlClient";
+import {
+  EndpointStoreError,
+  storeOperation,
+} from "../../communication/store/database/index.js";
+import { Effect } from "effect";
 /** @file Supplies bounded evidence from protocol history, policy decisions and the retained host view. */
-
-import type { DatabaseSync } from "node:sqlite";
-
 import type {
   FirewallEvidence,
   FirewallEvidenceRange,
@@ -11,7 +14,6 @@ import type {
   FirewallLocalEntry,
   FirewallRequestAdmission,
 } from "../../firewall/store/types.js";
-
 import {
   readBytes,
   readInteger,
@@ -20,9 +22,9 @@ import {
   readText,
   requireText,
   StoreSignal,
+  transaction,
 } from "../../communication/store/database/index.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
-
 const historySelect = `
   SELECT c.ordinal AS position, c.rowid AS sequence, c.conversation_id,
     s.canonical_record_core, m.canonical_membership,
@@ -36,7 +38,6 @@ const historySelect = `
   LEFT JOIN runtime_inbox i ON i.delivery_token = d.delivery_token
   LEFT JOIN firewall_answers a ON a.conversation_id = c.conversation_id AND a.record_hash = c.record_hash
 `;
-
 /** A window entry with the global position that orders it among the other kind. */
 interface PositionedEntry {
   readonly sequence: number;
@@ -44,7 +45,6 @@ interface PositionedEntry {
   readonly bytes: number;
   readonly entry: FirewallHistoryEntry | FirewallLocalEntry;
 }
-
 /** Where one window ends and which conversation it reads. */
 interface HistoryWindow {
   readonly maximumRecords: number;
@@ -53,58 +53,60 @@ interface HistoryWindow {
   readonly conversationId?: string;
   readonly conversation?: string;
 }
-
 /** An iterator whose next value can be read before it is taken. */
 interface Peekable {
   readonly peek: () => PositionedEntry | undefined;
   readonly take: () => void;
 }
-
 /** Incoming evidence stops strictly before the candidate's local certification position. */
 export function readFirewallEvidence(
-  database: DatabaseSync,
-  input: FirewallEvidenceRange & { readonly maximumRecords: number },
-): FirewallEvidence {
-  const { slices } = readFirewallEvidenceSlices(database, {
-    ranges: [
-      {
-        beforeDelivery: input.beforeDelivery,
-        beforeRecord: input.beforeRecord,
-        conversationId: input.conversationId,
-        conversation: input.conversation,
-      },
-    ],
-    maximumRecords: input.maximumRecords,
-  });
-  const [slice] = slices;
-  if (slice === undefined) {
-    throw new StoreSignal("corrupt");
-  }
-  return slice;
-}
-
-/**
- * Several windows read in one synchronous capture, so the checks of one result's texts
- * use the same captured context.
- */
-export function readFirewallEvidenceSlices(
-  database: DatabaseSync,
-  input: {
-    readonly ranges: readonly FirewallEvidenceRange[];
+  input: FirewallEvidenceRange & {
     readonly maximumRecords: number;
   },
-): FirewallEvidenceSlices {
-  if (
-    !Number.isSafeInteger(input.maximumRecords) ||
-    input.maximumRecords < 1 ||
-    input.maximumRecords > 1024
-  ) {
-    throw new StoreSignal("invalid-input");
-  }
-  const slices = input.ranges.map((range) =>
-    readSlice(database, range, input.maximumRecords),
+): Effect.Effect<FirewallEvidence, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const { slices } = yield* readFirewallEvidenceSlices({
+      ranges: [
+        {
+          beforeDelivery: input.beforeDelivery,
+          beforeRecord: input.beforeRecord,
+          conversationId: input.conversationId,
+          conversation: input.conversation,
+        },
+      ],
+      maximumRecords: input.maximumRecords,
+    });
+    const [slice] = slices;
+    if (slice === undefined) {
+      throw new StoreSignal("corrupt");
+    }
+    return slice;
+  }).pipe(storeOperation);
+}
+/** A transaction gives every text of one result the same captured evidence. */
+export function readFirewallEvidenceSlices(input: {
+  readonly ranges: readonly FirewallEvidenceRange[];
+  readonly maximumRecords: number;
+}): Effect.Effect<
+  FirewallEvidenceSlices,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return transaction(
+    Effect.gen(function* () {
+      if (
+        !Number.isSafeInteger(input.maximumRecords) ||
+        input.maximumRecords < 1 ||
+        input.maximumRecords > 1024
+      )
+        return yield* new EndpointStoreError({ reason: "invalid-input" });
+      const slices = yield* Effect.forEach(input.ranges, (range) =>
+        readSlice(range, input.maximumRecords),
+      );
+      return { slices };
+    }),
   );
-  return { slices };
 }
 
 /**
@@ -113,128 +115,136 @@ export function readFirewallEvidenceSlices(
  * is the one its queue entry commits.
  */
 export function readFirewallRequestAdmission(
-  database: DatabaseSync,
   recordHash: string,
-): FirewallRequestAdmission | undefined {
-  requireText(recordHash);
-  const row = database
-    .prepare(`
+): Effect.Effect<
+  FirewallRequestAdmission | undefined,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    requireText(recordHash);
+    const row = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+      `
       SELECT i.delivery_token AS presented, f.check_id, k.canonical_result
       FROM pending_deliveries d
       LEFT JOIN runtime_inbox i ON i.delivery_token = d.delivery_token
       LEFT JOIN firewall_incoming f ON f.delivery_token = d.delivery_token
       LEFT JOIN firewall_checks k ON k.check_id = f.check_id
       WHERE d.record_hash = ?
-    `)
-    .get(recordHash);
-  if (row === undefined) {
-    return undefined;
-  }
-  const checkId = readOptionalText(row, "check_id");
-  const canonicalResult = readOptionalBytes(row, "canonical_result");
-  return {
-    presented: readOptionalText(row, "presented") !== undefined,
-    ...(checkId === undefined ? {} : { checkId }),
-    ...(canonicalResult === undefined ? {} : { canonicalResult }),
-  };
+    `,
+      [recordHash],
+    ))[0];
+    if (row === undefined) {
+      return undefined;
+    }
+    const checkId = readOptionalText(row, "check_id");
+    const canonicalResult = readOptionalBytes(row, "canonical_result");
+    return {
+      presented: readOptionalText(row, "presented") !== undefined,
+      ...(checkId === undefined ? {} : { checkId }),
+      ...(canonicalResult === undefined ? {} : { canonicalResult }),
+    };
+  }).pipe(storeOperation);
 }
-
 /**
  * One conversation's window before a candidate. A delivery or record that
  * names no certified record has no window.
  */
 function readSlice(
-  database: DatabaseSync,
   range: FirewallEvidenceRange,
   maximumRecords: number,
-): FirewallEvidenceSlice {
-  const candidate = windowCandidate(database, range);
-  if (candidate === undefined) {
-    return range.beforeDelivery === undefined &&
-      range.beforeRecord === undefined
-      ? {
-          pendingOutgoing:
-            range.conversationId !== undefined &&
-            unresolvedSend(database, range.conversationId),
-          ...boundedHistory(database, {
-            maximumRecords,
-            beforePosition: Number.MAX_SAFE_INTEGER,
-            beforeSequence: Number.MAX_SAFE_INTEGER,
-            ...range,
-          }),
-        }
-      : {
-          pendingOutgoing: false,
-          history: [],
-          overflow: false,
-          earlierHistoryOmitted: false,
-        };
-  }
-  const conversationId = readText(candidate, "conversation_id");
-  return {
-    pendingOutgoing: unresolvedSend(database, conversationId),
-    ...boundedHistory(database, {
-      maximumRecords,
-      beforePosition: readInteger(candidate, "position"),
-      beforeSequence: readInteger(candidate, "sequence"),
-      ...range,
-      conversationId,
-    }),
-    candidate: historyEntry(candidate),
-  };
+): Effect.Effect<
+  FirewallEvidenceSlice,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const candidate = yield* windowCandidate(range);
+    if (candidate === undefined) {
+      return range.beforeDelivery === undefined &&
+        range.beforeRecord === undefined
+        ? {
+            pendingOutgoing:
+              range.conversationId !== undefined &&
+              (yield* unresolvedSend(range.conversationId)),
+            ...(yield* boundedHistory({
+              maximumRecords,
+              beforePosition: Number.MAX_SAFE_INTEGER,
+              beforeSequence: Number.MAX_SAFE_INTEGER,
+              ...range,
+            })),
+          }
+        : {
+            pendingOutgoing: false,
+            history: [],
+            overflow: false,
+            earlierHistoryOmitted: false,
+          };
+    }
+    const conversationId = readText(candidate, "conversation_id");
+    return {
+      pendingOutgoing: yield* unresolvedSend(conversationId),
+      ...(yield* boundedHistory({
+        maximumRecords,
+        beforePosition: readInteger(candidate, "position"),
+        beforeSequence: readInteger(candidate, "sequence"),
+        ...range,
+        conversationId,
+      })),
+      candidate: historyEntry(candidate),
+    };
+  }).pipe(storeOperation);
 }
-
 function unresolvedSend(
-  database: DatabaseSync,
   conversationId: string,
-): boolean {
-  return (
-    database
-      .prepare(
+): Effect.Effect<boolean, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    return (
+      (yield* database.unsafe<Readonly<Record<string, unknown>>>(
         "SELECT 1 AS pending FROM message_intents WHERE conversation_id = ? AND completed_record_hash IS NULL LIMIT 1",
-      )
-      .get(conversationId) !== undefined
-  );
+        [conversationId],
+      ))[0] !== undefined
+    );
+  }).pipe(storeOperation);
 }
-
 /** The certified record a range ends before, when it names one. */
 function windowCandidate(
-  database: DatabaseSync,
   range: FirewallEvidenceRange,
-): Readonly<Record<string, unknown>> | undefined {
-  if (range.beforeDelivery !== undefined) {
-    return database
-      .prepare(`${historySelect} WHERE d.delivery_token = ?`)
-      .get(range.beforeDelivery);
-  }
-  return range.beforeRecord === undefined
-    ? undefined
-    : database
-        .prepare(`${historySelect} WHERE c.record_hash = ?`)
-        .get(range.beforeRecord);
+): Effect.Effect<
+  Readonly<Record<string, unknown>> | undefined,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    if (range.beforeDelivery !== undefined) {
+      return (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+        `${historySelect} WHERE d.delivery_token = ?`,
+        [range.beforeDelivery],
+      ))[0];
+    }
+    return range.beforeRecord === undefined
+      ? undefined
+      : (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          `${historySelect} WHERE c.record_hash = ?`,
+          [range.beforeRecord],
+        ))[0];
+  }).pipe(storeOperation);
 }
-
-/**
- * The newest window of one conversation: its certified records and the local
- * evidence kept under its address, merged in certification order. A local
- * entry anchored at a certified record's position follows that record.
- * Whole entries are kept or omitted; a byte bound becomes an explicit
- * evidence gap. Both sources close on return, so a window that stops early
- * leaves no statement open to hold back the WAL checkpoint.
- */
-function boundedHistory(database: DatabaseSync, window: HistoryWindow) {
-  const recordSource = recordEntries(database, window);
-  const localSource = localEntries(database, window);
-  try {
+/** Both evidence sources are bounded before their saved payloads are decoded. */
+function boundedHistory(window: HistoryWindow) {
+  return Effect.gen(function* () {
+    const records = yield* recordEntries(window);
+    const locals = yield* localEntries(window);
     return mergedWindow(
-      peekable(recordSource),
-      peekable(localSource),
+      peekable(records[Symbol.iterator]()),
+      peekable(locals[Symbol.iterator]()),
       window.maximumRecords,
     );
-  } finally {
-    recordSource.return(undefined);
-    localSource.return(undefined);
-  }
+  }).pipe(storeOperation);
 }
 
 /**
@@ -265,68 +275,55 @@ function mergedWindow(
   }
   return historyWindow(history, false, false);
 }
-
-/**
- * A conversation's newest certified records before the window's end, newest
- * first. The conversation ordinal index bounds selection before blob reads.
- * @yields {PositionedEntry} Each record's entry and certification position.
- */
-function* recordEntries(
-  database: DatabaseSync,
-  window: HistoryWindow,
-): Generator<PositionedEntry> {
-  const rows = database
-    .prepare(`${historySelect}
-      WHERE c.rowid IN (
-        SELECT rowid FROM certified_records
-        WHERE conversation_id = ? AND ordinal < ? ORDER BY ordinal DESC LIMIT ?
-      ) ORDER BY c.ordinal DESC`)
-    .iterate(
-      window.conversationId ?? null,
-      window.beforePosition,
-      window.maximumRecords + 1,
+/** Selects only the newest bounded certified prefix before reading its payloads. */
+function recordEntries(window: HistoryWindow) {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const rows = yield* database.unsafe<Readonly<Record<string, unknown>>>(
+      historySelect +
+        " WHERE c.rowid IN (SELECT rowid FROM certified_records WHERE conversation_id=? AND ordinal<? ORDER BY ordinal DESC LIMIT ?) ORDER BY c.ordinal DESC",
+      [
+        window.conversationId ?? null,
+        window.beforePosition,
+        window.maximumRecords + 1,
+      ],
     );
-  for (const row of rows) {
-    const entry = historyEntry(row);
-    yield {
-      sequence: readInteger(row, "sequence"),
-      local: false,
-      bytes:
-        entry.canonicalRecordCore.byteLength +
-        entry.canonicalMembership.byteLength,
-      entry,
-    };
-  }
+    return rows.map((row): PositionedEntry => {
+      const entry = historyEntry(row);
+      return {
+        sequence: readInteger(row, "sequence"),
+        local: false,
+        bytes:
+          entry.canonicalRecordCore.byteLength +
+          entry.canonicalMembership.byteLength,
+        entry,
+      };
+    });
+  }).pipe(storeOperation);
 }
 
-/**
- * The local evidence kept under the window's address before its end, newest
- * first.
- * @yields {PositionedEntry} Each local entry and the position it is anchored at.
- */
-function* localEntries(
-  database: DatabaseSync,
-  window: HistoryWindow,
-): Generator<PositionedEntry> {
-  const rows = database
-    .prepare(`
-      SELECT anchor, canonical_entry FROM firewall_local_evidence
-      WHERE conversation = ? AND anchor < ?
-      ORDER BY anchor DESC, sequence DESC LIMIT ?`)
-    .iterate(
-      window.conversation ?? null,
-      window.beforeSequence,
-      window.maximumRecords + 1,
+/** Reads local result evidence under the same conversation window and bound. */
+function localEntries(window: HistoryWindow) {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const rows = yield* database.unsafe<Readonly<Record<string, unknown>>>(
+      "SELECT anchor,canonical_entry FROM firewall_local_evidence WHERE conversation=? AND anchor<? ORDER BY anchor DESC,sequence DESC LIMIT ?",
+      [
+        window.conversation ?? null,
+        window.beforeSequence,
+        window.maximumRecords + 1,
+      ],
     );
-  for (const row of rows) {
-    const canonicalEntry = readBytes(row, "canonical_entry");
-    yield {
-      sequence: readInteger(row, "anchor"),
-      local: true,
-      bytes: canonicalEntry.byteLength,
-      entry: { canonicalEntry },
-    };
-  }
+    return rows.map((row): PositionedEntry => {
+      const canonicalEntry = readBytes(row, "canonical_entry");
+      return {
+        sequence: readInteger(row, "anchor"),
+        local: true,
+        bytes: canonicalEntry.byteLength,
+        entry: { canonicalEntry },
+      };
+    });
+  }).pipe(storeOperation);
 }
 
 /** The newer of two window candidates; a local entry follows the record at its anchor. */
@@ -339,7 +336,6 @@ function newer(
   }
   return local.sequence >= record.sequence ? local : record;
 }
-
 function peekable(source: Iterator<PositionedEntry>): Peekable {
   let head = source.next();
   return {
@@ -350,7 +346,6 @@ function peekable(source: Iterator<PositionedEntry>): Peekable {
     },
   };
 }
-
 function historyWindow(
   history: Array<FirewallHistoryEntry | FirewallLocalEntry>,
   overflow: boolean,
@@ -359,7 +354,6 @@ function historyWindow(
   history.reverse();
   return { history, overflow, earlierHistoryOmitted };
 }
-
 function historyEntry(
   row: Readonly<Record<string, unknown>>,
 ): FirewallHistoryEntry {
@@ -370,7 +364,6 @@ function historyEntry(
     ...answerAdmission(row),
   };
 }
-
 /** Whether an admitted result showed or withheld a record; none for a record no result checked. */
 function answerAdmission(
   row: Readonly<Record<string, unknown>>,

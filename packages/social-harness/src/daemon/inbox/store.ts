@@ -1,12 +1,9 @@
+import * as SqlClient from "@effect/sql/SqlClient";
+import { storeOperation } from "../../communication/store/database/index.js";
 /** @file Stores host inbox items and tracks delivery and acknowledgment. */
-
-import type { DatabaseSync } from "node:sqlite";
-
-import { type Effect, Schema } from "effect";
-
+import { Effect, Schema } from "effect";
 import type { ItemProjection } from "../../firewall/store/types.js";
 import type { InboxSummary } from "../../host-protocol/operations.js";
-
 import {
   type EndpointStoreError,
   readBytes,
@@ -16,9 +13,7 @@ import {
   requireBytes,
   requireSameBytes,
   requireSameOptionalBytes,
-  runStoreOperation,
   StoreSignal,
-  type StoreState,
   transaction,
 } from "../../communication/store/database/index.js";
 import { retirePendingDelivery } from "../../communication/store/queues/peer-deliveries.js";
@@ -27,29 +22,23 @@ import {
   type StoreMutation,
 } from "../../communication/store/types.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
-
 // safer-arch-ignore file-implicit-boundary-module: Store composition and firewall admission share inbox writes within the caller's transaction; external consumers use the store capability instead of these SQLite primitives.
-
 const MAXIMUM_PAGE_ITEMS = 50;
-
 interface InboxBounds {
   readonly after?: number;
   readonly through?: number;
   readonly limit?: number;
 }
-
 /** Immutable classified item retained until the host accepts its delivery. */
 export interface InboxEntry extends ItemProjection {
   readonly sequence: number;
 }
-
 /** A bounded view below a fixed inbox sequence, independent of later arrivals. */
 export interface InboxPage {
   readonly items: readonly InboxEntry[];
   readonly through: number;
   readonly nextAfter?: number;
 }
-
 /** Callback progress and retained content share the inbox's persistence lifetime. */
 export type EventStore = Pick<
   InboxStore,
@@ -60,7 +49,6 @@ export type EventStore = Pick<
   | "readInboxSummary"
   | "completeWebhookDelivery"
 >;
-
 /** The terminal payload and protocol custody settle with its local publication. */
 export interface CollectiveDelivery {
   readonly operationId: string;
@@ -71,45 +59,11 @@ export interface CollectiveDelivery {
   readonly firewall: boolean;
 }
 
-/** Durable host delivery and consumer state, independent of policy configuration. */
-export interface InboxStore {
-  readonly readInboxItem: (
-    deliveryToken: DeliveryToken,
-  ) => Effect.Effect<
-    (InboxEntry & { readonly acknowledged: boolean }) | undefined,
-    EndpointStoreError
-  >;
-  readonly completeWebhookDelivery: (
-    deliveryToken: DeliveryToken,
-    canonicalState: Uint8Array,
-  ) => Effect.Effect<void, EndpointStoreError>;
-  readonly putInboxItem: (
-    item: Omit<InboxEntry, "sequence">,
-  ) => Effect.Effect<StoreMutation, EndpointStoreError>;
-  readonly readInbox: (input?: {
-    readonly after?: number;
-    readonly through?: number;
-    readonly limit?: number;
-  }) => Effect.Effect<InboxPage, EndpointStoreError>;
-  readonly readInboxSummary: () => Effect.Effect<
-    InboxSummary,
-    EndpointStoreError
-  >;
-  readonly acknowledgeInboxItem: (
-    deliveryToken: DeliveryToken,
-  ) => Effect.Effect<void, EndpointStoreError>;
-  readonly readEventState: () => Effect.Effect<
-    Uint8Array | undefined,
-    EndpointStoreError
-  >;
-  readonly writeEventState: (
-    canonicalState: Uint8Array,
-  ) => Effect.Effect<void, EndpointStoreError>;
-}
-
 /** Called only inside the daemon's initial schema transaction. */
-export function createInboxTables(database: DatabaseSync): void {
-  database.exec(`
+export function createInboxTables() {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    for (const statement of `
   CREATE TABLE runtime_inbox (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
     delivery_token TEXT NOT NULL UNIQUE,
@@ -122,236 +76,233 @@ export function createInboxTables(database: DatabaseSync): void {
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     canonical_state BLOB NOT NULL
   ) STRICT;
-`);
-}
-
-/** A host-only capability over the process-owned SQLite lifetime. */
-export function makeInboxStore(state: StoreState): InboxStore {
-  const run = <A>(operation: () => A) => runStoreOperation(state, operation);
-  return Object.freeze({
-    readInboxItem: (token: DeliveryToken) =>
-      run(() => readInboxItem(state.database, token)),
-    completeWebhookDelivery: (token: DeliveryToken, value: Uint8Array) =>
-      run(() => {
-        completeWebhookDelivery(state.database, token, value);
-      }),
-    putInboxItem: (item: Omit<InboxEntry, "sequence">) =>
-      run(() => putInboxItem(state.database, item)),
-    readInbox: (input?: Parameters<typeof readInbox>[1]) =>
-      run(() => readInbox(state.database, input)),
-    readInboxSummary: () => run(() => readInboxSummary(state.database)),
-    acknowledgeInboxItem: (token: DeliveryToken) =>
-      run(() => {
-        acknowledgeInboxItem(state.database, token);
-      }),
-    readEventState: () => run(() => readEventState(state.database)),
-    writeEventState: (value: Uint8Array) =>
-      run(() => {
-        writeEventState(state.database, value);
-      }),
-  } satisfies InboxStore);
+`
+      .split(";")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0))
+      yield* sql.unsafe<Readonly<Record<string, unknown>>>(statement);
+  }).pipe(storeOperation);
 }
 
 /** Retained bytes remain readable after handoff or request-context retirement. */
-export function readInboxItem(
-  database: DatabaseSync,
-  deliveryToken: DeliveryToken,
-) {
-  const row = database
-    .prepare(
+export function readInboxItem(deliveryToken: DeliveryToken) {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const row = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "SELECT sequence, canonical_item, canonical_guidance, acknowledged FROM runtime_inbox WHERE delivery_token = ?",
-    )
-    .get(deliveryToken);
-  return row === undefined
-    ? undefined
-    : {
-        deliveryToken,
-        sequence: readInteger(row, "sequence"),
-        canonicalItem: readBytes(row, "canonical_item"),
-        ...guidanceBytes(row),
-        acknowledged: readInteger(row, "acknowledged") === 1,
-      };
+      [deliveryToken],
+    ))[0];
+    return row === undefined
+      ? undefined
+      : {
+          deliveryToken,
+          sequence: readInteger(row, "sequence"),
+          canonicalItem: readBytes(row, "canonical_item"),
+          ...guidanceBytes(row),
+          acknowledged: readInteger(row, "acknowledged") === 1,
+        };
+  }).pipe(storeOperation);
 }
-
 /**
  * Bind a delivery token to exactly one classified payload, including after ack.
- * @param database Exclusively owned endpoint database.
  * @param item Immutable classified delivery.
  * @returns Whether this call inserted the binding.
  */
 export function putInboxItem(
-  database: DatabaseSync,
   item: Omit<InboxEntry, "sequence">,
-): StoreMutation {
-  requireBytes(item.canonicalItem);
-  if (
-    item.canonicalItem.byteLength + (item.canonicalGuidance?.byteLength ?? 0) >
-    MAXIMUM_RUNTIME_ITEM_BYTES
-  ) {
-    throw new StoreSignal("invalid-input");
-  }
-  const retained = database
-    .prepare(
+): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    requireBytes(item.canonicalItem);
+    if (
+      item.canonicalItem.byteLength +
+        (item.canonicalGuidance?.byteLength ?? 0) >
+      MAXIMUM_RUNTIME_ITEM_BYTES
+    ) {
+      throw new StoreSignal("invalid-input");
+    }
+    const retained = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "SELECT canonical_item, canonical_guidance FROM runtime_inbox WHERE delivery_token = ?",
-    )
-    .get(item.deliveryToken);
-  if (retained !== undefined) {
-    requireSameBytes(readBytes(retained, "canonical_item"), item.canonicalItem);
-    const priorGuidance = readOptionalBytes(retained, "canonical_guidance");
-    requireSameOptionalBytes(priorGuidance, item.canonicalGuidance);
-    return "existing";
-  }
-  database
-    .prepare(
+      [item.deliveryToken],
+    ))[0];
+    if (retained !== undefined) {
+      requireSameBytes(
+        readBytes(retained, "canonical_item"),
+        item.canonicalItem,
+      );
+      const priorGuidance = readOptionalBytes(retained, "canonical_guidance");
+      requireSameOptionalBytes(priorGuidance, item.canonicalGuidance);
+      return "existing";
+    }
+    yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "INSERT INTO runtime_inbox (delivery_token, canonical_item, canonical_guidance) VALUES (?, ?, ?)",
-    )
-    .run(
-      item.deliveryToken,
-      item.canonicalItem,
-      item.canonicalGuidance ?? null,
+      [item.deliveryToken, item.canonicalItem, item.canonicalGuidance ?? null],
     );
-  return "inserted";
+    return "inserted";
+  }).pipe(storeOperation);
 }
-
 /** Acknowledgment preserves the immutable host binding and retires its raw delivery. */
 export function retireItem(
-  database: DatabaseSync,
   deliveryToken: DeliveryToken,
-): void {
-  const retained = database
-    .prepare(
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const retained = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "SELECT delivery_token FROM runtime_inbox WHERE delivery_token = ?",
-    )
-    .get(deliveryToken);
-  if (retained === undefined) {
-    throw new StoreSignal("not-found");
-  }
-  database
-    .prepare(
+      [deliveryToken],
+    ))[0];
+    if (retained === undefined) {
+      throw new StoreSignal("not-found");
+    }
+    yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "UPDATE runtime_inbox SET acknowledged = 1 WHERE delivery_token = ?",
-    )
-    .run(deliveryToken);
-  retirePendingDelivery(database, deliveryToken);
+      [deliveryToken],
+    );
+    yield* retirePendingDelivery(deliveryToken);
+  }).pipe(storeOperation);
 }
-
 /** Receipt retirement and callback progress commit together across crashes. */
 function completeWebhookDelivery(
-  database: DatabaseSync,
   deliveryToken: DeliveryToken,
   canonicalState: Uint8Array,
-): void {
-  transaction(database, () => {
-    retireItem(database, deliveryToken);
-    writeEventState(database, canonicalState);
-  });
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    yield* transaction(
+      (() =>
+        Effect.gen(function* () {
+          yield* retireItem(deliveryToken);
+          yield* writeEventState(canonicalState);
+        }))(),
+    );
+  }).pipe(storeOperation);
 }
-
 /**
  * Read an inbox page without allowing concurrent arrivals to extend its snapshot.
- * @param database Exclusively owned endpoint database.
  * @param input Sequence bounds and maximum item count.
  * @returns Pending items and an optional next position within the same snapshot.
  */
-function readInbox(database: DatabaseSync, input: InboxBounds = {}): InboxPage {
-  const after = requireSequence(input.after ?? 0);
-  const through = requireSequence(input.through ?? newestSequence(database));
-  const limit = pageLimit(input, after, through);
-  const rows = database
-    .prepare(
+function readInbox(
+  input: InboxBounds = {},
+): Effect.Effect<InboxPage, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const after = requireSequence(input.after ?? 0);
+    const through = requireSequence(input.through ?? (yield* newestSequence()));
+    const limit = pageLimit(input, after, through);
+    const rows = yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "SELECT sequence, delivery_token, canonical_item, canonical_guidance FROM runtime_inbox WHERE acknowledged = 0 AND sequence > ? AND sequence <= ? ORDER BY sequence LIMIT ?",
-    )
-    .all(after, through, limit + 1);
-  const items = collectPage(rows, limit);
-  const last = items.at(-1);
-  return {
-    items,
-    through,
-    ...(last !== undefined && rows.length > items.length
-      ? { nextAfter: last.sequence }
-      : {}),
-  };
+      [after, through, limit + 1],
+    );
+    const items = collectPage(rows, limit);
+    const last = items.at(-1);
+    return {
+      items,
+      through,
+      ...(last !== undefined && rows.length > items.length
+        ? { nextAfter: last.sequence }
+        : {}),
+    };
+  }).pipe(storeOperation);
 }
-
 /**
  * Read counters for notification coalescing without disclosing inbox contents.
- * @param database Exclusively owned endpoint database.
  * @returns Current unread count and monotonic insertion position.
  */
-function readInboxSummary(database: DatabaseSync): InboxSummary {
-  const row = database
-    .prepare(
+function readInboxSummary(): Effect.Effect<
+  InboxSummary,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const row = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "SELECT COUNT(*) AS pending FROM runtime_inbox WHERE acknowledged = 0",
-    )
-    .get();
-  if (row === undefined) {
-    throw new StoreSignal("corrupt");
-  }
-  return {
-    pendingCount: readInteger(row, "pending"),
-    newestSequence: newestSequence(database),
-  };
+      [],
+    ))[0];
+    if (row === undefined) {
+      throw new StoreSignal("corrupt");
+    }
+    return {
+      pendingCount: readInteger(row, "pending"),
+      newestSequence: yield* newestSequence(),
+    };
+  }).pipe(storeOperation);
 }
-
 /**
  * Retire the host projection and any underlying pending protocol row atomically.
- * @param database Exclusively owned endpoint database.
  * @param deliveryToken Stable delivered identity, including an existing tombstone.
  */
 function acknowledgeInboxItem(
-  database: DatabaseSync,
   deliveryToken: DeliveryToken,
-): void {
-  transaction(database, () => {
-    retireItem(database, deliveryToken);
-  });
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    yield* transaction(
+      (() =>
+        Effect.gen(function* () {
+          yield* retireItem(deliveryToken);
+        }))(),
+    );
+  }).pipe(storeOperation);
 }
-
 /**
  * Read the runtime-owned event state without interpreting its private format.
- * @param database Exclusively owned endpoint database.
  * @returns Persisted registration and callback delivery state, when present.
  */
-function readEventState(database: DatabaseSync): Uint8Array | undefined {
-  const row = database
-    .prepare("SELECT canonical_state FROM runtime_events WHERE singleton = 1")
-    .get();
-  return row === undefined ? undefined : readBytes(row, "canonical_state");
+function readEventState(): Effect.Effect<
+  Uint8Array | undefined,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const row = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+      "SELECT canonical_state FROM runtime_events WHERE singleton = 1",
+      [],
+    ))[0];
+    return row === undefined ? undefined : readBytes(row, "canonical_state");
+  }).pipe(storeOperation);
 }
-
 /**
  * Atomically replace the one runtime consumer's durable event state.
- * @param database Exclusively owned endpoint database.
  * @param canonicalState Runtime-validated registration and delivery state.
  */
 function writeEventState(
-  database: DatabaseSync,
   canonicalState: Uint8Array,
-): void {
-  requireBytes(canonicalState);
-  database
-    .prepare(
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    requireBytes(canonicalState);
+    yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "INSERT INTO runtime_events (singleton, canonical_state) VALUES (1, ?) ON CONFLICT(singleton) DO UPDATE SET canonical_state = excluded.canonical_state",
-    )
-    .run(canonicalState);
+      [canonicalState],
+    );
+  }).pipe(storeOperation);
 }
-
 function requireSequence(value: number): number {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new StoreSignal("invalid-continuation");
   }
   return value;
 }
-
-function newestSequence(database: DatabaseSync): number {
-  const row = database
-    .prepare("SELECT COALESCE(MAX(sequence), 0) AS newest FROM runtime_inbox")
-    .get();
-  if (row === undefined) {
-    throw new StoreSignal("corrupt");
-  }
-  return readInteger(row, "newest");
+function newestSequence(): Effect.Effect<
+  number,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const row = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+      "SELECT COALESCE(MAX(sequence), 0) AS newest FROM runtime_inbox",
+      [],
+    ))[0];
+    if (row === undefined) {
+      throw new StoreSignal("corrupt");
+    }
+    return readInteger(row, "newest");
+  }).pipe(storeOperation);
 }
-
 function pageLimit(input: InboxBounds, after: number, through: number): number {
   const limit = input.limit ?? MAXIMUM_PAGE_ITEMS;
   if (
@@ -364,7 +315,6 @@ function pageLimit(input: InboxBounds, after: number, through: number): number {
   }
   return limit;
 }
-
 function collectPage(
   rows: ReadonlyArray<Readonly<Record<string, unknown>>>,
   limit: number,
@@ -394,10 +344,52 @@ function collectPage(
   }
   return items;
 }
-
 function guidanceBytes(
   row: Readonly<Record<string, unknown>>,
 ): Pick<InboxEntry, "canonicalGuidance"> {
   const value = readOptionalBytes(row, "canonical_guidance");
   return value === undefined ? {} : { canonicalGuidance: value };
+}
+
+/** A saved host view corresponding to a record in an internally verified history page. */
+export interface HistoryView {
+  readonly recordHash: string;
+  readonly canonicalItem: Uint8Array;
+  readonly canonicalGuidance?: Uint8Array;
+}
+/** Returns only retained permitted views, including acknowledged messages and admitted answers. */
+export function readHistoryViews(
+  records: readonly {
+    readonly conversationId: string;
+    readonly recordHash: string;
+  }[],
+): Effect.Effect<
+  readonly HistoryView[],
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const views: HistoryView[] = [];
+    for (const record of records) {
+      const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+        `SELECT i.canonical_item,i.canonical_guidance FROM runtime_inbox i JOIN pending_deliveries d USING(delivery_token) WHERE d.conversation_id=? AND d.record_hash=?
+ UNION ALL SELECT i.canonical_item,i.canonical_guidance FROM runtime_inbox i JOIN firewall_answers a USING(delivery_token) WHERE a.conversation_id=? AND a.record_hash=? AND a.admitted=1 LIMIT 1`,
+        [
+          record.conversationId,
+          record.recordHash,
+          record.conversationId,
+          record.recordHash,
+        ],
+      );
+      const row = rows[0];
+      if (row !== undefined)
+        views.push({
+          recordHash: record.recordHash,
+          canonicalItem: readBytes(row, "canonical_item"),
+          ...guidanceBytes(row),
+        });
+    }
+    return views;
+  }).pipe(storeOperation);
 }

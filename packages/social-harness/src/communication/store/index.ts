@@ -1,11 +1,7 @@
 /** @file Private typed facade for one daemon-owned endpoint store. */
 
 /** Closed error value and scoped store acquisition. */
-export {
-  EndpointStoreError,
-  inspectEndpointStore,
-  openEndpointStore,
-} from "./store.js";
+export { EndpointStoreError } from "./database/values.js";
 /** How a daemon opens its exclusive store. */
 export type { StoreOpening } from "./database/index.js";
 /** Canonical private DTOs and the EndpointStore capability. */
@@ -15,7 +11,6 @@ export type {
   DisseminationObligation,
   EmptyConversationRestart,
   EndpointRecovery,
-  EndpointStore,
   HistoryPage,
   IdentityBinding,
   InboundDeliveryInput,
@@ -50,3 +45,57 @@ export type {
   StoredCollectiveMessage,
   StoredCollectiveOperation,
 } from "./types.js";
+
+/** Protocol writes and reads use the caller's shared SQL environment. */
+export {
+  applyCatchUpReanchor,
+  bindIdentity,
+  bindMessageIntent,
+  completeReanchor,
+  lockFirstMessageProposal,
+  lockProposal,
+  putConversationFoundation,
+  restartEmptyConversation,
+  stageReanchor,
+} from "./anchors.js";
+/** The saved identity is independent of the registered network services. */
+export { readStoredIdentity as readIdentity } from "./rows/index.js";
+/** Collective identities and accepted claims survive process interruption. */
+export {
+  finalizeCollectiveOperation,
+  putCollectiveOperation,
+  readCollectiveAnswers,
+  readCollectiveMessages,
+  readCollectiveOperation,
+  readCollectiveOperations,
+  readCollectiveRefusals,
+  recordCollectiveAnswer,
+  recordCollectiveRefusal,
+  retireCollectiveOperation,
+} from "./collectives.js";
+/** Accepted work, certified history and network retry obligations share SQL transactions. */
+export {
+  acknowledgeDelivery,
+  beginOutbound,
+  completeOutbound,
+  discardOutbound,
+  enqueueDisseminationOutbound,
+  enqueueOutbound,
+  readPendingDeliveries,
+  readRetainedDeliveries,
+} from "./queues/index.js";
+/** History pages remain anchored while later records are appended. */
+export {
+  readStoredConversation as readConversation,
+  searchStoredConversations as searchConversations,
+  recoverStoredState as recover,
+  HistoryContinuation,
+} from "./reads.js";
+/** Record acceptance retains exact bytes and separately attributed evidence. */
+export {
+  applyCertifiedRecord,
+  mergeEvidence,
+  promoteRecord,
+  stageRecordForDissemination,
+  supersedeProposalLock,
+} from "./records.js";

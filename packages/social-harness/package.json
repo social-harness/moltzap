@@ -132,7 +132,9 @@
     "http-message-signatures": "catalog:",
     "jose": "catalog:",
     "structured-headers": "catalog:",
-    "yaml": "catalog:"
+    "yaml": "catalog:",
+    "@effect/sql": "catalog:",
+    "@effect/sql-sqlite-node": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
