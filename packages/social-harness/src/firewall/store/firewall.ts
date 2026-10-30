@@ -1,7 +1,9 @@
 /** @file Retained local checks, editable policies and assessment queue transitions. */
 
 import type { DatabaseSync } from "node:sqlite";
+
 import { Schema } from "effect";
+
 import type {
   FirewallActivation,
   FirewallAttempt,
@@ -11,11 +13,11 @@ import type {
   FirewallInboxEntry,
   FirewallLocalAdmission,
 } from "./types.js";
+
 import {
   readBytes,
   readInteger,
   readOptionalBytes,
-  readOptionalText,
   readText,
   requireBytes,
   requireSameBytes,
@@ -111,27 +113,6 @@ export function readPendingFirewallItems(
     .map(queuedEntry);
 }
 
-/** A started attempt survives interruption without being mistaken for a decision. */
-export function beginFirewallAttempt(
-  database: DatabaseSync,
-  attempt: FirewallAttempt,
-): void {
-  requireText(attempt.checkId);
-  requireBytes(attempt.canonicalCandidate);
-  requireBytes(attempt.canonicalInput);
-  database
-    .prepare(`
-    INSERT INTO firewall_checks (check_id, direction, canonical_candidate, canonical_input)
-    VALUES (?, ?, ?, ?)
-  `)
-    .run(
-      attempt.checkId,
-      attempt.direction,
-      attempt.canonicalCandidate,
-      attempt.canonicalInput,
-    );
-}
-
 /** Missing policy means initial rules have never been seeded, distinct from an empty list. */
 export function readFirewallPolicy(
   database: DatabaseSync,
@@ -215,8 +196,136 @@ export function readFirewallDecisions(database: DatabaseSync, since = 0) {
     }));
 }
 
+/** Local result decisions and evidence settle with the caller's host publication transaction. */
+export function settleLocalItem(
+  database: DatabaseSync,
+  admission: FirewallLocalAdmission,
+): void {
+  const { deliveryToken } = admission.item;
+  requireText(admission.evidence.conversation);
+  requireBytes(admission.evidence.canonicalEntry);
+  requireQueueFrontier(database, deliveryToken, admission.queuedItem);
+  if (admission.deterministic !== undefined) {
+    beginFirewallAttempt(database, admission.deterministic);
+    completeFirewallAttempt(
+      database,
+      { ...admission.deterministic, admit: true },
+      "incoming",
+      admission.deterministic.canonicalCandidate,
+    );
+  }
+  for (const completion of admission.completions) {
+    completeFirewallAttempt(
+      database,
+      completion,
+      "incoming",
+      admission.queuedItem,
+    );
+  }
+  markAnswers(database, admission.answers);
+  database
+    .prepare(`INSERT INTO firewall_local_evidence (conversation, anchor, canonical_entry)
+ SELECT ?, anchor, ? FROM firewall_incoming WHERE delivery_token = ?`)
+    .run(
+      admission.evidence.conversation,
+      admission.evidence.canonicalEntry,
+      deliveryToken,
+    );
+  settleQueuedItem(database, deliveryToken, "admitted");
+}
+
+/** A started attempt survives interruption without being mistaken for a decision. */
+export function beginFirewallAttempt(
+  database: DatabaseSync,
+  attempt: FirewallAttempt,
+): void {
+  requireText(attempt.checkId);
+  requireBytes(attempt.canonicalCandidate);
+  requireBytes(attempt.canonicalInput);
+  database
+    .prepare(`
+    INSERT INTO firewall_checks (check_id, direction, canonical_candidate, canonical_input)
+    VALUES (?, ?, ?, ?)
+  `)
+    .run(
+      attempt.checkId,
+      attempt.direction,
+      attempt.canonicalCandidate,
+      attempt.canonicalInput,
+    );
+}
+
+/** A settled item cannot be offered for reassessment after restart. */
+export function settleQueuedItem(
+  database: DatabaseSync,
+  deliveryToken: DeliveryToken,
+  disposition: "admitted" | "withheld",
+  checkId?: string,
+): void {
+  database
+    .prepare(
+      "UPDATE firewall_incoming SET disposition = ?, check_id = ? WHERE delivery_token = ?",
+    )
+    .run(disposition, checkId ?? null, deliveryToken);
+}
+
+/** A conversation commits its unsettled predecessor before later host items. */
+export function requireQueueFrontier(
+  database: DatabaseSync,
+  deliveryToken: DeliveryToken,
+  canonicalItem: Uint8Array,
+): void {
+  const queued = database
+    .prepare(`
+      SELECT conversation, sequence, canonical_item FROM firewall_incoming
+      WHERE delivery_token = ? AND disposition = 'pending'
+    `)
+    .get(deliveryToken);
+  if (queued === undefined) {
+    throw new StoreSignal("conflict");
+  }
+  requireSameBytes(readBytes(queued, "canonical_item"), canonicalItem);
+  const predecessor = database
+    .prepare(`
+      SELECT 1 AS pending FROM firewall_incoming
+      WHERE conversation = ? AND sequence < ? AND disposition = 'pending' LIMIT 1
+    `)
+    .get(readText(queued, "conversation"), readInteger(queued, "sequence"));
+  if (predecessor !== undefined) {
+    throw new StoreSignal("conflict");
+  }
+}
+
+/** Completes one retained check for exactly its captured candidate and direction. */
+export function completeFirewallAttempt(
+  database: DatabaseSync,
+  completion: FirewallCompletion,
+  direction: FirewallAttempt["direction"],
+  canonicalCandidate: Uint8Array,
+): FirewallCommit {
+  checkingRow(database, completion, direction, canonicalCandidate);
+  const disposition = completion.admit ? "admitted" : "withheld";
+  completeFirewallCheck(database, completion, disposition);
+  return disposition;
+}
+
+/** An expired queued request is retired once without deleting protocol context. */
+export function retireQueuedItem(
+  database: DatabaseSync,
+  token: DeliveryToken,
+): void {
+  const retired = database
+    .prepare(
+      "UPDATE firewall_incoming SET disposition = 'withheld' WHERE delivery_token = ? AND disposition = 'pending'",
+    )
+    .run(token);
+  if (retired.changes !== 1) {
+    throw new StoreSignal("not-found");
+  }
+}
+
 /** Record whether an admitted result showed or withheld each answer record. */
-export function markAnswers(
+function markAnswers(
   database: DatabaseSync,
   answers: FirewallLocalAdmission["answers"],
 ): void {
@@ -255,19 +364,6 @@ function checkingRow(
     throw new StoreSignal("conflict");
   }
   requireSameBytes(readBytes(row, "canonical_candidate"), canonicalCandidate);
-}
-
-export function settleQueuedItem(
-  database: DatabaseSync,
-  deliveryToken: DeliveryToken,
-  disposition: "admitted" | "withheld",
-  checkId?: string,
-): void {
-  database
-    .prepare(
-      "UPDATE firewall_incoming SET disposition = ?, check_id = ? WHERE delivery_token = ?",
-    )
-    .run(disposition, checkId ?? null, deliveryToken);
 }
 
 function auditEntry(
@@ -320,96 +416,4 @@ function queuedEntry(
     canonicalItem: readBytes(row, "canonical_item"),
     ...(canonicalProvenance === undefined ? {} : { canonicalProvenance }),
   };
-}
-
-export function requireQueueFrontier(
-  database: DatabaseSync,
-  deliveryToken: DeliveryToken,
-  canonicalItem: Uint8Array,
-): void {
-  const queued = database
-    .prepare(`
-      SELECT conversation, sequence, canonical_item FROM firewall_incoming
-      WHERE delivery_token = ? AND disposition = 'pending'
-    `)
-    .get(deliveryToken);
-  if (queued === undefined) {
-    throw new StoreSignal("conflict");
-  }
-  requireSameBytes(readBytes(queued, "canonical_item"), canonicalItem);
-  const predecessor = database
-    .prepare(`
-      SELECT 1 AS pending FROM firewall_incoming
-      WHERE conversation = ? AND sequence < ? AND disposition = 'pending' LIMIT 1
-    `)
-    .get(readText(queued, "conversation"), readInteger(queued, "sequence"));
-  if (predecessor !== undefined) {
-    throw new StoreSignal("conflict");
-  }
-}
-
-/** Completes one retained check for exactly its captured candidate and direction. */
-export function completeFirewallAttempt(
-  database: DatabaseSync,
-  completion: FirewallCompletion,
-  direction: FirewallAttempt["direction"],
-  canonicalCandidate: Uint8Array,
-): FirewallCommit {
-  checkingRow(database, completion, direction, canonicalCandidate);
-  const disposition = completion.admit ? "admitted" : "withheld";
-  completeFirewallCheck(database, completion, disposition);
-  return disposition;
-}
-
-/** Local result decisions and evidence settle with the caller's host publication transaction. */
-export function settleLocalItem(
-  database: DatabaseSync,
-  admission: FirewallLocalAdmission,
-): void {
-  const { deliveryToken } = admission.item;
-  requireText(admission.evidence.conversation);
-  requireBytes(admission.evidence.canonicalEntry);
-  requireQueueFrontier(database, deliveryToken, admission.queuedItem);
-  if (admission.deterministic !== undefined) {
-    beginFirewallAttempt(database, admission.deterministic);
-    completeFirewallAttempt(
-      database,
-      { ...admission.deterministic, admit: true },
-      "incoming",
-      admission.deterministic.canonicalCandidate,
-    );
-  }
-  for (const completion of admission.completions) {
-    completeFirewallAttempt(
-      database,
-      completion,
-      "incoming",
-      admission.queuedItem,
-    );
-  }
-  markAnswers(database, admission.answers);
-  database
-    .prepare(`INSERT INTO firewall_local_evidence (conversation, anchor, canonical_entry)
- SELECT ?, anchor, ? FROM firewall_incoming WHERE delivery_token = ?`)
-    .run(
-      admission.evidence.conversation,
-      admission.evidence.canonicalEntry,
-      deliveryToken,
-    );
-  settleQueuedItem(database, deliveryToken, "admitted");
-}
-
-/** An expired queued request is retired once without deleting protocol context. */
-export function retireQueuedItem(
-  database: DatabaseSync,
-  token: DeliveryToken,
-): void {
-  const retired = database
-    .prepare(
-      "UPDATE firewall_incoming SET disposition = 'withheld' WHERE delivery_token = ? AND disposition = 'pending'",
-    )
-    .run(token);
-  if (retired.changes !== 1) {
-    throw new StoreSignal("not-found");
-  }
 }

@@ -1,6 +1,7 @@
 /** @file Collective recovery, immutable completion selection, and terminal publication. */
 
 import type { DatabaseSync } from "node:sqlite";
+
 import type {
   CollectiveAnswerReference,
   CollectiveOperationInput,
@@ -10,6 +11,7 @@ import type {
   StoredCollectiveOperation,
   StoreMutation,
 } from "./types.js";
+
 import {
   findCollective,
   readCollective,
@@ -246,6 +248,27 @@ export function retireCollectiveOperation(
   });
 }
 
+/** Completes protocol custody in the caller's terminal-publication transaction. */
+export function completeCollectiveDelivery(
+  database: DatabaseSync,
+  operationId: string,
+  deliveryToken: string,
+): void {
+  const operation = findCollective(database, operationId);
+  if (operation === undefined) {
+    throw new StoreSignal("not-found");
+  }
+  if (operation.phase === "collecting") {
+    throw new StoreSignal("conflict");
+  }
+  requireEqual(operation.deliveryToken, deliveryToken);
+  database
+    .prepare(
+      "UPDATE collective_operations SET phase = 'completed' WHERE operation_id = ?",
+    )
+    .run(operationId);
+}
+
 function readCollectiveMessage(
   row: Readonly<Record<string, unknown>>,
 ): StoredCollectiveMessage {
@@ -267,25 +290,4 @@ function readCollectiveMessage(
       ...(completedRecordHash === undefined ? {} : { completedRecordHash }),
     },
   };
-}
-
-/** Completes protocol custody in the caller's terminal-publication transaction. */
-export function completeCollectiveDelivery(
-  database: DatabaseSync,
-  operationId: string,
-  deliveryToken: string,
-): void {
-  const operation = findCollective(database, operationId);
-  if (operation === undefined) {
-    throw new StoreSignal("not-found");
-  }
-  if (operation.phase === "collecting") {
-    throw new StoreSignal("conflict");
-  }
-  requireEqual(operation.deliveryToken, deliveryToken);
-  database
-    .prepare(
-      "UPDATE collective_operations SET phase = 'completed' WHERE operation_id = ?",
-    )
-    .run(operationId);
 }

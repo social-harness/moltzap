@@ -1,11 +1,13 @@
 /** @file Composes protocol, policy and host persistence over one scoped database. */
 
 import { Effect, type Scope } from "effect";
+
 import type { OutboxTooOldError } from "../communication/store/database/values.js";
 import type {
   DeliveryToken,
   EndpointStore,
 } from "../communication/store/types.js";
+
 import { completeCollectiveDelivery } from "../communication/store/collectives.js";
 import {
   closeStoreState,
@@ -107,6 +109,50 @@ export const openDaemonStore = (
     Effect.withSpan("openDaemonStore"),
   );
 
+/** The capability literal checks that every declared owner operation has one implementation. */
+function makeDaemonStore(state: StoreState): DaemonStore {
+  const run = <A>(operation: () => A) => runStoreOperation(state, operation);
+  const firewall = makeFirewallStore(state, {
+    queueFirewallItem: (item) =>
+      run(() => {
+        queueItem(state, item);
+      }),
+    readFirewallEvidence: (input) =>
+      run(() => readFirewallEvidence(state.database, input)),
+    readFirewallEvidenceSlices: (input) =>
+      run(() => readFirewallEvidenceSlices(state.database, input)),
+    readFirewallRequestAdmission: (record) =>
+      run(() => readFirewallRequestAdmission(state.database, record)),
+    admitFirewallItem: (item, completion) =>
+      run(() => admitItem(state, item, completion)),
+    admitFirewallLocalItem: (admission) =>
+      run(() =>
+        transaction(state.database, () => {
+          settleLocalItem(state.database, admission);
+          putInboxItem(state.database, admission.item);
+          return "admitted" as const;
+        }),
+      ),
+    retireFirewallItem: (token) =>
+      run(() => {
+        retireFirewallItem(state, token);
+      }),
+  });
+  return Object.freeze({
+    ...makeEndpointStore(state),
+    ...makeInboxStore(state),
+    ...firewall,
+    publishCollectiveItem: (delivery) =>
+      run(() => {
+        publishCollectiveItem(state, delivery);
+      }),
+    replaceInboxItem: (token, replacement, conversation) =>
+      run(() => {
+        replaceInboxItem(state, token, replacement, conversation);
+      }),
+  } satisfies DaemonStore);
+}
+
 /** Terminal ownership and host publication share a transaction without changing C2's authority. */
 function publishCollectiveItem(
   state: StoreState,
@@ -124,19 +170,6 @@ function publishCollectiveItem(
       putInboxItem(state.database, delivery);
     }
   });
-}
-
-/** A retained host view wins over any later attempt to queue the same item. */
-function queueItem(
-  state: StoreState,
-  item: Parameters<FirewallStore["queueFirewallItem"]>[0],
-): void {
-  const presented = readInboxItem(state.database, item.deliveryToken);
-  if (presented !== undefined) {
-    requireSameBytes(presented.canonicalItem, item.canonicalItem);
-    return;
-  }
-  queueFirewallItem(state.database, item);
 }
 
 /** One incoming decision and its immutable host projection become visible together. */
@@ -200,46 +233,15 @@ function replaceInboxItem(
   });
 }
 
-/** The capability literal checks that every declared owner operation has one implementation. */
-function makeDaemonStore(state: StoreState): DaemonStore {
-  const run = <A>(operation: () => A) => runStoreOperation(state, operation);
-  const firewall = makeFirewallStore(state, {
-    queueFirewallItem: (item) =>
-      run(() => {
-        queueItem(state, item);
-      }),
-    readFirewallEvidence: (input) =>
-      run(() => readFirewallEvidence(state.database, input)),
-    readFirewallEvidenceSlices: (input) =>
-      run(() => readFirewallEvidenceSlices(state.database, input)),
-    readFirewallRequestAdmission: (record) =>
-      run(() => readFirewallRequestAdmission(state.database, record)),
-    admitFirewallItem: (item, completion) =>
-      run(() => admitItem(state, item, completion)),
-    admitFirewallLocalItem: (admission) =>
-      run(() =>
-        transaction(state.database, () => {
-          settleLocalItem(state.database, admission);
-          putInboxItem(state.database, admission.item);
-          return "admitted" as const;
-        }),
-      ),
-    retireFirewallItem: (token) =>
-      run(() => {
-        retireFirewallItem(state, token);
-      }),
-  });
-  return Object.freeze({
-    ...makeEndpointStore(state),
-    ...makeInboxStore(state),
-    ...firewall,
-    publishCollectiveItem: (delivery) =>
-      run(() => {
-        publishCollectiveItem(state, delivery);
-      }),
-    replaceInboxItem: (token, replacement, conversation) =>
-      run(() => {
-        replaceInboxItem(state, token, replacement, conversation);
-      }),
-  } satisfies DaemonStore);
+/** A retained host view wins over any later attempt to queue the same item. */
+function queueItem(
+  state: StoreState,
+  item: Parameters<FirewallStore["queueFirewallItem"]>[0],
+): void {
+  const presented = readInboxItem(state.database, item.deliveryToken);
+  if (presented !== undefined) {
+    requireSameBytes(presented.canonicalItem, item.canonicalItem);
+    return;
+  }
+  queueFirewallItem(state.database, item);
 }

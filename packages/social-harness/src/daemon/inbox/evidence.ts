@@ -1,6 +1,7 @@
 /** @file Supplies bounded evidence from protocol history, policy decisions and the retained host view. */
 
 import type { DatabaseSync } from "node:sqlite";
+
 import type {
   FirewallEvidence,
   FirewallEvidenceRange,
@@ -10,6 +11,7 @@ import type {
   FirewallLocalEntry,
   FirewallRequestAdmission,
 } from "../../firewall/store/types.js";
+
 import {
   readBytes,
   readInteger,
@@ -36,6 +38,29 @@ const historySelect = `
   LEFT JOIN runtime_inbox i ON i.delivery_token = d.delivery_token
   LEFT JOIN firewall_answers a ON a.conversation_id = c.conversation_id AND a.record_hash = c.record_hash
 `;
+
+/** A window entry with the global position that orders it among the other kind. */
+interface PositionedEntry {
+  readonly sequence: number;
+  readonly local: boolean;
+  readonly bytes: number;
+  readonly entry: FirewallHistoryEntry | FirewallLocalEntry;
+}
+
+/** Where one window ends and which conversation it reads. */
+interface HistoryWindow {
+  readonly maximumRecords: number;
+  readonly beforePosition: number;
+  readonly beforeSequence: number;
+  readonly conversationId?: string;
+  readonly conversation?: string;
+}
+
+/** An iterator whose next value can be read before it is taken. */
+interface Peekable {
+  readonly peek: () => PositionedEntry | undefined;
+  readonly take: () => void;
+}
 
 /** Incoming evidence stops strictly before the candidate's local certification position. */
 export function readFirewallEvidence(
@@ -191,23 +216,6 @@ function windowCandidate(
         .get(range.beforeRecord);
 }
 
-/** A window entry with the global position that orders it among the other kind. */
-interface PositionedEntry {
-  readonly sequence: number;
-  readonly local: boolean;
-  readonly bytes: number;
-  readonly entry: FirewallHistoryEntry | FirewallLocalEntry;
-}
-
-/** Where one window ends and which conversation it reads. */
-interface HistoryWindow {
-  readonly maximumRecords: number;
-  readonly beforePosition: number;
-  readonly beforeSequence: number;
-  readonly conversationId?: string;
-  readonly conversation?: string;
-}
-
 /**
  * The newest window of one conversation: its certified records and the local
  * evidence kept under its address, merged in certification order. A local
@@ -332,12 +340,6 @@ function newer(
     return record ?? local;
   }
   return local.sequence >= record.sequence ? local : record;
-}
-
-/** An iterator whose next value can be read before it is taken. */
-interface Peekable {
-  readonly peek: () => PositionedEntry | undefined;
-  readonly take: () => void;
 }
 
 function peekable(source: Iterator<PositionedEntry>): Peekable {

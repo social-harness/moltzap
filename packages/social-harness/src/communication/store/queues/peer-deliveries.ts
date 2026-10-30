@@ -1,7 +1,9 @@
 /** @file Stores messages from peers and tracks whether the daemon has consumed them. */
 
 import type { DatabaseSync } from "node:sqlite";
+
 import { Either, Schema } from "effect";
+
 import {
   copyBytes,
   mintDeliveryToken,
@@ -171,6 +173,23 @@ export function retainDeliveryInTransaction(
   return "inserted";
 }
 
+/**
+ * Retire a delivery's raw pending row, so the delivery pass never offers it
+ * again.
+ * @param database The endpoint store.
+ * @param deliveryToken The delivery to retire.
+ */
+export function retirePendingDelivery(
+  database: DatabaseSync,
+  deliveryToken: DeliveryToken,
+): void {
+  database
+    .prepare(
+      "UPDATE pending_deliveries SET acknowledged = 1 WHERE delivery_token = ?",
+    )
+    .run(deliveryToken);
+}
+
 function findRetainedDelivery(
   database: DatabaseSync,
   conversationId: string,
@@ -225,21 +244,4 @@ function readPendingDelivery(
     canonicalMessage: readBytes(row, "canonical_message"),
     acknowledged: acknowledged === 1,
   });
-}
-
-/**
- * Retire a delivery's raw pending row, so the delivery pass never offers it
- * again.
- * @param database The endpoint store.
- * @param deliveryToken The delivery to retire.
- */
-export function retirePendingDelivery(
-  database: DatabaseSync,
-  deliveryToken: DeliveryToken,
-): void {
-  database
-    .prepare(
-      "UPDATE pending_deliveries SET acknowledged = 1 WHERE delivery_token = ?",
-    )
-    .run(deliveryToken);
 }

@@ -2,9 +2,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-/** Called only inside the daemon's initial schema transaction. */
-export function createFirewallTables(database: DatabaseSync): void {
-  database.exec(`
+const firewallSchemaSql = `
   CREATE TABLE firewall_incoming (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
     delivery_token TEXT NOT NULL UNIQUE,
@@ -61,7 +59,11 @@ export function createFirewallTables(database: DatabaseSync): void {
   CREATE INDEX firewall_activations_time ON firewall_activations(activated_at);
   CREATE INDEX firewall_decisions_time ON firewall_checks(decided_at)
     WHERE decided_at IS NOT NULL;
-`);
+`;
+
+/** Called only inside the daemon's initial schema transaction. */
+export function createFirewallTables(database: DatabaseSync): void {
+  database.exec(firewallSchemaSql);
 }
 
 /** Interrupted inference has no result or authority after restart. */

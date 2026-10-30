@@ -1,13 +1,14 @@
 /** @file Retains a collective operation’s identity and reserves its request, answer and closing messages. */
 
 import type { DatabaseSync } from "node:sqlite";
+
 import { Schema } from "effect";
+
 import {
   copyBytes,
   mintDeliveryToken,
   readBytes,
   readOptionalBytes,
-  readOptionalText,
   readText,
   requireBytes,
   requireEqual,

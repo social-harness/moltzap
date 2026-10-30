@@ -5,7 +5,9 @@ import { Effect } from "effect";
 import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+
 import type { CertifiedRecord } from "../types.js";
+
 import {
   EndpointStoreError,
   mapStoreFailure,
@@ -31,310 +33,11 @@ export interface StoreState {
 }
 
 const DATABASE_NAME = "sharnessd.sqlite3";
+
 const SCHEMA_VERSION = 16;
 
 /** Only an empty database or the current stored format can be opened. */
 export type StoreOpening = "create" | "reopen";
-
-/**
- * Acquires one endpoint database after validating its current format.
- * @param stateDirectory Exclusive persistent state directory.
- * @param options Explicit live window for retained outbound messages.
- * @param options.liveWireVersions Versions accepted for pending outbound envelopes.
- * @returns Acquired database state after integrity and compatibility checks.
- */
-export const openStoreState = (
-  stateDirectory: string,
-  options: {
-    readonly liveWireVersions: readonly string[];
-  },
-): Effect.Effect<StoreState, EndpointStoreError | OutboxTooOldError> =>
-  Effect.try({
-    try: () => initializeStoreState(stateDirectory, options.liveWireVersions),
-    catch: (failure) =>
-      failure instanceof OutboxTooOldError
-        ? failure
-        : mapStoreFailure(failure, "persistence"),
-  });
-
-/**
- * Reads, without writing, how the store in `stateDirectory` would open. An
- * incompatible or corrupt database fails as `openStoreState` would.
- * @param stateDirectory Exclusive persistent state directory.
- * @returns How `openStoreState` will open the store.
- */
-export const inspectStoreState = (
-  stateDirectory: string,
-): Effect.Effect<StoreOpening, EndpointStoreError> =>
-  Effect.try({
-    try: () => {
-      requireText(stateDirectory);
-      const databasePath = resolve(stateDirectory, DATABASE_NAME);
-      return inspectExistingDatabase(databasePath);
-    },
-    catch: (failure) => mapStoreFailure(failure, "persistence"),
-  });
-
-/**
- * Closes exactly the SQLite and volatile snapshot state in this scope.
- * @param state Acquired database and process-local snapshots.
- * @returns An infallible finalizer effect.
- */
-export const closeStoreState = (state: StoreState): Effect.Effect<void> =>
-  Effect.sync(() => {
-    if (state.closed) {
-      return;
-    }
-    state.closed = true;
-    state.snapshots.clear();
-    try {
-      state.database.close();
-      // eslint-disable-next-line agent-code-guard/bare-catch, no-empty -- Finalization must remain infallible and disclose no SQLite diagnostic.
-    } catch {}
-  });
-
-/**
- * Converts a synchronous store operation into the closed Effect channel.
- * @param state Acquired database and process-local snapshots.
- * @param operation Synchronous operation inside the ownership boundary.
- * @returns The operation in the closed store error channel.
- */
-export function runStoreOperation<Value>(
-  state: StoreState,
-  operation: () => Value,
-): Effect.Effect<Value, EndpointStoreError> {
-  return Effect.try({
-    try: () => {
-      if (state.closed) {
-        throw new StoreSignal("closed");
-      }
-      return operation();
-    },
-    catch: (failure) => mapStoreFailure(failure, "persistence"),
-  });
-}
-
-/**
- * Runs one non-yielding SQLite transaction. Explicit or automatic rollback
- * before a commit attempt excludes a commit. An active failed transaction
- * and an unconfirmed commit require recovery on a fresh connection.
- * @param database Exclusively owned endpoint database.
- * @param operation Non-yielding transition to commit atomically.
- * @param mode SQLite write-lock mode.
- * @returns The committed transition result.
- */
-export function transaction<Value>(
-  database: DatabaseSync,
-  operation: () => Value,
-  mode: "IMMEDIATE" | "EXCLUSIVE" = "IMMEDIATE",
-): Value {
-  let commitAttempted = false;
-  try {
-    database.exec(`BEGIN ${mode}`);
-    const value = operation();
-    commitAttempted = true;
-    database.exec("COMMIT");
-    return value;
-  } catch (failure) {
-    const rolledBack = database.isTransaction && rollback(database);
-    const error = mapStoreFailure(failure, "persistence");
-    if (error.reason !== "persistence") {
-      throw error;
-    }
-    throw new EndpointStoreError({
-      reason: error.reason,
-      commitOutcome:
-        rolledBack || (!commitAttempted && !database.isTransaction)
-          ? "not-committed"
-          : undefined,
-    });
-  }
-}
-
-/** Rollback failure preserves the original error and forces conservative recovery. */
-function rollback(database: DatabaseSync): boolean {
-  try {
-    database.exec("ROLLBACK");
-    return true;
-    // eslint-disable-next-line agent-code-guard/bare-catch -- Rollback failure is outcome evidence, never a replacement diagnostic.
-  } catch {
-    return false;
-  }
-}
-
-function initializeStoreState(
-  stateDirectory: string,
-  liveWireVersions: readonly string[],
-): StoreState {
-  requireText(stateDirectory);
-  mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
-  const databasePath = resolve(stateDirectory, DATABASE_NAME);
-  const expected = inspectExistingDatabase(databasePath);
-  let database: DatabaseSync | undefined;
-  try {
-    database = openWritableDatabase(databasePath);
-    database.exec("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE; COMMIT");
-    const disposition = preflightDatabase(database);
-    requireExpectedOpening(disposition, expected);
-    if (disposition !== "create") {
-      requireLiveOutbox(database, liveWireVersions);
-    }
-    chmodSync(stateDirectory, 0o700);
-    chmodSync(databasePath, 0o600);
-    configureDatabase(database);
-    return {
-      database,
-      opening: disposition,
-      snapshots: new Map(),
-      closed: false,
-    };
-  } catch (failure) {
-    try {
-      database?.close();
-      // eslint-disable-next-line agent-code-guard/bare-catch, no-empty -- Failed acquisition closes best-effort without replacing the startup failure.
-    } catch {}
-    throw failure;
-  }
-}
-
-function requireExpectedOpening(
-  disposition: StoreOpening,
-  expected?: StoreOpening,
-): void {
-  if (expected !== undefined && expected !== disposition) {
-    throw new StoreSignal("incompatible");
-  }
-}
-
-function inspectExistingDatabase(databasePath: string): StoreOpening {
-  if (!existsSync(databasePath)) {
-    return "create";
-  }
-  const database = new DatabaseSync(databasePath, {
-    readOnly: true,
-    enableForeignKeyConstraints: false,
-    enableDoubleQuotedStringLiterals: false,
-    allowExtension: false,
-    timeout: 0,
-  });
-  try {
-    return preflightDatabase(database);
-  } finally {
-    database.close();
-  }
-}
-
-function openWritableDatabase(databasePath: string): DatabaseSync {
-  return new DatabaseSync(databasePath, {
-    enableForeignKeyConstraints: true,
-    enableDoubleQuotedStringLiterals: false,
-    allowExtension: false,
-    timeout: 0,
-  });
-}
-
-function preflightDatabase(database: DatabaseSync): StoreOpening {
-  const version = readSchemaVersion(database);
-  if (version === 0 && !hasUserSchemaObjects(database)) {
-    requireHealthyDatabase(database);
-    return "create";
-  }
-  if (version !== SCHEMA_VERSION) {
-    throw new StoreSignal("incompatible");
-  }
-  requireHealthyDatabase(database);
-  return "reopen";
-}
-
-function readSchemaVersion(database: DatabaseSync): number {
-  const row = database.prepare("PRAGMA user_version").get();
-  if (row === undefined) {
-    throw new StoreSignal("corrupt");
-  }
-  return readInteger(row, "user_version");
-}
-
-/** Pending envelopes must remain live before startup changes retained state. */
-function requireLiveOutbox(
-  database: DatabaseSync,
-  liveWireVersions: readonly string[],
-): void {
-  const rows = database
-    .prepare(
-      "SELECT wire_version FROM outbound_messages WHERE disposition = 'pending'",
-    )
-    .all();
-  for (const row of rows) {
-    if (!liveWireVersions.includes(readText(row, "wire_version"))) {
-      throw new OutboxTooOldError();
-    }
-  }
-}
-
-function hasUserSchemaObjects(database: DatabaseSync): boolean {
-  return (
-    database
-      .prepare(
-        `SELECT 1 AS retained FROM sqlite_schema
-         WHERE type IN ('table', 'index', 'view', 'trigger')
-           AND name NOT LIKE 'sqlite_%'
-         LIMIT 1`,
-      )
-      .get() !== undefined
-  );
-}
-
-function requireHealthyDatabase(database: DatabaseSync): void {
-  const check = database.prepare("PRAGMA quick_check").all();
-  const checkRow = check[0];
-  if (
-    check.length !== 1 ||
-    checkRow === undefined ||
-    readText(checkRow, "quick_check") !== "ok"
-  ) {
-    throw new StoreSignal("corrupt");
-  }
-}
-
-function configureDatabase(database: DatabaseSync): void {
-  database.exec("PRAGMA busy_timeout = 0");
-  database.exec("PRAGMA foreign_keys = ON");
-  const journal = database.prepare("PRAGMA journal_mode = WAL").get();
-  const locking = database.prepare("PRAGMA locking_mode = EXCLUSIVE").get();
-  database.exec("PRAGMA synchronous = FULL");
-  const foreignKeys = database.prepare("PRAGMA foreign_keys").get();
-  const synchronous = database.prepare("PRAGMA synchronous").get();
-  requireTextPragma("journal_mode", "wal", journal);
-  requireTextPragma("locking_mode", "exclusive", locking);
-  requireIntegerPragma("foreign_keys", 1, foreignKeys);
-  requireIntegerPragma("synchronous", 2, synchronous);
-}
-
-function requireTextPragma(
-  key: string,
-  expected: string,
-  row?: Readonly<Record<string, unknown>>,
-): void {
-  if (row === undefined) {
-    throw new StoreSignal("persistence");
-  }
-  if (readText(row, key) !== expected) {
-    throw new StoreSignal("persistence");
-  }
-}
-
-function requireIntegerPragma(
-  key: string,
-  expected: number,
-  row?: Readonly<Record<string, unknown>>,
-): void {
-  if (row === undefined) {
-    throw new StoreSignal("persistence");
-  }
-  if (readInteger(row, key) !== expected) {
-    throw new StoreSignal("persistence");
-  }
-}
 
 const collectiveSchemaSql = `
   CREATE TABLE collective_answers (
@@ -522,9 +225,309 @@ const schemaSql = `
   ) STRICT;
 `;
 
+/**
+ * Acquires one endpoint database after validating its current format.
+ * @param stateDirectory Exclusive persistent state directory.
+ * @param options Explicit live window for retained outbound messages.
+ * @param options.liveWireVersions Versions accepted for pending outbound envelopes.
+ * @returns Acquired database state after integrity and compatibility checks.
+ */
+export const openStoreState = (
+  stateDirectory: string,
+  options: {
+    readonly liveWireVersions: readonly string[];
+  },
+): Effect.Effect<StoreState, EndpointStoreError | OutboxTooOldError> =>
+  Effect.try({
+    try: () => initializeStoreState(stateDirectory, options.liveWireVersions),
+    catch: (failure) =>
+      failure instanceof OutboxTooOldError
+        ? failure
+        : mapStoreFailure(failure, "persistence"),
+  });
+
+/**
+ * Reads, without writing, how the store in `stateDirectory` would open. An
+ * incompatible or corrupt database fails as `openStoreState` would.
+ * @param stateDirectory Exclusive persistent state directory.
+ * @returns How `openStoreState` will open the store.
+ */
+export const inspectStoreState = (
+  stateDirectory: string,
+): Effect.Effect<StoreOpening, EndpointStoreError> =>
+  Effect.try({
+    try: () => {
+      requireText(stateDirectory);
+      const databasePath = resolve(stateDirectory, DATABASE_NAME);
+      return inspectExistingDatabase(databasePath);
+    },
+    catch: (failure) => mapStoreFailure(failure, "persistence"),
+  });
+
+/**
+ * Closes exactly the SQLite and volatile snapshot state in this scope.
+ * @param state Acquired database and process-local snapshots.
+ * @returns An infallible finalizer effect.
+ */
+export const closeStoreState = (state: StoreState): Effect.Effect<void> =>
+  Effect.sync(() => {
+    if (state.closed) {
+      return;
+    }
+    state.closed = true;
+    state.snapshots.clear();
+    try {
+      state.database.close();
+      // eslint-disable-next-line agent-code-guard/bare-catch, no-empty -- Finalization must remain infallible and disclose no SQLite diagnostic.
+    } catch {}
+  });
+
+/**
+ * Converts a synchronous store operation into the closed Effect channel.
+ * @param state Acquired database and process-local snapshots.
+ * @param operation Synchronous operation inside the ownership boundary.
+ * @returns The operation in the closed store error channel.
+ */
+export function runStoreOperation<Value>(
+  state: StoreState,
+  operation: () => Value,
+): Effect.Effect<Value, EndpointStoreError> {
+  return Effect.try({
+    try: () => {
+      if (state.closed) {
+        throw new StoreSignal("closed");
+      }
+      return operation();
+    },
+    catch: (failure) => mapStoreFailure(failure, "persistence"),
+  });
+}
+
+/**
+ * Runs one non-yielding SQLite transaction. Explicit or automatic rollback
+ * before a commit attempt excludes a commit. An active failed transaction
+ * and an unconfirmed commit require recovery on a fresh connection.
+ * @param database Exclusively owned endpoint database.
+ * @param operation Non-yielding transition to commit atomically.
+ * @param mode SQLite write-lock mode.
+ * @returns The committed transition result.
+ */
+export function transaction<Value>(
+  database: DatabaseSync,
+  operation: () => Value,
+  mode: "IMMEDIATE" | "EXCLUSIVE" = "IMMEDIATE",
+): Value {
+  let commitAttempted = false;
+  try {
+    database.exec(`BEGIN ${mode}`);
+    const value = operation();
+    commitAttempted = true;
+    database.exec("COMMIT");
+    return value;
+  } catch (failure) {
+    const rolledBack = database.isTransaction && rollback(database);
+    const error = mapStoreFailure(failure, "persistence");
+    if (error.reason !== "persistence") {
+      throw error;
+    }
+    throw new EndpointStoreError({
+      reason: error.reason,
+      commitOutcome:
+        rolledBack || (!commitAttempted && !database.isTransaction)
+          ? "not-committed"
+          : undefined,
+    });
+  }
+}
+
 /** Creates protocol tables inside the caller's initial schema transaction. */
 export function createCommunicationTables(database: DatabaseSync): void {
   database.exec(schemaSql);
   database.exec(collectiveSchemaSql);
   database.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+}
+
+/** Rollback failure preserves the original error and forces conservative recovery. */
+function rollback(database: DatabaseSync): boolean {
+  try {
+    database.exec("ROLLBACK");
+    return true;
+    // eslint-disable-next-line agent-code-guard/bare-catch -- Rollback failure is outcome evidence, never a replacement diagnostic.
+  } catch {
+    return false;
+  }
+}
+
+function initializeStoreState(
+  stateDirectory: string,
+  liveWireVersions: readonly string[],
+): StoreState {
+  requireText(stateDirectory);
+  mkdirSync(stateDirectory, { recursive: true, mode: 0o700 });
+  const databasePath = resolve(stateDirectory, DATABASE_NAME);
+  const expected = inspectExistingDatabase(databasePath);
+  let database: DatabaseSync | undefined;
+  try {
+    database = openWritableDatabase(databasePath);
+    database.exec("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE; COMMIT");
+    const disposition = preflightDatabase(database);
+    requireExpectedOpening(disposition, expected);
+    if (disposition !== "create") {
+      requireLiveOutbox(database, liveWireVersions);
+    }
+    chmodSync(stateDirectory, 0o700);
+    chmodSync(databasePath, 0o600);
+    configureDatabase(database);
+    return {
+      database,
+      opening: disposition,
+      snapshots: new Map(),
+      closed: false,
+    };
+  } catch (failure) {
+    try {
+      database?.close();
+      // eslint-disable-next-line agent-code-guard/bare-catch, no-empty -- Failed acquisition closes best-effort without replacing the startup failure.
+    } catch {}
+    throw failure;
+  }
+}
+
+function requireExpectedOpening(
+  disposition: StoreOpening,
+  expected?: StoreOpening,
+): void {
+  if (expected !== undefined && expected !== disposition) {
+    throw new StoreSignal("incompatible");
+  }
+}
+
+function inspectExistingDatabase(databasePath: string): StoreOpening {
+  if (!existsSync(databasePath)) {
+    return "create";
+  }
+  const database = new DatabaseSync(databasePath, {
+    readOnly: true,
+    enableForeignKeyConstraints: false,
+    enableDoubleQuotedStringLiterals: false,
+    allowExtension: false,
+    timeout: 0,
+  });
+  try {
+    return preflightDatabase(database);
+  } finally {
+    database.close();
+  }
+}
+
+function openWritableDatabase(databasePath: string): DatabaseSync {
+  return new DatabaseSync(databasePath, {
+    enableForeignKeyConstraints: true,
+    enableDoubleQuotedStringLiterals: false,
+    allowExtension: false,
+    timeout: 0,
+  });
+}
+
+function preflightDatabase(database: DatabaseSync): StoreOpening {
+  const version = readSchemaVersion(database);
+  if (version === 0 && !hasUserSchemaObjects(database)) {
+    requireHealthyDatabase(database);
+    return "create";
+  }
+  if (version !== SCHEMA_VERSION) {
+    throw new StoreSignal("incompatible");
+  }
+  requireHealthyDatabase(database);
+  return "reopen";
+}
+
+function readSchemaVersion(database: DatabaseSync): number {
+  const row = database.prepare("PRAGMA user_version").get();
+  if (row === undefined) {
+    throw new StoreSignal("corrupt");
+  }
+  return readInteger(row, "user_version");
+}
+
+/** Pending envelopes must remain live before startup changes retained state. */
+function requireLiveOutbox(
+  database: DatabaseSync,
+  liveWireVersions: readonly string[],
+): void {
+  const rows = database
+    .prepare(
+      "SELECT wire_version FROM outbound_messages WHERE disposition = 'pending'",
+    )
+    .all();
+  for (const row of rows) {
+    if (!liveWireVersions.includes(readText(row, "wire_version"))) {
+      throw new OutboxTooOldError();
+    }
+  }
+}
+
+function hasUserSchemaObjects(database: DatabaseSync): boolean {
+  return (
+    database
+      .prepare(
+        `SELECT 1 AS retained FROM sqlite_schema
+         WHERE type IN ('table', 'index', 'view', 'trigger')
+           AND name NOT LIKE 'sqlite_%'
+         LIMIT 1`,
+      )
+      .get() !== undefined
+  );
+}
+
+function requireHealthyDatabase(database: DatabaseSync): void {
+  const check = database.prepare("PRAGMA quick_check").all();
+  const checkRow = check[0];
+  if (
+    check.length !== 1 ||
+    checkRow === undefined ||
+    readText(checkRow, "quick_check") !== "ok"
+  ) {
+    throw new StoreSignal("corrupt");
+  }
+}
+
+function configureDatabase(database: DatabaseSync): void {
+  database.exec("PRAGMA busy_timeout = 0");
+  database.exec("PRAGMA foreign_keys = ON");
+  const journal = database.prepare("PRAGMA journal_mode = WAL").get();
+  const locking = database.prepare("PRAGMA locking_mode = EXCLUSIVE").get();
+  database.exec("PRAGMA synchronous = FULL");
+  const foreignKeys = database.prepare("PRAGMA foreign_keys").get();
+  const synchronous = database.prepare("PRAGMA synchronous").get();
+  requireTextPragma("journal_mode", "wal", journal);
+  requireTextPragma("locking_mode", "exclusive", locking);
+  requireIntegerPragma("foreign_keys", 1, foreignKeys);
+  requireIntegerPragma("synchronous", 2, synchronous);
+}
+
+function requireTextPragma(
+  key: string,
+  expected: string,
+  row?: Readonly<Record<string, unknown>>,
+): void {
+  if (row === undefined) {
+    throw new StoreSignal("persistence");
+  }
+  if (readText(row, key) !== expected) {
+    throw new StoreSignal("persistence");
+  }
+}
+
+function requireIntegerPragma(
+  key: string,
+  expected: number,
+  row?: Readonly<Record<string, unknown>>,
+): void {
+  if (row === undefined) {
+    throw new StoreSignal("persistence");
+  }
+  if (readInteger(row, key) !== expected) {
+    throw new StoreSignal("persistence");
+  }
 }

@@ -1,6 +1,7 @@
 /** @file Local policy persistence requirements and the policy-owned SQLite operations. */
 
 import type { FirewallStore } from "./types.js";
+
 import {
   runStoreOperation,
   type StoreState,

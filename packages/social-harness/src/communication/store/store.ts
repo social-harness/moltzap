@@ -5,8 +5,10 @@
  */
 
 import { Effect, type Scope } from "effect";
+
 import type { OutboxTooOldError } from "./database/values.js";
 import type { EndpointStore } from "./types.js";
+
 import {
   applyCatchUpReanchor,
   bindIdentity,
@@ -86,7 +88,8 @@ export const inspectEndpointStore = (
   );
 
 /**
- * Opens the one SQLite store owned by a daemon state directory.
+ * Opens protocol-only persistence for a standalone communication engine.
+ * Daemon hosts acquire all store owners through `openDaemonStore`.
  *
  * @param stateDirectory Exclusive persistent state directory.
  * @param options Explicit live window for retained outbound messages.
@@ -127,6 +130,7 @@ export const openEndpointStore = (
   );
 
 /** Protocol operations share the connection acquired by their process composition. */
+// eslint-disable-next-line max-lines-per-function, sonarjs/max-lines-per-function -- One typed capability literal checks the complete protocol operation map.
 export function makeEndpointStore(state: StoreState): EndpointStore {
   const run = <Value>(operation: () => Value) =>
     runStoreOperation(state, operation);
