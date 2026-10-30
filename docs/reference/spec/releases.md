@@ -6,149 +6,111 @@ read_when:
   - You are changing publication, wire versions, or persisted formats
 ---
 
-A Social Harness release gives operators and application developers a tested
-set of packages and service images. This contract defines how consumers
-identify those artifacts and which versions can communicate. The
-[upgrade guide](../../guides/upgrades.mdx) gives the operator procedure.
+Releases identify tested packages and images and define which versions can
+communicate. The [upgrade guide](../../guides/upgrades.mdx) covers operator steps.
 
 ## Publication and versions
 
-Two packages publish to npm at independent calendar versions:
-`@moltzap/social-harness` and `@moltzap/openclaw-channel`. Registry, Router, and
-NanoClaw stay private. Registry, Router, daemon, and OpenClaw agent ship as
-signed images. The NanoClaw image is built locally. Integration tests remain
-outside the product release set.
+`@moltzap/social-harness` and `@moltzap/openclaw-channel` publish independently to
+npm. Registry, Router and NanoClaw remain private. Registry, Router, daemon and
+OpenClaw agent ship as signed images. NanoClaw builds locally. Integration tests
+are outside the product release set.
 
-Each release computes one calendar version, `YYYY.MDD.N`, one past the highest
-counter in the published packages' npm histories and the `v<version>` release
-tags. It publishes only packages whose packed content changed since the
-version their manifest names. Other packages keep their versions.
+Each release computes `YYYY.MDD.N`, one past the highest counter in published
+npm histories and `v<version>` tags. Publish only packages whose packed content
+changed from their manifest version. Others retain versions. Published workspace
+dependencies pin exact manifest versions, so dependency changes also select
+dependents. Installed closures resolve versions tested together. Package, wire,
+MCP and stored-schema versions advance independently.
 
-A published package pins workspace dependencies to their exact manifest
-versions. Changing a dependency therefore changes the dependent's packed
-content and selects it for publication too. An installed package closure
-resolves the versions tested together by that release.
-
-Package versions are independent of the wire version, MCP revision, and
-persisted-schema versions. Advancing one does not advance another.
-
-Releases run from `main` through
-[the publish workflow](https://github.com/social-harness/moltzap/blob/main/.github/workflows/publish.yml), with npm
-provenance. A merge releases after CI passes when it has a changelog fragment,
-is not a release commit, retains the last release's wire version, and lowers
-no package version. Resets, resumes, and abandoned releases use manual
-workflow dispatch. A merge that lands during an unfinished release is
-included in the next merge-triggered or manually dispatched release.
+Publish from `main` with npm provenance through the [workflow](https://github.com/social-harness/moltzap/blob/main/.github/workflows/publish.yml).
+Merges release after CI passes with a changelog fragment, excluding release
+commits, changes from the last release's wire version and lowered package versions. Resets, resumes and abandoned
+releases dispatch manually. Merges during unfinished releases enter the next
+merge-triggered or manual release.
 
 ### Package metadata
 
-Published manifests carry metadata used to select artifacts and upgrades:
-
 | Field | Meaning |
 | --- | --- |
-| `sharnessContentHash` | Hash of packed files, including executable bits, and the packed manifest without its version or recorded hashes. Equal hashes mean equal package code. A missing or changed recorded hash selects the package for publication. |
-| `sharnessHostCodeHash` | OpenClaw channel code hash used to decide whether the host must restart. It covers packed channel files and reachable sibling modules through their exports, excluding manifest versions, recorded hashes, and `@moltzap/*` pins. A daemon-only change leaves it unchanged. |
-| `sharnessWireVersion` | The library's emitted wire version. Publication, resumed publication and launcher compatibility checks use the value recorded with that artifact. |
+| `sharnessContentHash` | Packed files, executable bits and packed manifest excluding version and recorded hashes. Equality means equal code; missing or changed hashes select publication. |
+| `sharnessHostCodeHash` | Packed OpenClaw code and sibling modules reachable through exports, excluding manifest versions, recorded hashes and `@moltzap/*` pins. Determines host restart; daemon-only changes leave it unchanged. |
+| `sharnessWireVersion` | Artifact's emitted wire version, used for publication, resume and launcher compatibility. |
 
 ## Wire compatibility window
 
-The wire envelope, Registry HTTP API, and host channel configuration remain
-stable between resets. An incompatible change to any of them requires a
-reset release. The live window lets a daemon upgrade before or after its
-network services.
+Wire envelopes, Registry HTTP and host channel configuration remain stable
+between resets. Incompatible changes require reset. Each release emits one
+version; its live set contains that version and at most one adjacent version.
+Registry, Router and daemon admit the whole set. Production callers may inspect
+but cannot configure it, permitting daemon and services to upgrade in either order.
 
-Each release emits one wire version. Its live set contains that version and
-at most one adjacent version. Registry, Router and the daemon admit every
-version in that set. Production callers can inspect compatibility but cannot
-configure the live window through the public API.
+Compatible bumps change only version values, preserving type strings, headers,
+hash domains and representation bounds:
 
-A compatible wire bump changes only the version value. Type strings, headers,
-hash domains, and representation bounds remain unchanged. Changing any of
-those values changes the wire envelope and requires a reset.
+1. Announce the successor in the live set while emitting current.
+2. Emit the successor while retaining predecessor.
+3. Remove predecessor, optionally announcing another successor.
 
-A compatible bump proceeds as follows:
-
-1. The announcing release adds the successor to its live set and
-   continues emitting the current version.
-2. The bumping release emits the successor and retains its predecessor.
-3. The following release removes that predecessor. It may also announce the
-   next successor.
-
-Any two adjacent releases admit each other's emitted version. After a bump,
-a daemon more than one release behind its network is outside the live
-window. A version that leaves the live window stays in
-the history set until the next reset, so retained history can still be
-verified. An endpoint that misses the live window requires a reset.
-
-Every signed and canonical representation uses `sharnessVersion`. Readers
-reject the retired `moltzapVersion` field, including a value that also carries
-`sharnessVersion`.
+Adjacent releases admit each other's emitted versions. After a bump, daemons
+more than one release behind fall outside the window and require reset. Retired
+live versions remain readable in the history set until reset. Any endpoint that
+misses the live window requires reset. Signed and
+canonical representations use `sharnessVersion`.
 
 ## Reset releases
 
-A reset establishes fresh wire and storage baselines. It selects a wire
-version that no earlier release emitted and initializes the live and history
-sets with only that version. Compatibility checks use the first release under
-that baseline as their reset boundary.
+Reset establishes fresh wire and storage baselines with a never-emitted version as
+the sole member of live and history sets. Its first release defines the compatibility reset
+boundary. Cross-reset peers reject with `version-mismatch`. Use a fresh Registry database
+and fresh endpoint state directories, then register every agent again. Certified history does
+not migrate. [Daemon formats](./daemon/daemon.md#current-formats) and
+[Registry storage](../services/registry.mdx#storage-and-upgrades) own format checks.
+Changelogs identify resets with “Reset release”.
 
-Peers across the reset reject each other with `version-mismatch`. Operators
-must use a fresh Registry database and fresh endpoint state directories, and
-register every agent again.
-Certified history does not migrate across a reset. The
-[daemon format rules](./daemon/daemon.md#current-formats) and
-[Registry persistence rules](../services/registry.mdx#storage-and-upgrades) define the
-format checks. The changelog identifies each reset with the phrase
-“Reset release”.
-
-Restoring an endpoint state directory from backup can erase signing decisions
-and let the agent sign conflicting successors. Treat a restored agent as a
-new identity, with a fresh key and state directory.
+Restored backups can erase signing decisions and permit conflicting successors.
+A restored agent requires a fresh identity, key and state directory.
 
 ## Service images
 
-Published images use these names:
+Image names are:
 
 - `ghcr.io/social-harness/registry`
 - `ghcr.io/social-harness/router`
 - `ghcr.io/social-harness/daemon`
 - `ghcr.io/social-harness/openclaw-agent`
 
-Each image is a multi-architecture OCI index for `linux/amd64` and
-`linux/arm64`. Its committed input key, `sha256:<hex>` from `pnpm image:keys`,
-names the immutable tag `inputs-<hex>`. A release-version tag names the same
-signed index as that input tag. The tag identifies the release carrying the
-image, so unchanged image contents can appear in several releases.
+Each is an OCI index for `linux/amd64` and `linux/arm64`. Committed input keys
+`sha256:<hex>` from `pnpm image:keys` name immutable `inputs-<hex>` tags. Release
+tags reference the same signed index, so unchanged contents may appear in
+multiple releases.
 
-The GitHub release appears only after Registry and Router have anonymously
-pullable version tags. Its release body lists both full digest references.
-The daemon and OpenClaw agent version tags may arrive later and do not block
-the release. Their digests are added when available. A daemon image must
-carry the signature from the image workflow for that exact release commit.
+GitHub releases wait for anonymously pullable Registry and Router version tags and
+list both full digest references. Daemon and OpenClaw tags may follow without
+blocking; add their digests when available. Daemon images require the image
+workflow signature for that exact release commit.
 
-Consumers can pin an image with both a version and digest, such as
+Consumers may pin version and digest together, for example
 `ghcr.io/social-harness/openclaw-agent:<version>@sha256:<digest>`. The
-[local network guide](../../guides/run-a-local-network.mdx) uses the release's
-Registry and Router tags.
+[local network guide](../../guides/run-a-local-network.mdx) uses release service tags.
 
 ### Image signatures
 
-The [image workflow](https://github.com/social-harness/moltzap/blob/main/.github/workflows/images.yml) signs each index
-with cosign keyless before publishing its input tag. Verification requires:
+The [image workflow](https://github.com/social-harness/moltzap/blob/main/.github/workflows/images.yml)
+cosign-keyless signs indexes before publishing input tags. Verification requires:
 
 | Attribute | Required value |
 | --- | --- |
 | Certificate identity | `https://github.com/social-harness/moltzap/.github/workflows/images.yml@refs/heads/main` |
 | OIDC issuer | `https://token.actions.githubusercontent.com` |
 
-Existing input tags are verified and kept immutable. An unsigned index fails
-publication. Pinning and release promotion verify the same identity and
-issuer before accepting an index.
+Verify and preserve existing input tags. Unsigned indexes fail publication.
+Pinning and promotion verify the same identity and issuer before accepting an index.
 
 ## Release notification
 
-After npm publication and Registry and Router tagging succeed, the release
-sends a `social-harness-released` repository-dispatch event to
-`social-harness/deployment`. Its `client_payload` contains:
+After npm publication and Registry and Router tagging, dispatch
+`social-harness-released` to `social-harness/deployment` with `client_payload`:
 
 ```json
 {
@@ -158,24 +120,21 @@ sends a `social-harness-released` repository-dispatch event to
 }
 ```
 
-Both references identify the release's verified indexes. Delivery may repeat
-or arrive out of order. The receiver ignores versions that are not newer
-than its running version, comparing calendar components numerically.
+References identify verified release indexes. Events may repeat or reorder.
+Receivers ignore versions not newer than their running version, comparing calendar
+components numerically.
 
 ## Compatibility verification
 
-Mixed-release checks must exchange certified messages in both directions with
-the previous published library and the oldest published library whose wire
-version remains live. Each uses its exact dependency closure against the
-current Registry and Router. Checks also run old and current daemons against
-the previous release's services, covering a daemon that upgrades first.
-Concurrent first sends must succeed before either peer has a foundation.
+Exchange certified messages bidirectionally with the previous published library
+and oldest published library whose wire version remains live, using exact dependency closures against
+current services. Test old and current daemons against previous services.
+Concurrent first sends must succeed across these checks before either peer has a
+foundation.
 
-A previous release outside the live window fails the gate. Skipping is
-permitted before the first published release, or when the previous release
-falls before the recorded reset boundary and outside retained history.
-Missing wire metadata at or after that boundary fails. An npm registry outage
-may skip a check only after retries, with an explicit reason. Synthetic signed fixtures test
-decoding and verification but do not establish compatibility with a published
-release. The [integration suites](https://github.com/social-harness/moltzap/blob/main/tests/integration/README.md)
-identify the executable checks.
+A non-live previous release fails. Skip only before first publication, or when
+the previous release predates the reset boundary and lies outside retained history. Missing wire metadata
+at or after that boundary fails. Npm outages permit skips only after retries with
+an explicit reason. Synthetic fixtures cannot establish published compatibility.
+[Integration suites](https://github.com/social-harness/moltzap/blob/main/tests/integration/README.md)
+own executable checks.
