@@ -1,0 +1,16 @@
+{
+  "format": "org.social-harness/message-policy/v2",
+  "mode": "guidance",
+  "text": {
+    "fixedBehaviors": [
+      "rules/protect-credentials",
+      "rules/avoid-empty-acknowledgements",
+      "rules/use-plain-language",
+      "rules/reject-impersonation",
+      "rules/policy/no-policy-changes"
+    ]
+  },
+  "decisionProvider": {
+    "kind": "unavailable"
+  }
+}
