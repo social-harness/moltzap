@@ -94,7 +94,7 @@ const enforcedCodeRules = Effect.gen(function* () {
       { direction: "outgoing", outcome: "allow" },
       {
         direction: "outgoing",
-        outcome: "revise",
+        outcome: "reject",
         decidedBy: [{ ruleId: "credentials", from: "code" }],
       },
     ],

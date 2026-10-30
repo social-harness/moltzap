@@ -4,7 +4,7 @@
  *
  * Every daemon runs `firewall-daemon.ts`, whose policy withholds an incoming
  * text carrying `[in]`, refuses an outgoing text carrying `[out]`, asks for
- * a response to an incoming text carrying `[guide]`, and leaves its norm
+ * a response to an incoming text carrying `[guide]`, and leaves its
  * judgment of a text carrying `[unsure]` unsettled. Each endpoint
  * checks with its own firewall: a requester checks the question it sends and
  * the answers it receives, a member checks the question it is asked.
@@ -49,7 +49,13 @@ const collecting = (
     to: groupAddress([requester, ...members]),
     text: options.question,
     collective: { op, deadline: options.deadline, requestedSchema: formSchema },
-  });
+  }).pipe(
+    Effect.flatMap((result) =>
+      result.kind === "collective"
+        ? Effect.succeed(result)
+        : Effect.dieMessage("expected a collective operation"),
+    ),
+  );
 
 interface GatherScenario {
   readonly requester: Participant;
@@ -128,10 +134,15 @@ const FIREWALL_TEST_TIMEOUT_MS = 300_000;
 /** The deadline of an operation every asked member answers, so no deadline races the answers. */
 const ANSWERED_DEADLINE_SECONDS = FIREWALL_TEST_TIMEOUT_MS / 1000;
 
-const accept = (member: Participant, to: string, content: object) =>
+const accept = (
+  member: Participant,
+  to: string,
+  operationId: string,
+  content: object,
+) =>
   send(member, {
     to,
-    collectiveResponse: { action: "accept", content },
+    collectiveResponse: { action: "accept", operationId, content },
   });
 
 /**
@@ -189,7 +200,7 @@ function expectOutgoingGatherRefused(
       deadline: 60,
     }).pipe(Effect.flip);
     expect(refused).toBeInstanceOf(FirewallSendError);
-    expect(refused).toMatchObject({ refusal: "prohibited" });
+    expect(refused).toMatchObject({ refusal: "rule-violation" });
   });
 }
 
@@ -212,11 +223,13 @@ function expectIncomingGatherWithheld({
       kind: "collectiveRequest",
       operationId: withheld.operationId,
     });
-    yield* accept(guided, requester.address, { slot: "mon" });
+    yield* accept(guided, requester.address, withheld.operationId, {
+      slot: "mon",
+    });
     expect(
-      yield* accept(strict, requester.address, { slot: "tue" }).pipe(
-        Effect.flip,
-      ),
+      yield* accept(strict, requester.address, withheld.operationId, {
+        slot: "tue",
+      }).pipe(Effect.flip),
     ).toMatchObject({ failure: { kind: "request-none" } });
     expect(yield* nextItem(requester)).toMatchObject({
       kind: "collectiveResult",
@@ -247,18 +260,20 @@ function expectGatherAnswerWithheld({
     expect(yield* nextItem(guided)).toMatchObject({
       operationId: answered.operationId,
     });
-    yield* accept(guided, requester.address, {
+    yield* accept(guided, requester.address, answered.operationId, {
       slot: "mon",
       note: "[in] my calendar is private",
     });
-    yield* accept(strict, requester.address, { slot: "tue" });
+    yield* accept(strict, requester.address, answered.operationId, {
+      slot: "tue",
+    });
     expect(yield* nextItem(requester)).toMatchObject({
       kind: "collectiveResult",
       operationId: answered.operationId,
       outcomes: [
         {
           member: guided.agent,
-          outcome: { kind: "withheld", reason: "prohibited" },
+          outcome: { kind: "withheld", reason: "rule-violation" },
         },
         {
           member: strict.agent,
@@ -285,11 +300,11 @@ function expectGuidedGatherAdvice({
     expect(yield* nextItem(strict)).toMatchObject({
       operationId: advised.operationId,
     });
-    yield* accept(requester, guided.address, {
+    yield* accept(requester, guided.address, advised.operationId, {
       slot: "mon",
       note: "[guide] reply to me",
     });
-    yield* accept(strict, guided.address, { slot: "tue" });
+    yield* accept(strict, guided.address, advised.operationId, { slot: "tue" });
     const result = yield* Queue.take(guided.inbox);
     yield* result.acknowledge;
     expect(result.item).toMatchObject({
@@ -324,7 +339,7 @@ const uncertainAdvice = {
   instruction: "Respond to the marked message.",
 };
 
-/** An unsettled norm judgment supplies advice without blocking the question or its answer. */
+/** An unsettled judgment supplies advice without blocking the question or its answer. */
 function expectUnsettledGatherAdvice({
   requester,
   guided,
@@ -343,11 +358,18 @@ function expectUnsettledGatherAdvice({
     expect(yield* nextItem(strict)).toMatchObject({
       operationId: unsettled.operationId,
     });
-    yield* accept(guided, requester.address, { slot: "mon" });
-    const unsure = yield* accept(strict, requester.address, {
-      slot: "tue",
-      note: "[unsure] maybe",
+    yield* accept(guided, requester.address, unsettled.operationId, {
+      slot: "mon",
     });
+    const unsure = yield* accept(
+      strict,
+      requester.address,
+      unsettled.operationId,
+      {
+        slot: "tue",
+        note: "[unsure] maybe",
+      },
+    );
     expect(unsure.guidance?.instructions).toEqual([uncertainAdvice]);
     const unsureResult = yield* Queue.take(requester.inbox);
     yield* unsureResult.acknowledge;
@@ -369,15 +391,8 @@ function expectUnsettledGatherAdvice({
 }
 
 /** Withheld questions never reach enforcing members, yet those members still receive the close with the question hidden. */
-function expectAllGatherQuestionWithheld({
-  requester,
-  guided,
-  strictA,
-  strictB,
-  members,
-  group,
-  deadline,
-}: AllGatherScenario) {
+function expectAllGatherQuestionWithheld(scenario: AllGatherScenario) {
+  const { requester, guided, members, group, deadline } = scenario;
   return Effect.gen(function* () {
     const withheld = yield* collecting(requester, "all_gather", members, {
       question: "[in] Which day works?",
@@ -387,17 +402,19 @@ function expectAllGatherQuestionWithheld({
       kind: "collectiveRequest",
       operationId: withheld.operationId,
     });
-    yield* accept(guided, group, { slot: "mon" });
+    yield* accept(guided, group, withheld.operationId, { slot: "mon" });
     expect(
-      yield* accept(strictA, group, { slot: "tue" }).pipe(Effect.flip),
+      yield* accept(scenario.strictA, group, withheld.operationId, {
+        slot: "tue",
+      }).pipe(Effect.flip),
     ).toMatchObject({ failure: { kind: "request-none" } });
     const outcomes = [
       {
         member: guided.agent,
         outcome: { kind: "answered", content: { slot: "mon" } },
       },
-      { member: strictA.agent, outcome: { kind: "no-answer" } },
-      { member: strictB.agent, outcome: { kind: "no-answer" } },
+      { member: scenario.strictA.agent, outcome: { kind: "no-answer" } },
+      { member: scenario.strictB.agent, outcome: { kind: "no-answer" } },
     ];
     const shown = {
       kind: "collectiveResult",
@@ -411,12 +428,12 @@ function expectAllGatherQuestionWithheld({
     };
     const hidden = {
       ...shown,
-      question: { kind: "withheld", reason: "prohibited" },
+      question: { kind: "withheld", reason: "rule-violation" },
     };
     expect(yield* nextItem(requester)).toEqual(shown);
     expect(yield* nextItem(guided)).toEqual(shown);
-    expect(yield* nextItem(strictA)).toMatchObject(hidden);
-    expect(yield* nextItem(strictB)).toMatchObject(hidden);
+    expect(yield* nextItem(scenario.strictA)).toMatchObject(hidden);
+    expect(yield* nextItem(scenario.strictB)).toMatchObject(hidden);
   });
 }
 
@@ -439,11 +456,17 @@ function answerAllGatherWithPrivateContent({
         operationId: answered.operationId,
       });
     }
-    yield* accept(guided, group, { slot: "mon", note: "[in] private" });
-    yield* accept(strictA, group, { slot: "tue" });
+    yield* accept(guided, group, answered.operationId, {
+      slot: "mon",
+      note: "[in] private",
+    });
+    yield* accept(strictA, group, answered.operationId, { slot: "tue" });
     yield* send(strictB, {
       to: group,
-      collectiveResponse: { action: "decline" },
+      collectiveResponse: {
+        action: "decline",
+        operationId: answered.operationId,
+      },
     });
     return answered.operationId;
   });
@@ -451,7 +474,7 @@ function answerAllGatherWithPrivateContent({
 
 function expectAllGatherAnswerVisibility(
   { requester, guided, strictA, strictB, group }: AllGatherScenario,
-  operationId?: string,
+  operationId: string,
 ) {
   return Effect.gen(function* () {
     const guidedAnswer = {
@@ -463,7 +486,7 @@ function expectAllGatherAnswerVisibility(
     };
     const withheldAnswer = {
       member: guided.agent,
-      outcome: { kind: "withheld", reason: "prohibited" },
+      outcome: { kind: "withheld", reason: "rule-violation" },
     };
     const others = [
       {

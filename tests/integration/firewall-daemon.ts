@@ -4,9 +4,9 @@
  *
  * The daemon runs `Daemon.withFirewall` with one deterministic code policy in
  * the mode `SHARNESS_TEST_FIREWALL_MODE` names, so a trace decides each check
- * by the text it sends: the policy blocks an incoming text that carries
+ * by the text it sends: the policy rejects an incoming text that carries
  * `[in]` and an outgoing text that carries `[out]`, asks the agent to
- * respond to an incoming text that carries `[guide]`, and leaves its norm
+ * respond to an incoming text that carries `[guide]`, and leaves its
  * judgment of a text that carries `[unsure]` unsettled in either direction,
  * beside a settled `none` expectation for an outgoing one.
  * Every other `SHARNESS_*` setting is read as `sharnessd` reads it.
@@ -27,16 +27,15 @@ const INCOMING_HOLD = "[in]";
 const OUTGOING_HOLD = "[out]";
 /** The marker an incoming text carries to draw guidance. */
 const GUIDE = "[guide]";
-/** The marker a text carries for its norm judgment to be left unsettled. */
+/** The marker a text carries for its judgment to be left unsettled. */
 const UNSURE = "[unsure]";
 
 const markers: MessageMiddleware = {
   id: "integration-markers",
-  revision: "markers-v1",
+  revision: "markers-v2",
   rules: [
     {
       id: "marked",
-      kind: "norm",
       guidance: "Respond to the marked message.",
       feedback: { nextAction: "revise", text: "Remove the marked text." },
     },
@@ -56,7 +55,7 @@ const markers: MessageMiddleware = {
               choice: "none",
               probability: 0.33,
             }
-          : { ruleId: "marked", outcome: held ? "block" : "pass" },
+          : { ruleId: "marked", outcome: held ? "violation" : "pass" },
       ],
       expectations: markedExpectations(event),
     });

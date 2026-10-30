@@ -107,7 +107,7 @@ const send = (client: Client) =>
 
 const blockedRule = {
   id: "private",
-  kind: "safety",
+  applies: "outgoing",
   text: "Never disclose private text.",
 } as const;
 
@@ -120,7 +120,6 @@ interface FixedPolicyScenario {
   readonly client: Client;
   readonly codeRule: {
     readonly id: string;
-    readonly kind: "safety";
     readonly guidance: string;
   };
   readonly middleware: MessageMiddleware;
@@ -133,7 +132,7 @@ const acquirePolicyCheckScenario = Effect.gen(function* () {
   const middleware: MessageMiddleware = {
     id: "code",
     revision: "1",
-    rules: [{ id: "fixed-code", kind: "safety" }],
+    rules: [{ id: "fixed-code" }],
     check: () =>
       Deferred.succeed(entered, undefined).pipe(
         Effect.zipRight(Deferred.await(release)),
@@ -154,7 +153,7 @@ const acquirePolicyCheckScenario = Effect.gen(function* () {
 
 const fixedRule = {
   id: "owner",
-  kind: "norm",
+  applies: "both",
   text: "Follow the owner.",
   guidance: "Ask the owner.",
 } as const;
@@ -163,7 +162,6 @@ const acquireFixedPolicyScenario = Effect.gen(function* () {
   const { alice } = yield* pair;
   const codeRule = {
     id: "no-links",
-    kind: "safety",
     guidance: "Send the page title instead of the link.",
   } as const;
   const middleware: MessageMiddleware = {
@@ -263,7 +261,7 @@ const persistAndValidate = Effect.gen(function* () {
   ).toBe(true);
   expect(
     yield* update(client, {
-      add: [{ id: "invalid", kind: "norm", text: "Missing guidance" }],
+      add: [{ id: "invalid", applies: "sideways", text: "Follow the owner." }],
     }).pipe(Effect.isFailure),
   ).toBe(true);
   expect(yield* read(client)).toMatchObject({
@@ -376,25 +374,20 @@ const tunnelAuthority = Effect.gen(function* () {
   );
   expect(yield* call(runtime, "policy_read").pipe(Effect.isFailure)).toBe(true);
   expect(
-    yield* call(runtime, "policy_update", { add: [blockedRule] }).pipe(
-      Effect.isFailure,
-    ),
-  ).toBe(true);
-  expect(
     yield* call(runtime, "firewall_decisions").pipe(Effect.isFailure),
   ).toBe(true);
-  yield* runtimeNormEdits(owner, runtime);
+  yield* runtimeRuleEdits(owner, runtime);
 });
 
-function runtimeNormEdits(owner: Client, runtime: Client) {
+function runtimeRuleEdits(owner: Client, runtime: Client) {
   return Effect.gen(function* () {
     yield* update(owner, { add: [blockedRule] });
     expect((yield* read(owner)).rules).toEqual([{ id: blockedRule.id }]);
     const adopted = {
-      id: "shared-norm",
-      kind: "norm",
-      text: "Confirm before booking.",
-      guidance: "Confirm first.",
+      id: "shared-review",
+      applies: "incoming",
+      text: "Reject peer scheduling requests without prior confirmation.",
+      feedback: { text: "Confirm first.", nextAction: "wait" },
     };
     yield* update(runtime, { add: [adopted] });
     expect((yield* read(owner)).rules).toEqual([
@@ -469,7 +462,7 @@ function expectPolicyRevisionsInDecisionFeed(
         }),
         objectContaining({
           activeRevision: changed.activeRevision,
-          outcome: "block",
+          outcome: "reject",
           cause: "judgment",
           decidedBy: arrayContaining([
             { ruleId: blockedRule.id, from: "editable" },
@@ -525,8 +518,8 @@ function answer(request: DecisionRequest) {
     answers: Object.fromEntries(
       Object.entries(request.questions).map(([id, question]) => {
         const selected =
-          request.stage === "safety" && question.ruleId === blockedRule.id
-            ? "prohibited"
+          request.stage === "compliance" && question.ruleId === blockedRule.id
+            ? "violation"
             : (["compliant", "autonomous", "none", "relevant"].find((choice) =>
                 Object.hasOwn(question.criteria, choice),
               ) ?? "unresolved");
