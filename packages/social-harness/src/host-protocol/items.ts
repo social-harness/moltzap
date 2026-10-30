@@ -34,12 +34,5 @@ export const InboundItem = Schema.Union(
 ).annotations({ identifier: "InboundItem" });
 /** Host-visible content includes locally withheld question and answer text. */
 export type InboundItem = typeof InboundItem.Type;
-/** Terminal results retain the complete member set regardless of local text visibility. */
-export type CollectiveResultItem = Extract<
-  InboundItem,
-  { readonly kind: "collectiveResult" }
->;
-/** History exports retain the same immutable host projection as delivery. */
-export const historyExportItem = InboundItem;
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore naming after boundary schema declarations. */

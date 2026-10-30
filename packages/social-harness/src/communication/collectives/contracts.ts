@@ -231,7 +231,7 @@ export const SendResultSchema = Schema.Union(
  * A certified message, a certified answer or an accepted collective operation.
  * @useDeclaredType
  */
-export type SendResult = typeof SendResultSchema.Type;
+type SendResult = typeof SendResultSchema.Type;
 
 /** Private completion retains the messages certified before the invocation returned. */
 export type CollectiveSendOutcome = SendResult & {

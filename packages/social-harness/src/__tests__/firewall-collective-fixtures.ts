@@ -35,8 +35,6 @@ export const group = Schema.decodeUnknownSync(MessageAddressInput)(
 export const marker = "[hold]";
 /** The question the suites ask. */
 export const question = "Which day works?";
-/** How many captures a check makes before its third attempt holds without inference. */
-export const STALE_CAPTURES = 2;
 /** The form the suites' requests ask for. */
 export const formSchema = {
   type: "object",

@@ -24,8 +24,6 @@ import {
 import { RouterInstanceId } from "../communication/router/api/contract.js";
 import {
   decodeRuntimeValue,
-  DeliveryToken,
-  encodeRuntimeValue,
   EndpointStoreError,
 } from "../communication/store/index.js";
 import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
@@ -38,17 +36,14 @@ import { AgentCard, agentViewOf } from "../identity/cards.js";
 import { Ed25519PublicKey } from "../identity/keys.js";
 import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";
 import {
-  digest,
   identifier,
   issueTestCard,
   makeTestAuthority,
-  testAgentView,
 } from "./agent-card-fixtures.js";
 import {
   buildCertifiedFirstMessage,
   storeCertifiedFirstMessage,
 } from "./certified-history-fixtures.js";
-import { collectiveOperationId } from "./collective-id-fixtures.js";
 import { makeCollectiveOperations } from "./collective-send.js";
 import { pollCursor } from "./router-worker-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
@@ -77,10 +72,6 @@ export const revise: MiddlewareResult = {
   findings: [{ ruleId: rule.id, outcome: "violation" }],
   expectations: [],
 };
-/** An unresolved check tells the runtime to wait. */
-export const waitAction = "wait";
-/** The textual error projection retains the next action. */
-export const renderedWaitAction = `Next action: ${waitAction}.`;
 /** Budgets leave room for real storage and scheduling on loaded test hosts. */
 export const settings = {
   timeoutMilliseconds: 10_000,
@@ -365,50 +356,6 @@ export function addConversation(subject: Fixture, authoredLocally = false) {
   }).pipe(Effect.withSpan("addConversation"));
 }
 
-/**
- * Delayed local admissions change the captured conversation on every check.
- * The writer owns its prequeued items; the admission worker sees only the
- * subject under test. Queueing before certification keeps the new evidence
- * inside incoming windows as well as outgoing windows.
- */
-export const churnPolicy = Effect.fn("churnPolicy")(function* (
-  subject: Fixture,
-  conversation?: string,
-) {
-  const target = conversation ?? "agent:bob";
-  const items = yield* delayedEvidence(subject, target);
-  const tokens = new Set(items.map((item) => item.deliveryToken));
-  let calls = 0;
-  return {
-    subject: {
-      ...subject,
-      store: {
-        ...subject.store,
-        readFirewallFrontiers: () =>
-          subject.store
-            .readFirewallFrontiers()
-            .pipe(
-              Effect.map((entries) =>
-                entries.filter((entry) => !tokens.has(entry.deliveryToken)),
-              ),
-            ),
-      },
-    },
-    count: () => calls,
-    middleware: policy(() =>
-      Effect.gen(function* () {
-        const item = items[calls];
-        calls += 1;
-        if (item === undefined) {
-          return yield* Effect.dieMessage("unexpected extra check");
-        }
-        yield* admitDelayedEvidence(subject, item, target);
-        return pass;
-      }).pipe(Effect.orDie, Effect.withSpan("churnPolicy")),
-    ),
-  };
-});
-
 /** A complete registered norm delegates only its assessment to the test. */
 export function policy(check: MessageMiddleware["check"]): MessageMiddleware {
   return { id: "communication", revision: "test-v1", rules: [rule], check };
@@ -427,82 +374,6 @@ export function seedIncoming(subject: Fixture, authoredLocally = false) {
     yield* storeCertifiedFirstMessage(store, local.card, membership, record);
     return record;
   }).pipe(Effect.withSpan("seedIncoming"));
-}
-
-/** Resolve a member through the engine before a test accepts collective work. */
-export function resolvedMemberView(
-  engine: Effect.Effect.Success<ReturnType<typeof makeEndpointEngine>>,
-  member: typeof AgentAddress.Type,
-) {
-  return engine.resolveConversation(member).pipe(
-    Effect.flatMap((conversation) => {
-      const card = conversation.memberCards.find(
-        (candidate) => `agent:${candidate.agentName}` === member,
-      );
-      return card === undefined
-        ? Effect.dieMessage("resolved conversation lacks its requested member")
-        : Effect.succeed(agentViewOf(card));
-    }),
-  );
-}
-
-function delayedEvidence(subject: Fixture, conversation: string) {
-  return Effect.forEach(
-    [1, 2, 3, 4],
-    (index) =>
-      Effect.gen(function* () {
-        const item = {
-          deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(
-            digest("dlv_", 120 + index),
-          ),
-          canonicalItem: yield* encodeRuntimeValue({
-            kind: "operationFailed",
-            operationId: collectiveOperationId(
-              testAgentView("agent:alice").agentId,
-              index,
-            ),
-            to: conversation,
-            error: "Prior local result",
-          }),
-        };
-        yield* subject.store.queueFirewallItem({
-          ...item,
-          conversation: "fixture:delayed-evidence",
-        });
-        return item;
-      }),
-    { concurrency: 1 },
-  );
-}
-
-function admitDelayedEvidence(
-  subject: Fixture,
-  item: {
-    readonly deliveryToken: DeliveryToken;
-    readonly canonicalItem: Uint8Array;
-  },
-  conversation: string,
-) {
-  return Effect.gen(function* () {
-    yield* subject.store.admitFirewallLocalItem({
-      queuedItem: item.canonicalItem,
-      item,
-      completions: [],
-      answers: [],
-      evidence: {
-        conversation,
-        canonicalEntry: yield* encodeRuntimeValue({
-          id: item.deliveryToken,
-          sender: subject.local.card.agentId,
-          recipients: [subject.remote.card.agentId],
-          text: "Prior local result",
-          visibility: "runtime",
-          admission: "admitted",
-        }),
-      },
-    });
-    yield* subject.store.acknowledgeInboxItem(item.deliveryToken);
-  });
 }
 
 function pendingMessages(store: DaemonStore) {

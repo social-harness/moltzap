@@ -2,8 +2,6 @@
 
 // safer-arch-ignore no-inventory-barrel: Admission exposes installation, the shared environment, retained check decoding and the incoming worker as the ports policy and delivery consume.
 
-/** Outgoing checks consume captured data without communication capabilities. */
-export { checkOutgoing, type OutgoingCandidate } from "./firewall.js";
 /** Checking and delivery share the installed firewall and its execution environment. */
 export { type FirewallEnvironment } from "./firewall-checks.js";
 /** The decisions feed decodes retained checks independently of private storage. */

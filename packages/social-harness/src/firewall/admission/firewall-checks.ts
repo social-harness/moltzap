@@ -337,32 +337,6 @@ export function requestText(
 }
 
 /**
- * The canonical address of a conversation from the local agent's side: the
- * other member's `agent:` address for a direct conversation, the complete
- * `group:` address otherwise. Local evidence is kept under it.
- * @param cards The conversation's members' cards.
- * @param localAgentId The local agent, whose side the address is from.
- * @returns The address hosts and local evidence name the conversation by.
- */
-export function conversationAddress(
-  cards: readonly AgentCard[],
-  localAgentId: string,
-): Effect.Effect<MessageAddressInput, EndpointStoreError> {
-  if (cards.length === 2) {
-    const other = cards.find((card) => card.agentId !== localAgentId);
-    return other === undefined
-      ? Effect.fail(new EndpointStoreError({ reason: "corrupt" }))
-      : Effect.succeed(agentAddressOf(other));
-  }
-  return renderGroupAddress(cards.map((card) => card.agentName)).pipe(
-    Effect.map(({ address }): MessageAddressInput => address),
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
-    ),
-  );
-}
-
-/**
  * Validate a checked message, failing as corrupt when Client's own
  * projection does not decode.
  * @param value The message's fields.
@@ -738,4 +712,30 @@ function unavailable(
     guidance: [],
     checks: [],
   };
+}
+
+/**
+ * The canonical address of a conversation from the local agent's side: the
+ * other member's `agent:` address for a direct conversation, the complete
+ * `group:` address otherwise. Local evidence is kept under it.
+ * @param cards The conversation's members' cards.
+ * @param localAgentId The local agent, whose side the address is from.
+ * @returns The address hosts and local evidence name the conversation by.
+ */
+function conversationAddress(
+  cards: readonly AgentCard[],
+  localAgentId: string,
+): Effect.Effect<MessageAddressInput, EndpointStoreError> {
+  if (cards.length === 2) {
+    const other = cards.find((card) => card.agentId !== localAgentId);
+    return other === undefined
+      ? Effect.fail(new EndpointStoreError({ reason: "corrupt" }))
+      : Effect.succeed(agentAddressOf(other));
+  }
+  return renderGroupAddress(cards.map((card) => card.agentName)).pipe(
+    Effect.map(({ address }): MessageAddressInput => address),
+    Effect.catchTag("ParseError", () =>
+      Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
+    ),
+  );
 }

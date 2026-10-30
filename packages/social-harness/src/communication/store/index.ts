@@ -20,7 +20,6 @@ export type {
   IdentityBinding,
   InboundDeliveryInput,
   MessageIntent,
-  MessageIntentBinding,
   OutboundMessageInput,
   ProposalLock,
   ProtocolEvidence,

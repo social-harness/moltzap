@@ -20,13 +20,9 @@ import {
 /** Captured inputs and retained decisions remain independent of protocol acceptance. */
 export type {
   FirewallActivation,
-  FirewallAttempt,
   FirewallAuditEntry,
-  FirewallCommit,
   FirewallCompletion,
   FirewallEvidence,
-  FirewallEvidenceRange,
-  FirewallEvidenceSlice,
   FirewallEvidenceSlices,
   FirewallHistoryEntry,
   FirewallInboxEntry,

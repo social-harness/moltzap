@@ -173,18 +173,6 @@ export function readInboxItem(
       };
 }
 
-/** Receipt retirement and callback progress commit together across crashes. */
-export function completeWebhookDelivery(
-  database: DatabaseSync,
-  deliveryToken: DeliveryToken,
-  canonicalState: Uint8Array,
-): void {
-  transaction(database, () => {
-    retireItem(database, deliveryToken);
-    writeEventState(database, canonicalState);
-  });
-}
-
 /**
  * Bind a delivery token to exactly one classified payload, including after ack.
  * @param database Exclusively owned endpoint database.
@@ -225,16 +213,46 @@ export function putInboxItem(
   return "inserted";
 }
 
+/** Acknowledgment preserves the immutable host binding and retires its raw delivery. */
+export function retireItem(
+  database: DatabaseSync,
+  deliveryToken: DeliveryToken,
+): void {
+  const retained = database
+    .prepare(
+      "SELECT delivery_token FROM runtime_inbox WHERE delivery_token = ?",
+    )
+    .get(deliveryToken);
+  if (retained === undefined) {
+    throw new StoreSignal("not-found");
+  }
+  database
+    .prepare(
+      "UPDATE runtime_inbox SET acknowledged = 1 WHERE delivery_token = ?",
+    )
+    .run(deliveryToken);
+  retirePendingDelivery(database, deliveryToken);
+}
+
+/** Receipt retirement and callback progress commit together across crashes. */
+function completeWebhookDelivery(
+  database: DatabaseSync,
+  deliveryToken: DeliveryToken,
+  canonicalState: Uint8Array,
+): void {
+  transaction(database, () => {
+    retireItem(database, deliveryToken);
+    writeEventState(database, canonicalState);
+  });
+}
+
 /**
  * Read an inbox page without allowing concurrent arrivals to extend its snapshot.
  * @param database Exclusively owned endpoint database.
  * @param input Sequence bounds and maximum item count.
  * @returns Pending items and an optional next position within the same snapshot.
  */
-export function readInbox(
-  database: DatabaseSync,
-  input: InboxBounds = {},
-): InboxPage {
+function readInbox(database: DatabaseSync, input: InboxBounds = {}): InboxPage {
   const after = requireSequence(input.after ?? 0);
   const through = requireSequence(input.through ?? newestSequence(database));
   const limit = pageLimit(input, after, through);
@@ -259,7 +277,7 @@ export function readInbox(
  * @param database Exclusively owned endpoint database.
  * @returns Current unread count and monotonic insertion position.
  */
-export function readInboxSummary(database: DatabaseSync): InboxSummary {
+function readInboxSummary(database: DatabaseSync): InboxSummary {
   const row = database
     .prepare(
       "SELECT COUNT(*) AS pending FROM runtime_inbox WHERE acknowledged = 0",
@@ -279,7 +297,7 @@ export function readInboxSummary(database: DatabaseSync): InboxSummary {
  * @param database Exclusively owned endpoint database.
  * @param deliveryToken Stable delivered identity, including an existing tombstone.
  */
-export function acknowledgeInboxItem(
+function acknowledgeInboxItem(
   database: DatabaseSync,
   deliveryToken: DeliveryToken,
 ): void {
@@ -293,7 +311,7 @@ export function acknowledgeInboxItem(
  * @param database Exclusively owned endpoint database.
  * @returns Persisted registration and callback delivery state, when present.
  */
-export function readEventState(database: DatabaseSync): Uint8Array | undefined {
+function readEventState(database: DatabaseSync): Uint8Array | undefined {
   const row = database
     .prepare("SELECT canonical_state FROM runtime_events WHERE singleton = 1")
     .get();
@@ -305,7 +323,7 @@ export function readEventState(database: DatabaseSync): Uint8Array | undefined {
  * @param database Exclusively owned endpoint database.
  * @param canonicalState Runtime-validated registration and delivery state.
  */
-export function writeEventState(
+function writeEventState(
   database: DatabaseSync,
   canonicalState: Uint8Array,
 ): void {
@@ -315,27 +333,6 @@ export function writeEventState(
       "INSERT INTO runtime_events (singleton, canonical_state) VALUES (1, ?) ON CONFLICT(singleton) DO UPDATE SET canonical_state = excluded.canonical_state",
     )
     .run(canonicalState);
-}
-
-/** Acknowledgment preserves the immutable host binding and retires its raw delivery. */
-export function retireItem(
-  database: DatabaseSync,
-  deliveryToken: DeliveryToken,
-): void {
-  const retained = database
-    .prepare(
-      "SELECT delivery_token FROM runtime_inbox WHERE delivery_token = ?",
-    )
-    .get(deliveryToken);
-  if (retained === undefined) {
-    throw new StoreSignal("not-found");
-  }
-  database
-    .prepare(
-      "UPDATE runtime_inbox SET acknowledged = 1 WHERE delivery_token = ?",
-    )
-    .run(deliveryToken);
-  retirePendingDelivery(database, deliveryToken);
 }
 
 function requireSequence(value: number): number {

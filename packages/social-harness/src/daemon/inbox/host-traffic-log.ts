@@ -8,7 +8,7 @@ import {
 } from "../../communication/collectives/contracts.js";
 import { MsgId } from "../../communication/records/values.js";
 import { exactStruct } from "../../encoding/exact.js";
-import { historyExportItem } from "../../host-protocol/items.js";
+import { InboundItem } from "../../host-protocol/items.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
 
@@ -35,7 +35,7 @@ const historyExportSendOutcome = Schema.Union(
 export const HistoryExportRecord = Schema.Union(
   exactStruct({
     kind: Schema.Literal("inbound"),
-    item: historyExportItem,
+    item: InboundItem,
     at: Schema.DateTimeUtc,
   }),
   exactStruct({

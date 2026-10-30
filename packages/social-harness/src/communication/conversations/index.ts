@@ -73,7 +73,7 @@ export type { EngineSendInput, EngineSentMessage } from "./send.js";
 /** How a caller holds a protocol claim across durable binding. */
 export { type BindHold, preparedSendData } from "./send.js";
 /** Canonical message preparation and resolved conversation attribution. */
-export type { PreparedSend, ResolvedConversation } from "./send.js";
+export type { PreparedSend } from "./send.js";
 /** The marker spans that bracket daemon work in flight, shared with the layers above. */
 export {
   exitOutcome,

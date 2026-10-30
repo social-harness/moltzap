@@ -350,10 +350,7 @@ const routerHttpErrorEnvelope = (
   isRouterHttpErrorTag(tag) ? routerHttpErrors[tag] : undefined;
 
 /** Whether text is the JCS encoding of encoded. */
-export const isCanonicalRouterJson = (
-  text: string,
-  encoded: unknown,
-): boolean => {
+const isCanonicalRouterJson = (text: string, encoded: unknown): boolean => {
   const canonical = canonicalize(encoded);
   return canonical !== undefined && text === canonical;
 };
