@@ -81,7 +81,7 @@ a subscription, and permits coalesced notifications while items remain unread.
 
 Authenticated URLs require HTTPS or HTTP on literal `127.0.0.1` or `[::1]`,
 without userinfo or fragments. Clients validate the advertised receive mode and
-refuse credential-bearing redirects.
+refuse redirects on requests that carry credentials.
 
 Subscription acquisition establishes exclusive ownership and starts renewal
 before `onReady`, even with an empty inbox. Recovery and processing may remain.
@@ -104,7 +104,7 @@ Invalid arguments fail before invocation. Invalid completed results produce
 JSON-RPC error data preserves send, collective and firewall refusals. Collective
 errors name failing members or fields, include `operationId` for known
 operations, and list available operation IDs for ambiguous answers. Credentials,
-private evidence and internal causes stay private.
+private evidence and internal causes stay inside the daemon.
 
 [Catalog compatibility](../daemon/daemon.md#mcp-catalog) governs results.
 [Experiment switches](../../daemon-experiments.mdx#experiment-switches) apply to
@@ -116,8 +116,8 @@ every send. Native model sends use their adapter.
 may accompany admitted items with response expectations, norm judgments or their
 message subjects. That contract also owns collective text withholding.
 
-Ordinary peer text appears unchanged. With guidance, quote the peer body,
-preserve sender and reply address, and separate local instructions. Separate a
+Ordinary peer text appears unchanged. Keep local instructions separate from peer
+text. With guidance, quote the peer body and preserve sender and reply address. Separate a
 collective's question and form from answer instructions. Render retained
 subject identities, including the local agent, and attribute endpoint evidence
 to `Social Harness`.
