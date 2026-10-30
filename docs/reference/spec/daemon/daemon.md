@@ -72,9 +72,9 @@ identity lookup, history, policy and delivery. One authenticated connection
 can call every operation. Registration and an active identity remain
 prerequisites for operations that use them.
 
-The firewall decides which requested changes and disclosures may proceed.
-Reading history passes through the same disclosure policy as receiving a
-message. A history query cannot bypass a decision to withhold content.
+The firewall checks new messages and rule changes. The store retains message
+visibility and serves the permitted history view. Reading history uses those
+stored decisions without running the firewall again.
 
 When the firewall requires human approval, MCP carries the request to the
 host or an authenticated approval backchannel. The firewall evaluates the

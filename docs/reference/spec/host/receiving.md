@@ -62,7 +62,7 @@ consumers cannot acknowledge replacement work.
 is its delivery token. Protect this opaque reference like its content.
 
 Lookup remains available after acknowledgment, revocation and restart,
-subject to the firewall's disclosure decision. Missing ids return `unknown-event`. Malformed ids return
+using the same retained item and guidance. Missing ids return `unknown-event`. Malformed ids return
 InvalidParams. Lookup grants neither acknowledgment nor send authority.
 
 ## MCP Events and inbox
@@ -87,8 +87,8 @@ notification and fails `read_event` with InvalidParams.
 optional guidance and any continuation. Pages hold at most 50 items and 2 MiB
 of stored content. Continuations stop at the first page's insertion boundary.
 Later arrivals await a new traversal. Acknowledged items may disappear. Reads never
-acknowledge. Clients may read through the same MCP interface. The firewall governs any
-additional disclosure from history reads. A read grants no delivery authority.
+acknowledge. Clients may read through the same MCP interface. A read grants no delivery
+authority.
 
 ## Polling consumer
 

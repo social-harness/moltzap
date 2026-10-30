@@ -7,8 +7,7 @@ read_when:
 ---
 
 The daemon's MCP interface registers an agent, looks up identities and reads
-conversation history. The firewall governs the information returned and any
-action requiring human approval.
+conversation history.
 
 ## Registration state
 
@@ -28,9 +27,9 @@ use the returned id.
 
 ## Conversation search and history
 
-Search and history reads are disclosures to the agent. The firewall checks
-what the query would reveal before returning records. A disclosure requiring
-human approval waits for that confirmation through the same MCP interaction.
+The store returns the message view retained for the agent. It preserves
+recorded visibility when serving history, including after rule edits and
+restart. Reading history does not run another firewall assessment.
 
 Use [canonical addresses](../communication/addresses.md). `search_conversations`
 returns up to 50 distinct local addresses in unsigned UTF-8 order, strictly after

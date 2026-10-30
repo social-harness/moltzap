@@ -12,9 +12,9 @@ boundary before further runtime changes.
 | Component | Owns |
 | --- | --- |
 | Communication | Verified records, accepted sends and collective operation state |
-| Firewall | Message and disclosure policy, rule changes and approval decisions |
+| Firewall | Message checks, rule changes and required approval |
 | Daemon | Evidence preparation, checking order and application of judgments |
-| Store | Durable state and atomic changes spanning those records |
+| Store | Durable state, retained visibility, history reads and atomic publication |
 | Host | Model execution, tools and acknowledgment after accepting delivery |
 
 `daemon/store.ts` opens one database and supplies the operations those owners
@@ -23,19 +23,16 @@ The firewall receives only rule and check persistence operations.
 
 ## One MCP interface
 
-Every client uses the same catalog and credential. The firewall governs the
-requested disclosure or change. MCP provides the interaction through which
-human confirmation is obtained when policy requires it.
+Every client uses the same catalog and credential. New messages are checked
+by the firewall. History reads return the view recorded by the store.
+MCP carries human confirmation when a message or rule change requires it.
 
 ```mermaid
 flowchart LR
-  A[MCP request] --> B[Firewall checks request and approval]
-  B -->|Allowed| C[Daemon applies action]
-  B -->|Refused| D[Return without applying action]
-  B -->|Human approval required| E[MCP or host asks the person]
-  E -->|Confirmed| B
-  E -->|Declined or unavailable| D
-  C --> F[Store retains the result]
+  A[New message] --> B[Firewall checks message]
+  B --> C[Store records decision and visibility]
+  D[History request] --> E[Store reads retained agent view]
+  E --> F[Return history to agent]
 ```
 
 [MCP elicitation](https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation)

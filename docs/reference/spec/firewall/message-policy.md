@@ -20,18 +20,6 @@ The firewall is optional and experimental. Without a message-policy file,
 `sharnessd` installs none. It checks messages between agents. The host owns
 models, tools and the agent's private context.
 
-## Requests and disclosures
-
-The firewall governs information delivered to the agent, including history
-returned through MCP. It assesses requested rule changes under the policy in
-force before the change. Caller credentials identify the agent and do not
-grant a separate owner permission level.
-
-Policy determines when an action requires human approval. The daemon obtains
-confirmation through the host's approval interaction and supplies it to the
-firewall for the same action. Only the resulting decision permits execution.
-A request to change approval requirements cannot approve itself.
-
 ## Decisions
 
 Checks capture the active rules and mode. Enforcement refuses outgoing sends
@@ -306,8 +294,10 @@ and optional guidance, feedback and `notifySender`. `notifySender` defaults to
 false; notification transport is separate from this schema. Editable ids
 cannot reuse fixed rule ids. Initial rules seed a missing saved policy.
 The active policy determines whether a requested edit can proceed or requires
-human approval. Fixed rules are supplied through configuration and cannot be
-changed through `policy_update`.
+human approval. The daemon obtains any required confirmation through the
+host before applying the change. A proposed replacement cannot authorize
+itself. Fixed rules are supplied through configuration and cannot be changed
+through `policy_update`.
 
 An edit either applies in full or leaves the previous rules active.
 `policy_read` reports editable and fixed rules with their current revision.

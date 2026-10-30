@@ -2,8 +2,7 @@
 
 The firewall checks incoming messages and outgoing drafts against configured
 rules. It returns a judgment and registered advice, and manages authorized
-changes to editable rules. It also governs disclosures returned by history
-operations and decides when an action requires human approval.
+changes to editable rules. Policy determines when human approval is required.
 
 This is an interface draft for review. The declarations below propose the next
 boundary. Runtime code remains unchanged by this draft.
@@ -118,14 +117,9 @@ an unavailable check. `CheckedMessage` contains the judgment, permitted
 guidance and a completion record. The caller saves that completion with the
 message's delivery outcome. These are values, rather than live check handles.
 
-The MCP interface authenticates one agent. Policy governs changes and
-protected disclosures. Human confirmation is evidence for the firewall's
-decision about that action. Fixed rules remain supplied by configuration.
-
-The next interface decision is how `CheckInput` represents a history
-disclosure or rule change alongside message checks. These inputs must name
-the information or effect being considered and any verified confirmation.
-The current message-only input is insufficient for this wider responsibility.
+The MCP interface authenticates one agent. A rule change is checked under the
+current policy. Required human confirmation is obtained before the change is
+saved. Fixed rules remain supplied by configuration.
 
 ## Storage required by the firewall
 
