@@ -4,7 +4,6 @@
  */
 
 import * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../store/index.js";
 import { Data, Deferred, Duration, Effect, Schema, type Scope } from "effect";
 import type {
   RouterDiscontinuityReason,
@@ -36,6 +35,7 @@ import {
   type MsgId,
   RecordHash,
 } from "../records/index.js";
+import * as Store from "../store/index.js";
 import { type RecipientResolutionError, resolutionFailure } from "./address.js";
 import {
   acceptEngineIngress,

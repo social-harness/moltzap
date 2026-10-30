@@ -4,10 +4,8 @@
  */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../../store/index.js";
-import { absurd, Deferred, Effect } from "effect";
+import { absurd, Effect } from "effect";
 import type { SignedMessage } from "../../../identity/envelope/signed-message.js";
-import type { SendError } from "../errors.js";
 import {
   ClientRepresentationError,
   decodeCanonical,
@@ -45,6 +43,7 @@ import {
   type RouterWorkerIngress,
   RouterWorkerPersistenceError,
 } from "../../router/index.js";
+import * as Store from "../../store/index.js";
 import {
   type ConversationFoundation,
   type EndpointStoreError,
@@ -54,7 +53,6 @@ import {
 import {
   type EngineActionFold,
   type EngineConversation,
-  type EngineMessageIntent,
   type EngineRuntime,
   evidenceMatchesFold,
   type EvidenceRoute,
@@ -70,6 +68,7 @@ import {
   stagedRecord,
   storedCertifiedRecord,
 } from "../history/index.js";
+import { completePromotion, rebasePendingIntents } from "./head.js";
 
 /** Dissemination resume, bound as the `resumeDissemination` engine phase. */
 export { resumeDisseminationObligations } from "./dissemination.js";
@@ -483,104 +482,6 @@ const localDurabilityEvidence = (
       }).pipe(Effect.mapError(localRepresentationFailure)));
     yield* completeLocalEvidence(runtime, fold, "durability", evidence);
   });
-
-const applyPromotionState = (
-  runtime: EngineRuntime,
-  fold: EngineActionFold,
-  record: CertifiedRecord,
-) =>
-  Effect.sync(() => {
-    fold.certified = true;
-    fold.conversation.head = {
-      recordHash: record.actionCertifiedRecord.recordHash,
-      record,
-    };
-    if (
-      fold.action.messageIntent.authorAgentId !==
-      runtime.input.localAgentCard.agentId
-    ) {
-      return undefined;
-    }
-    runtime.completedMessages.set(
-      fold.action.messageIntent.msgId,
-      record.actionCertifiedRecord.recordHash,
-    );
-    return runtime.intents.get(fold.action.messageIntent.msgId);
-  });
-
-function completePromotion(
-  runtime: EngineRuntime,
-  fold: EngineActionFold,
-  record: CertifiedRecord,
-): Effect.Effect<void, never, SqlClient.SqlClient> {
-  return applyPromotionState(runtime, fold, record).pipe(
-    Effect.flatMap((intent) =>
-      intent === undefined
-        ? Effect.void
-        : Deferred.succeed(
-            intent.completion,
-            record.actionCertifiedRecord.recordHash,
-          ).pipe(Effect.asVoid),
-    ),
-  );
-}
-
-type ReproposalDisposition = "fail" | "ignore";
-
-const reproposalDispositionByReason = {
-  "outcome-unknown": "fail",
-  "certification-unavailable": "ignore",
-  "content-invalid": "fail",
-  "invalid-address": "fail",
-  "membership-invalid": "fail",
-  "network-unavailable": "ignore",
-  "delivery-pending": "ignore",
-  "not-registered": "fail",
-  "persistence-failed": "fail",
-  "unknown-agent": "fail",
-  "version-mismatch": "fail",
-} as const satisfies Readonly<
-  Record<SendError["reason"], ReproposalDisposition>
->;
-
-const reproposePendingIntent = (
-  runtime: EngineRuntime,
-  pending: EngineMessageIntent,
-): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> =>
-  runtime.phases.proposeIntent(runtime, pending).pipe(
-    Effect.asVoid,
-    Effect.catchTag("SendError", (error) =>
-      reproposalDispositionByReason[error.reason] === "ignore"
-        ? Effect.void
-        : Effect.fail(persistenceFailure()),
-    ),
-  );
-
-/**
- * Propose a conversation's uncertified messages again at its new head. A
- * conversation still recovering proposes nothing here: its endpoint ignores
- * the Router's echo of a proposal while fenced, so the proposal would be
- * signed by members but never by its author, and its recovery proposes the
- * messages at the head it settles on.
- * @param runtime Engine whose pending messages are rebased.
- * @param conversationId Conversation whose head moved.
- * @returns Completion once each pending message is proposed again.
- */
-const rebasePendingIntents = (
-  runtime: EngineRuntime,
-  conversationId: EngineConversation["conversationId"],
-): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> =>
-  runtime.phases.isRecovering(runtime, conversationId)
-    ? Effect.void
-    : Effect.forEach(
-        runtime.intents.values(),
-        (pending) =>
-          pending.intent.conversationId === conversationId &&
-          !runtime.completedMessages.has(pending.intent.msgId)
-            ? reproposePendingIntent(runtime, pending)
-            : Effect.void,
-        { concurrency: 1, discard: true },
-      );
 
 /**
  * The store rows of a fold's complete certified record: the record with the
@@ -1064,6 +965,21 @@ const acceptActionCertifiedRecord = (
     return "accepted";
   });
 
+function retainCertifiedFold(
+  runtime: EngineRuntime,
+  fold: EngineActionFold,
+  record: ActionCertifiedRecord,
+  votes: readonly SignedMessage[],
+) {
+  return Effect.sync(() => {
+    fold.recordHash = record.recordHash;
+    runtime.recordFolds.set(record.recordHash, fold);
+    for (const vote of votes) {
+      fold.durabilityEvidence.set(vote.senderAgentId, vote);
+    }
+  });
+}
+
 /**
  * Accept a record that arrives whole, with its durability certificate. The
  * store stages, certifies and promotes it in one transaction, and the fold
@@ -1112,13 +1028,7 @@ const acceptCertifiedRecord = (
     yield* Effect.uninterruptible(
       Store.applyCertifiedRecord(stored, delivery).pipe(
         Effect.zipRight(
-          Effect.sync(() => {
-            fold.recordHash = actionRecord.recordHash;
-            runtime.recordFolds.set(actionRecord.recordHash, fold);
-            for (const vote of votes) {
-              fold.durabilityEvidence.set(vote.senderAgentId, vote);
-            }
-          }),
+          retainCertifiedFold(runtime, fold, actionRecord, votes),
         ),
         Effect.zipRight(completePromotion(runtime, fold, record)),
       ),

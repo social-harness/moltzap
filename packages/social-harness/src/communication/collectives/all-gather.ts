@@ -1,7 +1,6 @@
 /** @file Shared group results wait for one certified close and its exact answer records. */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../store/index.js";
 import { Effect, Exit, Option, Schema } from "effect";
 import type { InboundMessage } from "../conversations/message.js";
 import type { CollectiveResultItem } from "./inbound.js";
@@ -11,6 +10,7 @@ import type { CollectiveState, GatherRequest, OpenGather } from "./state.js";
 import { SendError } from "../conversations/errors.js";
 import { MsgId } from "../records/index.js";
 import { agentAddressOf } from "../records/values.js";
+import * as Store from "../store/index.js";
 import {
   encodeRuntimeValue,
   type StoredCollectiveMessage,

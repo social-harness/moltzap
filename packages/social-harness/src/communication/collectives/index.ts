@@ -1,7 +1,6 @@
 /** @file Runs collective sends and classifies certified messages for one active identity. */
 
 import * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../store/index.js";
 import {
   Clock,
   Effect,
@@ -30,6 +29,7 @@ import { SendError } from "../conversations/errors.js";
 import { preparedSendData, resolutionFailure } from "../conversations/index.js";
 import { InboundMessage } from "../conversations/message.js";
 import { agentAddressOf } from "../records/values.js";
+import * as Store from "../store/index.js";
 import { encodeRuntimeValue, EndpointStoreError } from "../store/index.js";
 import { applyClose, receiveClose, recordPeerAnswer } from "./all-gather.js";
 import {
@@ -293,18 +293,14 @@ function prepareGather(
       addresses,
       content,
     });
-    const ordered = yield* preparedMembers(state, requests, addresses);
-    const [head, ...tail] = ordered;
-    if (head === undefined) {
-      return yield* contentInvalid();
-    }
+    const members = yield* preparedMembers(state, requests, addresses);
     return yield* retainPreparedGather(
       operationId,
       {
         op,
         to,
         question,
-        members: [head, ...tail] as const,
+        members,
         requestedSchema,
         content,
         ...times,
@@ -442,7 +438,7 @@ function preparedMembers(
         (member) => agentAddressOf(member) === address,
       ),
     );
-  });
+  }).pipe(Effect.filterOrFail(EffectArray.isNonEmptyArray, contentInvalid));
 }
 
 /**

@@ -1,7 +1,6 @@
 /** @file Queues signed conversation messages and sends them through the Router across retries. */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../store/index.js";
 import { Effect, Queue, Schedule } from "effect";
 import type { DisseminationObligation } from "../store/index.js";
 import type {
@@ -28,6 +27,7 @@ import {
   routerWorkerReconnectSchedule,
   type RouterWorkerSendError,
 } from "../router/index.js";
+import * as Store from "../store/index.js";
 import { exitOutcome, markRetries } from "./retry-markers.js";
 
 /**

@@ -2,6 +2,7 @@
 
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
+import { SqlClient } from "@effect/sql";
 import { scopedLive as it, scoped as itOnTestClock } from "@effect/vitest";
 import {
   Chunk,
@@ -22,6 +23,10 @@ import {
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, vi } from "vitest";
 import type { RegistryLookupResult } from "../../../identity/registry/contract.js";
+import type {
+  EndpointRecovery,
+  StoredOutboundMessage,
+} from "../../store/index.js";
 import type { AddressRegistryPort } from "../address.js";
 import type { EngineRuntime } from "../engine-context.js";
 import {
@@ -36,18 +41,17 @@ import {
   signEvidence,
   type SigningIdentity,
 } from "../../../__tests__/certified-history-fixtures.js";
+import {
+  openTestDatabase,
+  type TestDatabase,
+} from "../../../__tests__/communication-test-database.js";
 import { forwardStoredOutbound } from "../../../__tests__/forward-stored-outbound.js";
 import { openOuterBody } from "../../../__tests__/outer-body-fixtures.js";
 import {
   corruptSignature,
   pollCursor as fixturePollCursor,
 } from "../../../__tests__/router-worker-fixtures.js";
-import {
-  type TestDatabase,
-  openTestDatabase,
-} from "../../../__tests__/communication-test-database.js";
 import { testStore } from "../../../__tests__/store-schema-fixtures.js";
-import { SqlClient } from "@effect/sql";
 import {
   decodeCanonical,
   encodeCanonical,
@@ -107,10 +111,6 @@ import {
   RouterWorkerDiscontinuityError,
   type RouterWorkerIngress,
 } from "../../router/index.js";
-import {
-  type EndpointRecovery,
-  type StoredOutboundMessage,
-} from "../../store/index.js";
 import { acceptEngineRecoveryIngress } from "../certification/index.js";
 import {
   type EndpointEngine,

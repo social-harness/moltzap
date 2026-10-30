@@ -1,7 +1,6 @@
 /** @file Recovers conversation history and ordering when starting or replacing the Router message feed. */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../../store/index.js";
 import {
   Duration,
   Effect,
@@ -38,6 +37,7 @@ import {
   type RouterWorkerRecovery,
   RouterWorkerRecoveryError,
 } from "../../router/index.js";
+import * as Store from "../../store/index.js";
 import { type EngineRuntime, evidenceTarget } from "../engine-context.js";
 import {
   durableRouterInstanceId,

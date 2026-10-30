@@ -5,7 +5,6 @@
  * recovery asks of it.
  */
 
-import * as Store from "../../store/index.js";
 import { Effect, type ParseResult, Schema } from "effect";
 import type { VerifiedAgentCard } from "../../../identity/cards.js";
 import type { Ed25519PublicKey } from "../../../identity/keys.js";
@@ -45,6 +44,7 @@ import {
   RouterWorkerPersistenceError,
   RouterWorkerRecoveryError,
 } from "../../router/index.js";
+import * as Store from "../../store/index.js";
 import {
   type EndpointRecovery,
   OutboxTooOldError,

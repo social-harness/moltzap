@@ -5,7 +5,6 @@
  */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../../store/index.js";
 import { Effect, Schema } from "effect";
 import type { SignedMessage as SignedMessageValue } from "../../../identity/envelope/signed-message.js";
 import type { EngineRuntime } from "../engine-context.js";
@@ -40,6 +39,7 @@ import {
   RouterWorkerPersistenceError,
   type RouterWorkerRecovery,
 } from "../../router/index.js";
+import * as Store from "../../store/index.js";
 import {
   type EndpointRecovery,
   isSemanticStoreRejection,

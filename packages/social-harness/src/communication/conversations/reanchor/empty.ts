@@ -1,7 +1,6 @@
 /** @file Empty-conversation foundation replacement after a Router restart. */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../../store/index.js";
 import { Effect } from "effect";
 import type {
   ConversationFoundation,
@@ -22,6 +21,7 @@ import {
   type VerifiedMembership,
 } from "../../records/index.js";
 import { RouterWorkerPersistenceError } from "../../router/index.js";
+import * as Store from "../../store/index.js";
 
 interface EmptyPositionRestartInput {
   readonly runtime: EngineRuntime;

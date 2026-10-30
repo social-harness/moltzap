@@ -2,6 +2,7 @@
 
 import { FileSystem } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
+import { SqlClient } from "@effect/sql";
 import { scopedLive as it, scoped as itOnTestClock } from "@effect/vitest";
 import {
   Cause,
@@ -29,15 +30,14 @@ import {
   makeTestAuthority,
   type RegistryKeyPair,
 } from "../../../__tests__/agent-card-fixtures.js";
+import {
+  openTestDatabase,
+  type TestDatabase,
+} from "../../../__tests__/communication-test-database.js";
 import { forwardStoredOutbound } from "../../../__tests__/forward-stored-outbound.js";
 import { openOuterBody } from "../../../__tests__/outer-body-fixtures.js";
 import { pollCursor as fixturePollCursor } from "../../../__tests__/router-worker-fixtures.js";
-import {
-  type TestDatabase,
-  openTestDatabase,
-} from "../../../__tests__/communication-test-database.js";
 import { testStore } from "../../../__tests__/store-schema-fixtures.js";
-import { SqlClient } from "@effect/sql";
 import {
   decodeCanonical,
   encodeCanonical,

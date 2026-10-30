@@ -1,13 +1,13 @@
 /** @file Collective persistence failures and terminal publication share one boundary. */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../store/index.js";
 import { Effect } from "effect";
 import type { EndpointStoreError } from "../store/index.js";
 import type { InboundItem } from "./inbound.js";
 import type { ResultProvenance } from "./ports.js";
 import type { CollectiveState } from "./state.js";
 import { SendError } from "../conversations/errors.js";
+import * as Store from "../store/index.js";
 import { CollectiveEmitError, type CollectiveId } from "./contracts.js";
 
 /** Refresh the same retained state on a caller-facing send boundary. */

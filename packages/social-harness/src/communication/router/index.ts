@@ -1,7 +1,6 @@
 /** @file Private Router polling, authenticated ingress, and retry coordination. */
 
 import * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../store/index.js";
 import {
   Effect,
   Encoding,
@@ -22,6 +21,7 @@ import {
   SignedMessage,
 } from "../../identity/envelope/signed-message.js";
 import { Registry } from "../../identity/registry/index.js";
+import * as Store from "../store/index.js";
 import { Router } from "./api/client.js";
 import {
   type RouterInstanceId,

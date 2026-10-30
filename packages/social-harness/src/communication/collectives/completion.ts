@@ -1,7 +1,6 @@
 /** @file Records answers and completes collective operations this endpoint starts. */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../store/index.js";
 import { Clock, Effect, Exit, Fiber } from "effect";
 import type { SendError } from "../conversations/errors.js";
 import type { InboundMessage } from "../conversations/message.js";
@@ -10,6 +9,7 @@ import type { CollectiveResultItem } from "./inbound.js";
 import type { CertifiedMessage } from "./ports.js";
 import type { ResponseValue } from "./wire/index.js";
 import { type AgentAddress, agentAddressOf } from "../records/values.js";
+import * as Store from "../store/index.js";
 import { encodeRuntimeValue, EndpointStoreError } from "../store/index.js";
 import { closeAllGather, countedProvenance } from "./all-gather.js";
 import {

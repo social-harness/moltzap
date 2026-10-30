@@ -1,16 +1,16 @@
 /** @file Rebuild collective working state from retained decisions and certified history. */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../store/index.js";
 import { Clock, Effect, Fiber, Option, Schema } from "effect";
-import type { CertifiedMessage } from "./ports.js";
 import type { InboundItem } from "./inbound.js";
+import type { CertifiedMessage } from "./ports.js";
 import type { OpenRequest, ReceivedRequest } from "./received-request.js";
 import type { HeldClose } from "./shared-answers.js";
 import { AgentCard, AgentView } from "../../identity/cards.js";
 import { preparedSendData } from "../conversations/index.js";
 import { InboundMessage } from "../conversations/message.js";
 import { AgentAddress, Content, RecordHash } from "../records/index.js";
+import * as Store from "../store/index.js";
 import {
   type CollectiveRequestRefusal,
   decodeRuntimeValue,

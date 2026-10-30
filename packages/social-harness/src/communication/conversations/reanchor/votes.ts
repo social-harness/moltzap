@@ -5,7 +5,6 @@
  */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../../store/index.js";
 import { Effect, Schema } from "effect";
 import type { AgentId } from "../../../identity/identifiers.js";
 import type { EngineActionFold, EngineRuntime } from "../engine-context.js";
@@ -30,6 +29,7 @@ import {
   verifyStableEvidence,
 } from "../../records/index.js";
 import { RouterWorkerPersistenceError } from "../../router/index.js";
+import * as Store from "../../store/index.js";
 import {
   type EndpointRecovery,
   isSemanticStoreRejection,

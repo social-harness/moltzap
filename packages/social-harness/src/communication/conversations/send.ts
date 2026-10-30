@@ -1,7 +1,6 @@
 /** @file Address resolution, immutable intent binding, and proposal creation. */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../store/index.js";
 import { Deferred, Duration, Effect, Exit, Schedule, Schema } from "effect";
 import type { MessageAddressInput } from "../records/values.js";
 import type { RouterWorkerUnavailableError } from "../router/index.js";
@@ -40,6 +39,7 @@ import {
   type VerifiedMembership,
   verifyMembershipDescriptor,
 } from "../records/index.js";
+import * as Store from "../store/index.js";
 import {
   prepareMessageAddress,
   type RecipientResolutionError,
@@ -890,7 +890,7 @@ function activateBoundIntent(
  * A bound intent's activation after its proposal failed: still ready, with a
  * latch that fails as `delivery-pending`.
  */
-function pendingActivation(): Effect.Effect<IntentActivation, never> {
+function pendingActivation(): Effect.Effect<IntentActivation> {
   return Deferred.make<RecordHash, SendError>().pipe(
     Effect.tap((completion) =>
       Deferred.fail(completion, new SendError({ reason: "delivery-pending" })),

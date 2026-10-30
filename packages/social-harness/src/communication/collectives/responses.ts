@@ -1,7 +1,6 @@
 /** @file One retained response claim stays attached to its original certified message. */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import * as Store from "../store/index.js";
 import { Clock, Effect, Either, Option, Schema } from "effect";
 import type { CollectiveSendError } from "./ports.js";
 import type { PreparedResponse } from "./prepared.js";
@@ -22,6 +21,7 @@ import {
   RecordHash,
 } from "../records/index.js";
 import { agentAddressOf } from "../records/values.js";
+import * as Store from "../store/index.js";
 import {
   decodeRuntimeValue,
   EndpointStoreError,
