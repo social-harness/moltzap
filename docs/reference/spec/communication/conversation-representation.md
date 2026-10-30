@@ -6,24 +6,22 @@ read_when:
   - You need to verify stored records or peer evidence
 ---
 
-This specification defines the wire values used to certify messages and
-recover conversation history. The [conversation contract](./conversation-history.md)
-explains what those exchanges establish and when members may advance.
+This reference defines certified records and recovery exchanges. The
+[conversation contract](./conversation-history.md) explains their guarantees.
 
 ## Encoding and notation
 
-Every object has exactly the required fields shown below. Unknown fields and
-message kinds are rejected before changing protocol state. Versioned objects
-carry a `sharnessVersion` admitted by the
-[history version rules](#history-versions). `WireVersion` denotes that string
-in the type notation below. Conversation identity itself is version-independent.
+Objects have exactly their required fields. Reject unknown fields or kinds before
+state changes. Every interface below except `ConversationIdentityInput` also
+requires `sharnessVersion: WireVersion`, omitted from the notation. That string
+uses the [history version rules](#history-versions). Conversation identity is
+version-independent. `ContentPart` has only its shown fields.
 
-Identity-owned values use [Identity's wire encodings](../identity/representation.md).
-`EncodedAgentCard` and `EncodedSignedMessage` mean complete General JWS
-objects, including their signatures.
+[Identity encodings](../identity/representation.md) apply. `EncodedAgentCard`
+and `EncodedSignedMessage` are complete General JWS objects with signatures.
 
-These nominal strings are canonical unpadded base64url encodings of exactly
-32 bytes after their four-character prefix:
+Each nominal string uses its four-character prefix and canonical unpadded
+base64url of 32 bytes:
 
 ```ts
 type ConversationId = `cnv_${string}`
@@ -40,30 +38,28 @@ encoding is at most 32,768 bytes:
 
 ```ts
 type ContentPart =
-  | { readonly type: "text"; readonly text: WellFormedUnicodeString }
-  | { readonly type: "data"; readonly value: JsonValue }
+  | { type: "text"; text: WellFormedUnicodeString }
+  | { type: "data"; value: JsonValue }
 ```
 
-`JsonValue` is null, boolean, a finite JSON number, a well-formed Unicode
-string, an array of `JsonValue`, or a JSON object whose string keys and values
-are well formed. The protocol decoder rejects duplicate object names, lone
-surrogates, non-JSON numbers, noncanonical bytes, and excess protocol fields.
+`JsonValue` recursively permits null, booleans, finite JSON numbers, well-formed
+Unicode strings, arrays and objects with well-formed keys. Reject duplicate
+names, lone surrogates, non-JSON numbers, noncanonical bytes and excess fields.
 
 ### Membership and identifiers
 
-The exact membership and identifier preimages are:
+Membership and identifier preimages:
 
 ```ts
 interface ConversationIdentityInput {
-  readonly kind: "conversation_identity"
-  readonly memberAgentIds: readonly [AgentId, AgentId, ...AgentId[]]
+  kind: "conversation_identity"
+  memberAgentIds: [AgentId, AgentId, ...AgentId[]]
 }
 
 interface MembershipDescriptor {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "membership_descriptor"
-  readonly conversationId: ConversationId
-  readonly members: readonly [
+  kind: "membership_descriptor"
+  conversationId: ConversationId
+  members: [
     EncodedAgentCard,
     EncodedAgentCard,
     ...EncodedAgentCard[],
@@ -72,113 +68,96 @@ interface MembershipDescriptor {
 
 ```
 
-Both arrays contain 2 through 32 entries sorted by unsigned lexicographic
-comparison of the decoded 16-byte AgentIds. They contain no duplicate AgentId
-or AgentName. Every card has a valid Registry signature, and each descriptor's
-`conversationId` re-derives from its cards. An author creates each `MsgId` from 32
-cryptographically random bytes before persisting a new local message intent. A
-peer validates its canonical form and rejects changed intent under the same
-`(authorAgentId, MsgId)` pair.
+Both arrays contain 2–32 entries sorted by unsigned lexicographic decoded
+AgentId bytes. IDs and names are unique. Verify every card's Registry signature
+and rederive conversationId from the cards. Before persisting a new local intent,
+the author creates MsgId from 32 cryptographically random bytes. Peers check its
+canonical form and reject changed intent under `(authorAgentId, MsgId)`.
 
 ### Message intents, anchors, and action cores
 
 ```ts
 interface MessageIntent {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "message_intent"
-  readonly conversationId: ConversationId
-  readonly membershipHash: MembershipHash
-  readonly authorAgentId: AgentId
-  readonly msgId: MsgId
-  readonly content: Content
+  kind: "message_intent"
+  conversationId: ConversationId
+  membershipHash: MembershipHash
+  authorAgentId: AgentId
+  msgId: MsgId
+  content: Content
 }
 
 interface InitialAnchorBody {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "initial_anchor_body"
-  readonly conversationId: ConversationId
-  readonly membershipHash: MembershipHash
-  readonly routerInstanceId: RouterInstanceId
+  kind: "initial_anchor_body"
+  conversationId: ConversationId
+  membershipHash: MembershipHash
+  routerInstanceId: RouterInstanceId
 }
 
 interface ReanchorBody {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "reanchor_body"
-  readonly conversationId: ConversationId
-  readonly membershipHash: MembershipHash
-  readonly previousAnchorHash: AnchorHash
-  readonly selectedRecordHash: RecordHash
-  readonly routerInstanceId: RouterInstanceId
+  kind: "reanchor_body"
+  conversationId: ConversationId
+  membershipHash: MembershipHash
+  previousAnchorHash: AnchorHash
+  selectedRecordHash: RecordHash
+  routerInstanceId: RouterInstanceId
 }
 
 type AnchorBody = InitialAnchorBody | ReanchorBody
 
 interface FirstMessageActionCore {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "FIRST_MESSAGE"
-  readonly conversationId: ConversationId
-  readonly membership: MembershipDescriptor
-  readonly anchor: InitialAnchorBody
-  readonly previousRecordHash: null
-  readonly messageIntent: MessageIntent
-  readonly messageIntentHash: MessageIntentHash
+  kind: "FIRST_MESSAGE"
+  conversationId: ConversationId
+  membership: MembershipDescriptor
+  anchor: InitialAnchorBody
+  previousRecordHash: null
+  messageIntent: MessageIntent
+  messageIntentHash: MessageIntentHash
 }
 
 interface MessageActionCore {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "MESSAGE"
-  readonly conversationId: ConversationId
-  readonly membershipHash: MembershipHash
-  readonly anchorHash: AnchorHash
-  readonly previousRecordHash: RecordHash
-  readonly messageIntent: MessageIntent
-  readonly messageIntentHash: MessageIntentHash
+  kind: "MESSAGE"
+  conversationId: ConversationId
+  membershipHash: MembershipHash
+  anchorHash: AnchorHash
+  previousRecordHash: RecordHash
+  messageIntent: MessageIntent
+  messageIntentHash: MessageIntentHash
 }
 
 type ActionCore = FirstMessageActionCore | MessageActionCore
 
 interface FirstMessageRecordCore {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "record_core"
-  readonly membership: MembershipDescriptor
-  readonly anchorHash: AnchorHash
-  readonly action: FirstMessageActionCore
-  readonly actionHash: ActionHash
+  kind: "record_core"
+  membership: MembershipDescriptor
+  anchorHash: AnchorHash
+  action: FirstMessageActionCore
+  actionHash: ActionHash
 }
 
 interface MessageRecordCore {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "record_core"
-  readonly membershipHash: MembershipHash
-  readonly anchorHash: AnchorHash
-  readonly action: MessageActionCore
-  readonly actionHash: ActionHash
+  kind: "record_core"
+  membershipHash: MembershipHash
+  anchorHash: AnchorHash
+  action: MessageActionCore
+  actionHash: ActionHash
 }
 
 type RecordCore = FirstMessageRecordCore | MessageRecordCore
 ```
 
-A FIRST_MESSAGE record core carries the membership descriptor. A MESSAGE record core
-carries only its `MembershipHash`, and a member verifies a MESSAGE record against
-the membership it holds for the conversation. A member must verify and retain the membership before signing FIRST_MESSAGE. A catch-up page for an empty
-position carries FIRST_MESSAGE. A MESSAGE record whose `MembershipHash` is not the held
-membership's hash fails verification, and a MESSAGE record for a conversation the
-member does not hold is ignored.
+FIRST_MESSAGE carries membership, verified and retained before signing. Empty
+catch-up starts there. MESSAGE uses the held membership hash: reject mismatch,
+ignore unknown conversations. Descriptor version comes from the first canonically
+ordered card, and initial anchor version from that descriptor. Immutable cards
+make these hashes agree across adjacent live versions.
 
-The initial membership descriptor takes its version from the signed AgentCard
-of the first member in canonical AgentId order. The initial anchor takes the
-same version from that descriptor. Every member has these same immutable cards,
-so concurrent first sends derive identical membership and anchor hashes even
-when their binaries emit adjacent live versions.
-
-`FIRST_MESSAGE` is the first nonempty message. Its anchor uses the
-`RouterInstanceId` from an omitted-cursor poll. `MESSAGE` extends exactly one
-certified predecessor under the current completed anchor.
+FIRST_MESSAGE is nonempty and uses the omitted-cursor Router instance. MESSAGE
+extends the certified head under the current completed anchor.
 
 ### Canonical encoding and preimages
 
-`JCS(S, v)` is the RFC 8785 UTF-8 encoding of value `v` satisfying the
-closed grammar `S`. Received bytes must equal this encoding. Hashes use:
+`JCS(S, v)` is RFC 8785 UTF-8 of `v` satisfying closed grammar `S`.
+Received bytes must match. Hashes use:
 
 ```text
 H(artifact, S, v) =
@@ -187,7 +166,7 @@ H(artifact, S, v) =
   )
 ```
 
-The exact hash derivations are:
+Hash derivations:
 
 | Value | Artifact | Schema preimage | Text |
 |---|---|---|---|
@@ -198,193 +177,165 @@ The exact hash derivations are:
 | `ActionHash` | `action` | `ActionCore` | `ach_` + digest |
 | `RecordHash` | `record` | `RecordCore` | `rch_` + digest |
 
-`MsgId` is `msg_` followed by the unique unpadded base64url encoding of the
-32 random bytes and has no hash preimage. Digest text in the table is the
-unique unpadded base64url encoding. `MessageIntentHash`
-excludes predecessor, anchor, and all evidence. `ActionHash` excludes action
-signatures. `RecordHash` includes `ActionHash` but excludes action signatures,
-re-anchor votes, and durability votes. A changed canonical target membership
-or content under one `(authorAgentId, MsgId)` is a representation conflict and
-fails closed.
+Digest text is canonical base64url. MsgId contains random bytes without a hash
+preimage. Intent hashes exclude predecessor, anchor and evidence. Action hashes
+exclude signatures. Record hashes include ActionHash but exclude action signatures,
+re-anchor and durability votes. Changed membership or content under one
+`(authorAgentId, MsgId)` fails as a representation conflict.
 
 ## Certificates and certified records
 
-Certificates collect signed statements about one action, stored record, or
-replacement anchor. Each statement uses the Identity `SignedMessage` format:
+Certification statements and wrappers:
 
 ```ts
 interface ActionSignatureStatement {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "action_signature"
-  readonly signerAgentId: AgentId
-  readonly actionHash: ActionHash
+  kind: "action_signature"
+  signerAgentId: AgentId
+  actionHash: ActionHash
 }
 
 interface DurabilityVoteStatement {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "durability_vote"
-  readonly signerAgentId: AgentId
-  readonly conversationId: ConversationId
-  readonly membershipHash: MembershipHash
-  readonly recordHash: RecordHash
+  kind: "durability_vote"
+  signerAgentId: AgentId
+  conversationId: ConversationId
+  membershipHash: MembershipHash
+  recordHash: RecordHash
 }
 
 interface ReanchorVoteStatement {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "reanchor_vote"
-  readonly signerAgentId: AgentId
-  readonly anchorHash: AnchorHash
-  readonly reanchor: ReanchorBody
+  kind: "reanchor_vote"
+  signerAgentId: AgentId
+  anchorHash: AnchorHash
+  reanchor: ReanchorBody
 }
 
-type EvidenceMessages = readonly [
+type EvidenceMessages = [
   EncodedSignedMessage,
   ...EncodedSignedMessage[],
 ]
 
 interface ActionCertificate {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "action_certificate"
-  readonly actionHash: ActionHash
-  readonly signatures: EvidenceMessages
+  kind: "action_certificate"
+  actionHash: ActionHash
+  signatures: EvidenceMessages
 }
 
 interface DurabilityCertificate {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "durability_certificate"
-  readonly recordHash: RecordHash
-  readonly votes: EvidenceMessages
+  kind: "durability_certificate"
+  recordHash: RecordHash
+  votes: EvidenceMessages
 }
 
 interface ReanchorCertificate {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "reanchor_certificate"
-  readonly anchorHash: AnchorHash
-  readonly votes: EvidenceMessages
+  kind: "reanchor_certificate"
+  anchorHash: AnchorHash
+  votes: EvidenceMessages
 }
 
 interface CompletedReanchor {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "completed_reanchor"
-  readonly anchorHash: AnchorHash
-  readonly reanchor: ReanchorBody
-  readonly certificate: ReanchorCertificate
+  kind: "completed_reanchor"
+  anchorHash: AnchorHash
+  reanchor: ReanchorBody
+  certificate: ReanchorCertificate
 }
 
 type RouterAnchor = InitialAnchorBody | CompletedReanchor
 
 interface ActionCertifiedRecord {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "action_certified_record"
-  readonly recordHash: RecordHash
-  readonly recordCore: RecordCore
-  readonly routerAnchor: RouterAnchor
-  readonly actionCertificate: ActionCertificate
+  kind: "action_certified_record"
+  recordHash: RecordHash
+  recordCore: RecordCore
+  routerAnchor: RouterAnchor
+  actionCertificate: ActionCertificate
 }
 
 interface CertifiedRecord {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "certified_record"
-  readonly actionCertifiedRecord: ActionCertifiedRecord
-  readonly durabilityCertificate: DurabilityCertificate
+  kind: "certified_record"
+  actionCertifiedRecord: ActionCertifiedRecord
+  durabilityCertificate: DurabilityCertificate
 }
 ```
 
-`EvidenceMessages` is an array of 1 through `n` complete
-`EncodedSignedMessage` values ordered by decoded
-`statement.signerAgentId`. Each inner message has sender, sole recipient, and
-statement `signerAgentId` equal to the same fixed member. Its body is exactly
-`JCS(EvidenceStatement, statement)`. Identity's General-JWS protected header,
-payload, and Ed25519 preimage remain exactly as specified by
-[Identity wire formats](../identity/representation.md#signedmessage).
-
-Each signer appears once. A certificate can gain valid member signatures
-without changing the action or record hash. The
-[certification rules](../norms/message-certification.md) define the required
-signers and thresholds.
-
+Evidence contains 1–n complete SignedMessages sorted by decoded statement signer.
+Signers are distinct fixed members, with sender, sole recipient and statement signer
+identical, and exact `JCS(EvidenceStatement, statement)` body. Identity owns JWS
+headers, payloads and signature preimages. Additional valid signatures leave
+hashes unchanged. [Certification rules](../norms/message-certification.md) own
+required signers and thresholds.
 
 ## Catch-up
 
-A catch-up request identifies a position by record and anchor. Each page
-binds the supplied next item to that exact request:
+Catch-up replies bind each item to its request:
 
 ```ts
 interface CatchUpRequest {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "catch_up_request"
-  readonly conversationId: ConversationId
-  readonly membershipHash: MembershipHash
-  readonly requesterAgentId: AgentId
-  readonly knownRecordHash: RecordHash | null
-  readonly knownAnchorHash: AnchorHash | null
+  kind: "catch_up_request"
+  conversationId: ConversationId
+  membershipHash: MembershipHash
+  requesterAgentId: AgentId
+  knownRecordHash: RecordHash | null
+  knownAnchorHash: AnchorHash | null
 }
 
 type CatchUpItem = CertifiedRecord | CompletedReanchor
 
 interface CatchUpAttestationStatement {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "catch_up_attestation"
-  readonly signerAgentId: AgentId
-  readonly request: CatchUpRequest
-  readonly itemKind:
+  kind: "catch_up_attestation"
+  signerAgentId: AgentId
+  request: CatchUpRequest
+  itemKind:
     | "certified_record"
     | "completed_reanchor"
     | "incomplete"
-  readonly itemHash: RecordHash | AnchorHash | null
-  readonly hasMore: boolean
+  itemHash: RecordHash | AnchorHash | null
+  hasMore: boolean
 }
 
 interface CatchUpPage {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "catch_up_page"
-  readonly request: CatchUpRequest
-  readonly item: CatchUpItem
-  readonly hasMore: boolean
-  readonly attestation: EncodedSignedMessage
+  kind: "catch_up_page"
+  request: CatchUpRequest
+  item: CatchUpItem
+  hasMore: boolean
+  attestation: EncodedSignedMessage
 }
 
 interface CatchUpIncomplete {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "catch_up_incomplete"
-  readonly request: CatchUpRequest
-  readonly attestation: EncodedSignedMessage
+  kind: "catch_up_incomplete"
+  request: CatchUpRequest
+  attestation: EncodedSignedMessage
 }
 ```
 
-The two known hashes are both null or both non-null. A null request starts at
-FIRST_MESSAGE. One page contains exactly one next item. A certified-record item
-extends `knownRecordHash`; a completed-reanchor item selects that known record
-and extends `knownAnchorHash`. The requester advances both hashes after a
-record, advances only the anchor hash after a re-anchor, and continues until a
-terminal `CatchUpIncomplete` at the advanced position. `hasMore` is a signed
-progress hint only; it is never a safety or completeness input.
+Known hashes are both null or both present. Null starts at FIRST_MESSAGE. Each
+page supplies one complete certified record extending the known record, or
+completed re-anchor selecting that record and extending the known anchor.
+Advance both hashes for a record, only anchor for a re-anchor. Continue until
+incomplete at the advanced position. Signed `hasMore` is only a progress hint.
 
-The attestation is a stable inner evidence message whose statement binds the
-byte-identical request, item kind, item hash, and `hasMore`. For
-`CatchUpIncomplete`, those last three values are respectively `incomplete`,
-null, and false. Its signer and the response's outer sender are the same fixed
-member. An incomplete response says only that this responder cannot supply a
-verified next item. A responder that holds a staged, uncertified successor of
-the requested position sends no incomplete response; it sends that
-successor's `ActionCertifiedRecord` and its own durability vote.
+The stable inner attestation binds byte-identical request, item kind/hash and
+`hasMore`. Incomplete uses `incomplete`, null, false. Attestation signer equals
+outer sender and is a member. Incomplete means only that responder cannot supply
+verified continuation. A staged successor instead supplies its ActionCertifiedRecord
+and the responder's durability vote.
 
-Catch-up pages carry complete `CertifiedRecord` or `CompletedReanchor` values,
-including their retained certificates. There is no partial-evidence cursor. A
-catch-up answer carries no partial evidence except a staged successor with the
-responder's durability vote, or, with an incomplete answer, the responder's
-re-anchor vote for an earlier Router instance. All received material is
-verified before mutation.
+Pages retain complete certificates without partial-evidence cursors. The only
+partial evidence is:
+
+- A staged successor and the responder's durability vote, sent in separate
+  envelopes instead of incomplete.
+- The responder's earlier-instance re-anchor votes matching the requested
+  position, sent before its incomplete reply.
+
+Verify everything before mutation.
 
 ## Router envelopes and retries
 
-The exact direct packet union is:
+Direct packets:
 
 ```ts
 interface ActionProposal {
-  readonly sharnessVersion: WireVersion
-  readonly kind: "action_proposal"
-  readonly action: ActionCore
+  kind: "action_proposal"
+  action: ActionCore
 }
 
 type EvidenceStatement =
@@ -403,27 +354,16 @@ type DirectPacket =
   | CatchUpIncomplete
 ```
 
-Every outer Identity `SignedMessage` body is a
-[SealedBody](../identity/representation.md#sealedbody) that its sender sealed
-to all of the message's recipients under the message's sender and
-`EnvelopeId`. Its plaintext is exactly one of:
+Every outer SignedMessage carries a [SealedBody](../identity/representation.md#sealedbody)
+sealed to all fixed members, including its sender, in decoded AgentId order.
+Bind the seal to outer sender and EnvelopeId. Plaintext is exactly
+`JCS(DirectPacket, packet)` or `JCS(EncodedSignedMessage, stableInnerEvidence)`.
+Reject unsealed, undecryptable, misbound or invalid plaintext and continue later
+traffic. Hashes, certificates, catch-up and storage cover canonical readable
+values, never seals. Router sees only the outer Identity value: addressing, sizes and ciphertext.
 
-1. `JCS(DirectPacket, packet)`; or
-2. `JCS(EncodedSignedMessage, stableInnerEvidence)`.
-
-The plaintext must match exactly one of these closed representations. A
-plaintext outer body, an undecryptable seal, a seal bound to another sender
-or EnvelopeId, or an invalid inner value is rejected. The receiver continues
-processing later messages. `ActionHash`, `RecordHash`,
-certificates, catch-up pages, and stored history cover the readable
-canonical values, never sealed bytes, because the seal protects only the
-outer message in transit. An action proposal's outer
-sender equals the message author. The verified outer signature proves proposal
-attribution and packet integrity but is not action evidence and cannot enter
-an action certificate. Any fixed member may assemble and send the other direct
-packets. Every outer message's recipients are the complete fixed-member
-AgentIds sorted by decoded bytes, including its sender. The Router sees only
-that outer Identity value: its addressing, sizes, and ciphertext.
+Proposal sender equals author. Its outer signature proves attribution and
+integrity, not action evidence. Any member may send other direct packets.
 
 For an evidence statement `s`, its stable inner `EnvelopeId` is:
 
@@ -435,42 +375,26 @@ env_ + base64url(first-16-bytes(SHA-256(
 )))
 ```
 
-The inner sender, sole recipient, and statement signer are the same AgentId.
-The complete encoded inner SignedMessage remains byte-identical across every
-relay and Router retry.
+Relays and Router retries preserve complete inner bytes.
 
-An outer send follows the Router representation contract exactly:
+Outer sends follow [Router](./router-representation.md):
 
-1. The endpoint creates a fresh random 16-byte outer `EnvelopeId`, seals the exact
-   plaintext to all members under it, signs the sealed body for all members,
-   and durably stores the complete SignedMessage.
-2. The first attempt uses `mode: "initial"` and the polled
-   `expectedRouterInstanceId`.
-3. An unknown transport outcome retries the same stored bytes and EnvelopeId
-   with `mode: "retry"`. An `accepted` result is valid only when its digest
-   matches those exact bytes.
-4. `retry_identity_unknown` resends the same stored bytes and EnvelopeId with
-   `mode: "initial"`. An `idempotency_conflict` to any `initial` means an
-   earlier copy of those bytes appended first, so the endpoint sends the same bytes
-   once more with `mode: "retry"`, which Router accepts only for those exact
-   bytes. Transport retries and `retry_identity_unknown` resends share one
-   bounded attempt count; a conflict's `retry` spends none. A send that runs
-   out keeps its stored envelope pending, and the next drain sends it again
-   with `mode: "retry"`. The endpoint never re-signs or replaces a stored outer
-   message.
-5. `router_restarted` stops sending, obtains the new omitted-cursor anchor,
-   and completes a conversation's catch-up and re-anchor before reevaluating
-   that conversation's queued packets. It never rewrites a stable inner
-   evidence message.
+1. Create a fresh random 16-byte EnvelopeId, seal and sign for all members,
+   durably store the complete message, then send `initial` with the polled instance.
+2. Unknown transport outcomes retry stored bytes/id using `retry`. Accepted
+   digests must match those bytes.
+3. `retry_identity_unknown` resends identical bytes/id as `initial`. Any initial
+   conflict prompts another `retry` for those bytes. Transport retries and `retry_identity_unknown`
+   resends share a bounded count; `idempotency_conflict` retries spend none. Exhaustion retains
+   the envelope pending, with the next drain using `retry`. Never re-sign or replace it.
+4. `router_restarted` stops sending. Obtain the new instance through an omitted-cursor
+   poll and complete catch-up/re-anchor before reevaluating that conversation's queue.
+   Stable inner evidence never changes.
 
-A resend after eviction appends the same outer message again, so a member may
-receive one outer message more than once. Duplicate outer delivery is
-harmless: a member deduplicates a proposal by its `ActionHash`, a record by
-its `RecordHash`, and evidence by its subject hash and signer. It answers a
-repeated catch-up request again from certified history and counts a repeated
-catch-up response once. An `idempotency_conflict` to a `retry`,
-`retry_identity_unknown` to an `initial`, mismatched digest, invalid message,
-mixed version, or semantic body collision fails closed.
+Eviction can produce duplicate delivery. Deduplicate proposals by ActionHash,
+records by RecordHash, evidence by subject hash and signer. Answer repeated
+catch-up requests, count repeated responses once. `idempotency_conflict` on `retry`, `retry_identity_unknown` on `initial`, digest
+mismatch, invalid messages, mixed versions and semantic collisions fail closed.
 
 ## Cross-field validation
 
@@ -481,10 +405,9 @@ following applicable bindings:
   order, `ConversationId`, and `MembershipHash` recompute;
 - author and signer are fixed members, each message intent matches its enclosing
   conversation and membership, and `MessageIntentHash` recomputes;
-- FIRST_MESSAGE embeds the membership descriptor and initial anchor, uses a null
-  predecessor, and is the first record; a MESSAGE action and record core carry
-  the `MembershipHash` of the membership held from the conversation's
-  FIRST_MESSAGE, the current `anchorHash`, and the exact certified head;
+- FIRST_MESSAGE embeds membership and initial anchor, has a null predecessor and
+  starts history. MESSAGE actions and record cores use the `MembershipHash` retained
+  from FIRST_MESSAGE, current `anchorHash` and exact certified head;
 - `ActionHash`, `AnchorHash`, and `RecordHash` recompute from their exact cores;
 - `RouterAnchor` is either the byte-identical initial anchor or a completed
   re-anchor whose body hashes to the record core's `anchorHash`;
@@ -502,18 +425,20 @@ A failure rejects the whole value before changing protocol state.
 
 ## History versions
 
-Newly authored intents use the emitted wire version. Conversation identity excludes the
-version, and sends reuse their stored membership descriptor. The record core
-copies the author's signed intent version; its wrappers and certificates copy
-that core version, including when reconstructed from storage. Re-anchor bodies
-copy the certified head's version, and an empty conversation's replacement
-anchor copies the preceding anchor's version. These shared values never come
-from the re-anchoring member's binary. Outer envelopes use the live version set. Every nested artifact, including
-`MessageIntent`, `ActionCore`, catch-up frames, `CatchUpPage.item`, certificates,
-evidence, descriptors, AgentCards and store rows, uses the history version set. Retired live versions remain readable as history;
-signatures and the existing semantic checks still govern their validity.
+New intents use the emitted version. Conversation identity excludes versions;
+sends reuse stored membership. Record cores copy signed intent versions.
+Record wrappers and action/durability certificates copy cores, including storage
+reconstruction. Re-anchor bodies copy certified head versions. A replacement
+InitialAnchorBody for an empty conversation copies the preceding anchor's version,
+never the recovering member's binary version. Completed re-anchors and their
+certificates copy the re-anchor body version.
 
-Pending outbound messages retain their original signed bytes and EnvelopeId;
-they are never re-signed. Startup refuses a pending envelope whose signed
-version has left the live set with `outbox-too-old`. The operator must drain the outbox on an earlier release.
-Retained version metadata must agree with the signed envelope.
+New action/durability statements, catch-up frames and attestations use their creator's emitted
+version. Re-anchor vote statements copy the anchor body version. Newly signed
+inner envelopes use Identity's emitted version independently of statement versions.
+
+Outer envelopes require live versions. Every nested or stored artifact uses
+history versions, preserving signatures and semantic checks after live retirement.
+Pending envelopes retain signed bytes/id without re-signing. Startup refuses
+non-live pending envelopes with `outbox-too-old`: drain them on an earlier release.
+Stored version metadata must match signed envelopes.
