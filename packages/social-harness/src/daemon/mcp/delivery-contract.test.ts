@@ -17,6 +17,7 @@ import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import {
   loopbackMcpEndpoint,
   makeToolCallRequest,
+  mcpIdentity,
   mcpTestCredential,
   mcpTestHeaders,
 } from "../../__tests__/mcp-http-fixtures.js";
@@ -31,8 +32,9 @@ import { DeliveryAcknowledgeError } from "../../communication/conversations/erro
 import { AgentAddress } from "../../communication/records/index.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
 import { decodeHarnessReadInboxResult } from "../../host-protocol/operations.js";
+import { Identity } from "../../identity/local.js";
 import { type HostDelivery, makeHostDelivery } from "../inbox/host-delivery.js";
-import { makeHarnessMcpHttpHandler } from "./tools.js";
+import { makeHarnessMcpHttpHandler } from "./index.js";
 
 const unreachable = () =>
   Effect.dieMessage("operation is outside the delivery contract");
@@ -59,7 +61,7 @@ const deliveryHandler = (
     credential: mcpTestCredential,
     implementation: { name: "delivery-contract", version: "1" },
     operations,
-  });
+  }).pipe(Effect.provideService(Identity, mcpIdentity(true)));
 
 const callTool =
   (handler: Parameters<typeof loopbackMcpEndpoint>[0]) =>
@@ -119,7 +121,7 @@ const deliveryFixture = (
     slot.active = collectives;
     const handler = yield* deliveryHandler({
       ...delivery.operations,
-      isRegistered: () => true,
+
       readStatus: unreachable,
       register: unreachable,
       searchConversations: unreachable,

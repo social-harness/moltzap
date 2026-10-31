@@ -3,8 +3,6 @@
 
 /** Failures exposed by communication persistence. */
 export { EndpointStoreError } from "./database/values.js";
-/** How a daemon opens its exclusive store. */
-export type { StoreOpening } from "./database/index.js";
 /** Saved communication records and recovery state. */
 export type {
   CertifiedRecord,
@@ -13,7 +11,6 @@ export type {
   EmptyConversationRestart,
   EndpointRecovery,
   HistoryPage,
-  IdentityBinding,
   InboundDeliveryInput,
   MessageIntent,
   OutboundMessageInput,
@@ -84,6 +81,7 @@ export {
 export {
   readCertifiedMemberships,
   readStoredConversation as readConversation,
+  readRecentConversation,
   recoverStoredState as recover,
 } from "./reads.js";
 /** Record acceptance retains exact bytes and separately attributed evidence. */

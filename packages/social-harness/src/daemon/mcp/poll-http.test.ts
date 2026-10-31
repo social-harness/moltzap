@@ -11,7 +11,10 @@ import {
 import { Deferred, Effect, Fiber, Redacted, Schema } from "effect";
 import { describe, expect } from "vitest";
 import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
-import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
+import {
+  loopbackMcpEndpoint,
+  mcpIdentity,
+} from "../../__tests__/mcp-http-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import { enqueue, item, token } from "../../__tests__/webhook-fixtures.js";
@@ -25,9 +28,10 @@ import {
   INBOX_ITEM_EVENT,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
+import { Identity } from "../../identity/local.js";
 import { makeHostDelivery } from "../inbox/host-delivery.js";
 import { noHistoryExport } from "../inbox/host-traffic-log.js";
-import { makeHarnessMcpHttpHandler } from "./tools.js";
+import { makeHarnessMcpHttpHandler } from "./index.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- HTTP/JSON-RPC refusal codes and receipt counts are external behavior. */
 
@@ -74,13 +78,13 @@ const acquireFixture = (block?: BlockedOperation) =>
             delivery.operations.acknowledgeDelivery(deliveryToken),
             block,
           ),
-        isRegistered: () => true,
+
         readStatus: unreachable,
         register: unreachable,
         searchConversations: unreachable,
         readConversation: unreachable,
       },
-    });
+    }).pipe(Effect.provideService(Identity, mcpIdentity(true)));
     return { store, handler, endpoint: yield* loopbackMcpEndpoint(handler) };
   });
 

@@ -45,13 +45,13 @@ import {
   readFirewallRequestAdmission,
 } from "./evidence.js";
 import {
-  type DecodedRecord,
   decodeMessage,
-  decodeRecord,
   type FirewallEnvironment,
   hashedId,
   messageFields,
   prepareMessageCheck,
+  type ProjectedHistoryMessage,
+  projectHistoryMessage,
 } from "./firewall-context.js";
 
 // safer-arch-ignore no-fat-orchestrator: One collective result is checked and saved with its question and answers under one captured policy.
@@ -207,6 +207,7 @@ function checkResultTexts(
     const captured = yield* readFirewallEvidenceSlices({
       ranges: resultRanges(result.item, texts),
       maximumRecords: environment.firewall.configuration.maximumHistoryRecords,
+      registrySignerPublicKey: environment.registrySignerPublicKey,
     }).pipe(Effect.provideService(SqlClient.SqlClient, environment.sql));
     const answerInputs = yield* Effect.forEach(
       answers,
@@ -359,12 +360,12 @@ function questionAdmission(
 function resultRanges(item: ResultItem, texts: ResultTexts) {
   return [
     ...texts.answers.map((answer) => ({
-      beforeRecord: answer.recordHash,
+      candidateRecord: answer.recordHash,
       conversation:
         item.op === "gather" ? agentAddressOf(answer.member) : item.to,
     })),
     ...(texts.question.kind === "check"
-      ? [{ beforeRecord: texts.question.recordHash, conversation: item.to }]
+      ? [{ candidateRecord: texts.question.recordHash, conversation: item.to }]
       : []),
   ];
 }
@@ -448,17 +449,14 @@ function prepareRecordText(
   environment: FirewallEnvironment,
   check: ResultCheck & { readonly evidence: FirewallEvidence },
   project: (
-    candidate: DecodedRecord,
+    candidate: ProjectedHistoryMessage,
   ) => Effect.Effect<Message, EndpointStoreError>,
 ): Effect.Effect<PreparedFirewallCheck, EndpointStoreError> {
   return Effect.gen(function* () {
     const candidate =
       check.evidence.candidate === undefined
         ? undefined
-        : yield* decodeRecord(
-            check.evidence.candidate,
-            environment.localAgentCard.agentId,
-          );
+        : yield* projectHistoryMessage(check.evidence.candidate);
     const message =
       candidate === undefined ? undefined : yield* project(candidate);
     return yield* prepareMessageCheck(environment, {
@@ -477,7 +475,7 @@ function prepareRecordText(
  * member's answer to this operation.
  */
 function answerMessage(
-  candidate: DecodedRecord,
+  candidate: ProjectedHistoryMessage,
   answer: CountedAnswer,
   item: ResultItem,
 ): Effect.Effect<Message, EndpointStoreError> {
@@ -486,7 +484,7 @@ function answerMessage(
     operation.operationId === item.operationId &&
     candidate.cards.some(
       (card) =>
-        card.agentId === candidate.intent.authorAgentId &&
+        card.agentId === candidate.sharedMessage.author.agentId &&
         Schema.equivalence(AgentView)(AgentView.make(card), answer.member),
     )
     ? decodeMessage({
@@ -503,7 +501,7 @@ function answerMessage(
 
 /** A request's question as a member's model would have read it. */
 function requestMessage(
-  candidate: DecodedRecord,
+  candidate: ProjectedHistoryMessage,
   item: ResultItem,
 ): Effect.Effect<Message, EndpointStoreError> {
   const operation = candidate.message.operation;

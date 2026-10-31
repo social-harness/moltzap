@@ -16,12 +16,14 @@ import {
   type DaemonRuntimeDependencies,
   runDaemonRuntime,
 } from "../daemon/lifecycle.js";
-import { makeHarnessMcpHttpHandler } from "../daemon/mcp/tools.js";
+import { makeHarnessMcpHttpHandler } from "../daemon/mcp/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import { Firewall } from "../firewall/index.js";
 import { managementRegisterRequestSchema } from "../host-protocol/index.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
+import { saveLocalIdentity } from "../identity/local-store.js";
+import { localIdentityLayer } from "../identity/local.js";
 import { Registry } from "../identity/registry/index.js";
 import {
   digest,
@@ -138,35 +140,49 @@ export const runRegisteredFixture = (
   fixture: Fixture,
   dependencies: DaemonRuntimeDependencies,
 ) =>
-  runDaemonRuntime(
-    {
-      bootstrap: fixture.bootstrap,
-      registration: { kind: "active", agentCard: fixture.localCard },
-    },
-    dependencies,
-  ).pipe(
-    Effect.provide(Firewall.layer()),
-    Effect.provideService(Registry, {
-      register: () =>
-        Effect.dieMessage("Registered fixture attempted registration"),
-      lookup: (request) => {
-        const card = fixture.peerCards.find((peer) =>
-          "agentName" in request
-            ? peer.agentName === request.agentName
-            : peer.agentId === request.agentId,
-        );
-        return Effect.succeed(
-          card === undefined
-            ? { kind: "not_found" as const }
-            : { kind: "found" as const, agentCard: card },
-        );
-      },
-    }),
-    Effect.provideService(Router, {
-      poll: (call) =>
-        call.request.pollCursor === undefined
-          ? Effect.succeed(emptyBatch(routerInstanceId(21), pollCursor(24)))
-          : Effect.never,
-      send: () => Effect.never,
-    }),
+  saveLocalIdentity(fixture.localCard).pipe(
+    Effect.zipRight(
+      runDaemonRuntime(
+        {
+          bootstrap: fixture.bootstrap,
+        },
+        dependencies,
+      ).pipe(
+        Effect.provide(identityLayerFor(fixture.bootstrap)),
+        Effect.provide(Firewall.layer()),
+        Effect.provideService(Registry, {
+          register: () =>
+            Effect.dieMessage("Registered fixture attempted registration"),
+          lookup: (request) => {
+            const card = fixture.peerCards.find((peer) =>
+              "agentName" in request
+                ? peer.agentName === request.agentName
+                : peer.agentId === request.agentId,
+            );
+            return Effect.succeed(
+              card === undefined
+                ? { kind: "not_found" as const }
+                : { kind: "found" as const, agentCard: card },
+            );
+          },
+        }),
+        Effect.provideService(Router, {
+          poll: (call) =>
+            call.request.pollCursor === undefined
+              ? Effect.succeed(emptyBatch(routerInstanceId(21), pollCursor(24)))
+              : Effect.never,
+          send: () => Effect.never,
+        }),
+      ),
+    ),
   );
+
+/** Tests compose the same saved identity service as the production daemon. */
+export function identityLayerFor(bootstrap: DaemonBootstrap) {
+  return localIdentityLayer({
+    registrySignerPublicKey: bootstrap.configuration.registrySignerPublicKey,
+    agentPublicKey: bootstrap.agentPublicKey,
+    signingAuthority: bootstrap.signingAuthority,
+    admissionCredential: bootstrap.admissionCredential,
+  });
+}

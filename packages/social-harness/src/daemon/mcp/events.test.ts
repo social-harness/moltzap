@@ -17,6 +17,7 @@ import type { HarnessMessageReadyEvent } from "../../host-protocol/operations.js
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   loopbackMcpEndpoint,
+  mcpIdentity,
   mcpTestCredential,
   mcpTestHeaders,
 } from "../../__tests__/mcp-http-fixtures.js";
@@ -25,11 +26,12 @@ import { DeliveryToken } from "../../communication/store/index.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import { INBOX_PENDING_EVENT } from "../../host-protocol/names.js";
+import { Identity } from "../../identity/local.js";
 import { type HarnessEvents, makeHarnessEvents } from "./events.js";
 import {
   type HarnessMcpOperations,
   makeHarnessMcpHttpHandler,
-} from "./tools.js";
+} from "./index.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- External MCP error codes and consumer ownership reasons are conformance expectations. */
 
@@ -129,7 +131,6 @@ interface MemoryInbox {
  * scenarios die.
  */
 const inboxOperations = (inbox: MemoryInbox): HarnessMcpOperations => ({
-  isRegistered: () => true,
   readStatus: unreachable,
   register: unreachable,
   searchConversations: unreachable,
@@ -168,7 +169,7 @@ const acquireEventsServer = Effect.gen(function* () {
     onSubscriptionActiveChange: (active) => {
       Effect.runFork(Deferred.succeed(active ? attached : detached, undefined));
     },
-  });
+  }).pipe(Effect.provideService(Identity, mcpIdentity(true)));
   const endpoint = yield* loopbackMcpEndpoint(handler);
   return {
     endpoint,
@@ -194,13 +195,13 @@ const acquireRacingEventsServer = Effect.gen(function* () {
   const gate = yield* Effect.makeSemaphore(1);
   const events: HarnessEvents = yield* makeHarnessEvents({
     gate: yieldAfterReservation(gate, () => events),
-    isRegistered: () => true,
+
     summary: () =>
       Effect.sync(() => ({
         pendingCount: unread.length,
         newestSequence: sequence,
       })),
-  });
+  }).pipe(Effect.provideService(Identity, mcpIdentity(true)));
   const handler = createMcpHandler(
     () => {
       const capabilities = {

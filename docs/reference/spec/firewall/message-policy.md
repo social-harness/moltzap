@@ -105,9 +105,10 @@ In-flight checks keep their captured rules. Later checks use successful edits.
 
 ### Available history
 
-The window contains up to 256 preceding messages in conversation order,
-configurable from 1–1024, and includes local result and failure evidence under
-that address.
+The window captures the latest conversation history when assessment begins,
+excluding the message being checked. It contains up to 256 messages in
+conversation order, configurable from 1–1024, and includes local result and
+failure evidence under that address.
 Outgoing checks use the destination conversation; other conversations and host
 private context are excluded. `earlierHistoryOmitted` alone causes no hold.
 Exceeding the history window's separate 2 MiB budget, or unresolved outgoing

@@ -37,7 +37,7 @@ import {
 } from "./rows/index.js";
 const HISTORY_PAGE_SIZE = 50;
 const historySelect = `
-  SELECT staged.conversation_id, staged.record_hash,
+  SELECT certified.rowid AS sequence, staged.conversation_id, staged.record_hash,
          staged.previous_record_hash, staged.membership_hash,
          staged.anchor_hash, staged.action_hash, staged.author_agent_id,
          staged.msg_id, staged.canonical_record_core
@@ -163,6 +163,50 @@ export function readStoredConversation(
       };
     }),
   ).pipe(Effect.withSpan("readStoredConversation"));
+}
+/** Recent certified rows and their verification dependencies share the caller's snapshot. */
+export function readRecentConversation(input: {
+  readonly conversationId: string;
+  readonly maximumRecords: number;
+  readonly candidateRecordHash?: string;
+}) {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      historySelect +
+        " WHERE certified.conversation_id=? AND certified.record_hash<>? ORDER BY certified.ordinal DESC LIMIT ?",
+      [
+        input.conversationId,
+        input.candidateRecordHash ?? "",
+        input.maximumRecords + 1,
+      ],
+    );
+    const candidateRows =
+      input.candidateRecordHash === undefined
+        ? []
+        : yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+            historySelect +
+              " WHERE certified.conversation_id=? AND certified.record_hash=?",
+            [input.conversationId, input.candidateRecordHash],
+          );
+    const records = yield* Effect.forEach(
+      [...rows, ...candidateRows],
+      readCertifiedRecord,
+      { concurrency: 1 },
+    );
+    return {
+      records,
+      memberships: yield* readMemberships(input.conversationId),
+      anchors: yield* readAnchors(
+        input.conversationId,
+        records.map((record) => record.anchorHash),
+      ),
+      positions: [...rows, ...candidateRows].map((row) => ({
+        recordHash: readText(row, "record_hash"),
+        sequence: readInteger(row, "sequence"),
+      })),
+    };
+  }).pipe(storeOperation, Effect.withSpan("readRecentConversation"));
 }
 function readPositions(conversationId?: string) {
   return Effect.gen(function* () {

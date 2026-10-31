@@ -1,15 +1,8 @@
 /** @file Detached endpoint state used by store mutations and recovery reads. */
 
-import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
-import type { IdentityBinding } from "../types.js";
-
-import {
-  type EndpointStoreError,
-  readBytes,
-  readText,
-  storeOperation,
-} from "../database/index.js";
+import { readIdentityBinding } from "../../../identity/local-store.js";
+import { EndpointStoreError } from "../database/index.js";
 /** First-candidate locks are selected against one durable predecessor. */
 export {
   findProposalLock,
@@ -34,27 +27,16 @@ export {
   readRecoveredReanchor,
   requireSameReanchor,
 } from "./reanchors.js";
-/**
- * Reads the optional singleton identity binding.
- *
- * @returns The detached identity binding when one is committed.
- */
-export function readStoredIdentity(): Effect.Effect<
-  IdentityBinding | undefined,
-  EndpointStoreError,
-  SqlClient.SqlClient
-> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    const row = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      "SELECT agent_id, canonical_agent_card FROM identity_binding WHERE singleton = 1",
-      [],
-    ))[0];
-    return row === undefined
-      ? undefined
-      : Object.freeze({
-          agentId: readText(row, "agent_id"),
-          canonicalAgentCard: readBytes(row, "canonical_agent_card"),
-        });
-  }).pipe(storeOperation, Effect.withSpan("readStoredIdentity"));
+/** Protocol recovery reads the identity-owned binding without re-verifying its card. */
+export function readStoredIdentity() {
+  return readIdentityBinding().pipe(
+    Effect.catchTag(
+      "IdentityError",
+      (error) =>
+        new EndpointStoreError({
+          reason:
+            error.reason === "incompatible-daemon" ? "corrupt" : "persistence",
+        }),
+    ),
+  );
 }

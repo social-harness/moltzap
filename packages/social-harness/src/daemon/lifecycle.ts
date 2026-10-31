@@ -9,6 +9,7 @@ import type { Registry } from "../identity/registry/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { makeRouterWorker } from "../communication/router/index.js";
 import { Firewall } from "../firewall/index.js";
+import { Identity, type LocalIdentity } from "../identity/local.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { packageVersion } from "../release/index.js";
 import { DaemonRuntimeError, runtimeFailure } from "./errors.js";
@@ -78,7 +79,13 @@ export const runDaemonRuntime = (
 ): Effect.Effect<
   never,
   DaemonRuntimeError,
-  Registry | Router | Firewall | Scope.Scope | SqlClient.SqlClient
+  | Identity
+  | LocalIdentity
+  | Registry
+  | Router
+  | Firewall
+  | Scope.Scope
+  | SqlClient.SqlClient
 > =>
   Effect.gen(function* () {
     const historyExport = yield* openHistoryExport(input, dependencies);
@@ -89,12 +96,12 @@ export const runDaemonRuntime = (
     });
     const management = yield* makeDaemonManagementOperations({
       bootstrap: input.bootstrap,
-      registration: daemon,
     });
+    const identity = yield* Identity;
     return yield* Effect.gen(function* () {
       yield* registerAtStart(
         management,
-        daemon.readRegistration().kind === "active",
+        (yield* identity.me().pipe(Effect.orDie)).kind === "registered",
         input.bootstrap.configuration.registration,
       );
       const handler = yield* makeHandler(
@@ -139,7 +146,6 @@ function makeHandler(
                 updatePolicy: firewall.updatePolicy,
               }),
           ...daemon.deliveryOperations,
-          isRegistered: daemon.isRegistered,
         }),
         credential: input.bootstrap.mcpCredential,
         eventStore: daemon.eventStore,

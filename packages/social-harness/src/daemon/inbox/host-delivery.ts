@@ -17,7 +17,6 @@ import type {
   PreparedCollective,
   ResultProvenance,
 } from "../../communication/collectives/index.js";
-import type { EnginePendingMessage } from "../../communication/conversations/index.js";
 import type { FirewallOperations } from "../../firewall/index.js";
 import type { SendResult } from "../../host-protocol/send-result.js";
 import type {
@@ -34,6 +33,10 @@ import {
   DeliveryAcknowledgeError,
   SendError,
 } from "../../communication/conversations/errors.js";
+import {
+  type EnginePendingMessage,
+  messageFromPreparedSend,
+} from "../../communication/conversations/index.js";
 import { replyAddress } from "../../communication/message.js";
 import {
   decodeRuntimeValue,
@@ -192,7 +195,10 @@ const sendDecoded = (input: DeliveryContext, request: HarnessSendRequest) =>
       const guidance =
         environment === undefined
           ? undefined
-          : yield* checkOutgoing(environment, outgoingCandidate(prepared)).pipe(
+          : yield* outgoingCandidate(prepared).pipe(
+              Effect.flatMap((candidate) =>
+                checkOutgoing(environment, candidate),
+              ),
               Effect.catchTag("EndpointStoreError", () =>
                 Effect.fail(new SendError({ reason: "persistence-failed" })),
               ),
@@ -242,28 +248,30 @@ function checkOutgoing(
   });
 }
 
-function outgoingCandidate(prepared: PreparedCollective): OutgoingCandidate {
+function outgoingCandidate(
+  prepared: PreparedCollective,
+): Effect.Effect<OutgoingCandidate, SendError> {
   switch (prepared.kind) {
     case "message":
-      return {
-        to: prepared.to,
-        gather: false,
-        messages: [
-          {
-            canonicalIntent: prepared.message.canonicalIntent,
-            canonicalMembership: prepared.message.canonicalMembership,
-          },
-        ],
-      };
-    case "collective":
-      return {
-        to: prepared.gather.open.to,
-        gather: prepared.gather.open.op === "gather",
-        messages: prepared.gather.requests.map(({ message }) => ({
-          canonicalIntent: message.canonicalIntent,
-          canonicalMembership: message.canonicalMembership,
+      return messageFromPreparedSend(prepared.message).pipe(
+        Effect.map((message) => ({
+          to: prepared.to,
+          gather: false,
+          messages: [message],
         })),
-      };
+      );
+    case "collective":
+      return Effect.forEach(
+        prepared.gather.requests,
+        ({ message }) => messageFromPreparedSend(message),
+        { concurrency: 1 },
+      ).pipe(
+        Effect.map((messages) => ({
+          to: prepared.gather.open.to,
+          gather: prepared.gather.open.op === "gather",
+          messages,
+        })),
+      );
     default:
       return prepared satisfies never;
   }

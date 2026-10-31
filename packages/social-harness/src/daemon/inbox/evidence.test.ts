@@ -22,6 +22,8 @@ import {
   settings,
 } from "../../__tests__/daemon-delivery-fixtures.js";
 import { bytes } from "../../__tests__/store-schema-fixtures.js";
+import { EndpointStoreError } from "../../communication/store/index.js";
+import { readFirewallEvidence } from "./evidence.js";
 
 // @agent-code-guard/regression-only: Exercises conversation-window and byte-bound failures through real certified history.
 
@@ -203,7 +205,7 @@ it("admits a fresh outgoing conversation despite another conversation exceeding 
     });
   }));
 
-it("assesses incoming messages with the recent conversation window strictly before the candidate", () =>
+it("assesses incoming messages with the recent conversation window at assessment time while excluding the candidate", () =>
   Effect.gen(function* () {
     const subject = yield* fixture;
     const previous = yield* extendHistory(
@@ -226,8 +228,8 @@ it("assesses incoming messages with the recent conversation window strictly befo
     yield* Queue.take(runtime.completed);
 
     expect(seen[0]?.context.history.map((entry) => entry.text)).toEqual([
-      "Recent first",
       "Recent second",
+      "Certified after the candidate",
     ]);
     expect(seen[0]?.context.earlierHistoryOmitted).toBe(true);
     expect(seen[0]?.context.gaps).toEqual([]);
@@ -300,3 +302,22 @@ it(
     }),
   { timeout: 30_000 },
 );
+
+it("rejects history whose stored message no longer matches its certified content", () =>
+  Effect.gen(function* () {
+    const subject = yield* fixture;
+    yield* seedIncoming(subject, true);
+    yield* subject.sql.unsafe(
+      "UPDATE staged_records SET canonical_record_core=CAST(json_set(CAST(canonical_record_core AS TEXT),'$.action.messageIntent.content[0].text','Altered content') AS BLOB)",
+    );
+    const failure = yield* subject
+      .run(
+        readFirewallEvidence({
+          conversationId: subject.membership.descriptor.conversationId,
+          registrySignerPublicKey: subject.signer,
+          maximumRecords: 2,
+        }),
+      )
+      .pipe(Effect.flip);
+    expect(failure).toBeInstanceOf(EndpointStoreError);
+  }));

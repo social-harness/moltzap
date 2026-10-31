@@ -13,6 +13,24 @@ import {
 } from "@modelcontextprotocol/server";
 import { Effect, Redacted, type Scope } from "effect";
 import { acquireHarnessMcpHttpServer } from "../daemon/mcp/http.js";
+import { Identity } from "../identity/local.js";
+import { testAgentView } from "./agent-card-fixtures.js";
+
+/** MCP discovery tests vary registration without invoking the Registry. */
+export function mcpIdentity(registered = true) {
+  return Identity.of({
+    me: () =>
+      registered
+        ? Effect.succeed({
+            kind: "registered",
+            agent: testAgentView("agent:alice"),
+          })
+        : Effect.succeed({ kind: "unregistered" }),
+    register: () =>
+      Effect.dieMessage("Registration is outside this MCP fixture"),
+    resolve: () => Effect.dieMessage("Resolution is outside this MCP fixture"),
+  });
+}
 
 /** Authenticated MCP fixtures use the same opaque token on both ends. */
 export const mcpTestCredential = Redacted.make(

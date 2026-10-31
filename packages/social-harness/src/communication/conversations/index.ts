@@ -20,12 +20,7 @@ import type {
   EnginePhases,
   EngineRuntime,
 } from "./engine-context.js";
-import {
-  type ClientRepresentationError,
-  decodeCanonical,
-  encodeCanonical,
-} from "../../encoding/canonical-json.js";
-import { AgentCard } from "../../identity/cards.js";
+import { decodeCanonical } from "../../encoding/canonical-json.js";
 import { AgentSigningAuthority } from "../../identity/keys.js";
 import { wireVersions } from "../../identity/wire-version.js";
 import { Message } from "../message.js";
@@ -73,7 +68,11 @@ export type { EndpointEngineInput } from "./engine-context.js";
 /** The send input and result the collective layer exchanges with the engine. */
 export type { EngineSendInput, EngineSentMessage } from "./send.js";
 /** How a caller holds a protocol claim across durable binding. */
-export { type BindHold, preparedSendData } from "./send.js";
+export {
+  type BindHold,
+  messageFromPreparedSend,
+  preparedSendData,
+} from "./send.js";
 /** Canonical message preparation and resolved conversation attribution. */
 export type { PreparedSend } from "./send.js";
 /** The marker spans that bracket daemon work in flight, shared with the layers above. */
@@ -87,7 +86,11 @@ export {
  * The one verifier of a stored membership row, and the stored-history reader
  * the owner tools page through, shared with the daemon.
  */
-export { readStoredHistory, verifyStoredMembership } from "./history/index.js";
+export {
+  readRecentMessages,
+  readStoredHistory,
+  verifyStoredMembership,
+} from "./history/index.js";
 
 /** Engine acquisition could not establish one coherent durable endpoint. */
 export class EngineInitializationError extends Data.TaggedError(
@@ -288,21 +291,6 @@ function acknowledgeStoreFailure(
   });
 }
 
-function bindIdentityFailure(
-  error: ClientRepresentationError | EndpointStoreError,
-): EngineInitializationError {
-  switch (error._tag) {
-    case "ClientRepresentationError":
-      return representationInitializationFailure();
-    case "EndpointStoreError":
-      return initializationStoreFailure(error);
-    default: {
-      const exhaustive: never = error;
-      return exhaustive;
-    }
-  }
-}
-
 function recoveryInitializationFailure(
   error: RecoveredStateError,
 ): EngineInitializationError {
@@ -449,19 +437,6 @@ const validateLocalIdentity = (
     ? Effect.void
     : Effect.fail(new EngineInitializationError({ reason: "identity" }));
 
-const bindLocalIdentity = (
-  input: EndpointEngineInput,
-): Effect.Effect<void, EngineInitializationError, SqlClient.SqlClient> =>
-  encodeCanonical(AgentCard, input.localAgentCard).pipe(
-    Effect.flatMap((canonicalAgentCard) =>
-      Store.bindIdentity({
-        agentId: input.localAgentCard.agentId,
-        canonicalAgentCard,
-      }),
-    ),
-    Effect.mapError(bindIdentityFailure),
-  );
-
 /** Each engine phase that another phase starts, bound once for every runtime. */
 const enginePhases: EnginePhases = {
   proposeIntent,
@@ -537,7 +512,6 @@ const initializeRuntime = (
 > =>
   Effect.gen(function* () {
     yield* validateLocalIdentity(input);
-    yield* bindLocalIdentity(input);
     const recovery = yield* Store.recover().pipe(
       Effect.mapError(initializationStoreFailure),
     );

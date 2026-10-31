@@ -9,6 +9,7 @@ import { Data, Deferred, Effect, Fiber } from "effect";
 import { expect } from "vitest";
 import {
   type Fixture,
+  identityLayerFor,
   makeFixture,
   runtimeDependencies,
 } from "../__tests__/daemon-runtime-fixtures.js";
@@ -26,6 +27,7 @@ import {
 } from "../communication/router/index.js";
 import { Firewall } from "../firewall/index.js";
 import { HARNESS_SEND_TOOL } from "../host-protocol/names.js";
+import { saveLocalIdentity } from "../identity/local-store.js";
 import { Registry } from "../identity/registry/index.js";
 import {
   type DaemonRuntimeDependencies,
@@ -75,10 +77,8 @@ const runRegistrationFixture = (
   fixture: Fixture,
   dependencies: DaemonRuntimeDependencies,
 ) =>
-  runDaemonRuntime(
-    { bootstrap: fixture.bootstrap, registration: { kind: "unregistered" } },
-    dependencies,
-  ).pipe(
+  runDaemonRuntime({ bootstrap: fixture.bootstrap }, dependencies).pipe(
+    Effect.provide(identityLayerFor(fixture.bootstrap)),
     Effect.scoped,
     Effect.provide(Firewall.layer()),
     Effect.provideService(Registry, {
@@ -94,9 +94,13 @@ const startupStatus = Effect.gen(function* () {
   const fixture = yield* makeFixture;
   const ready = yield* Deferred.make<URL>();
   const daemon = yield* runDaemonRuntime(
-    { bootstrap: fixture.bootstrap, registration: { kind: "unregistered" } },
+    { bootstrap: fixture.bootstrap },
     runtimeDependencies(listener(ready)),
-  ).pipe(withoutNetwork, Effect.forkScoped);
+  ).pipe(
+    Effect.provide(identityLayerFor(fixture.bootstrap)),
+    withoutNetwork,
+    Effect.forkScoped,
+  );
   const address = yield* Deferred.await(ready).pipe(
     Effect.raceFirst(Fiber.join(daemon)),
   );
@@ -111,9 +115,13 @@ const startupStatus = Effect.gen(function* () {
 const listenerFailure = Effect.gen(function* () {
   const fixture = yield* makeFixture;
   return yield* runDaemonRuntime(
-    { bootstrap: fixture.bootstrap, registration: { kind: "unregistered" } },
+    { bootstrap: fixture.bootstrap },
     runtimeDependencies(() => Effect.fail(new ListenerTestFailure())),
-  ).pipe(withoutNetwork, Effect.flip);
+  ).pipe(
+    Effect.provide(identityLayerFor(fixture.bootstrap)),
+    withoutNetwork,
+    Effect.flip,
+  );
 });
 
 const registersBeforeCommunicationStarts = Effect.gen(function* () {
@@ -153,16 +161,20 @@ const registersBeforeCommunicationStarts = Effect.gen(function* () {
 
 const communicationStartupFailure = Effect.gen(function* () {
   const fixture = yield* makeFixture;
+  yield* saveLocalIdentity(fixture.localCard);
   return yield* runDaemonRuntime(
     {
       bootstrap: fixture.bootstrap,
-      registration: { kind: "active", agentCard: fixture.localCard },
     },
     {
       ...runtimeDependencies(() => Effect.void),
       makeWorker: () => Effect.fail(new RouterWorkerTransportError()),
     },
-  ).pipe(withoutNetwork, Effect.flip);
+  ).pipe(
+    Effect.provide(identityLayerFor(fixture.bootstrap)),
+    withoutNetwork,
+    Effect.flip,
+  );
 });
 
 // @agent-code-guard/regression-only: lifecycle regressions cover saved registration, startup failure and cancellation over real loopback HTTP.

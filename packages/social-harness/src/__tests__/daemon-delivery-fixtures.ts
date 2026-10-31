@@ -96,6 +96,7 @@ const makeDelivery = (subject: Fixture, firewall: FirewallOperations) =>
       firewall,
       sql: subject.sql,
       localAgentCard: local.card,
+      registrySignerPublicKey: subject.signer,
     };
     const scope = yield* Scope.Scope;
     const emitted: InboundItem[] = [];

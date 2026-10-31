@@ -20,7 +20,12 @@ import {
   decodeCanonical,
   encodeCanonical,
 } from "../../encoding/canonical-json.js";
-import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+import {
+  AgentCard,
+  AgentView,
+  type VerifiedAgentCard,
+} from "../../identity/cards.js";
+import { messageFromIntent } from "../message.js";
 import {
   type ActionCore,
   type ActionHash,
@@ -619,6 +624,26 @@ export const preparedSendData = (prepared: PreparedSend) =>
       new TextEncoder().encode(prepared.canonicalIntent),
     ),
   }).pipe(Effect.mapError(representationFailure));
+
+/** The policy caller receives the same message the captured protocol intent will send. */
+export const messageFromPreparedSend = (prepared: PreparedSend) =>
+  preparedSendData(prepared).pipe(
+    Effect.flatMap(({ descriptor, intent }) =>
+      Effect.forEach(
+        descriptor.members,
+        (card) => Schema.decodeUnknown(AgentCard)(card),
+        { concurrency: 1 },
+      ).pipe(
+        Effect.flatMap((cards) =>
+          messageFromIntent(
+            cards.map((card) => AgentView.make(card)),
+            intent,
+          ),
+        ),
+      ),
+    ),
+    Effect.mapError(representationFailure),
+  );
 
 /** Resolve and capture one exact message without creating outgoing ownership. */
 export const prepareSend = (

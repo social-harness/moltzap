@@ -8,6 +8,7 @@ import {
 } from "@modelcontextprotocol/server";
 import {
   Cause,
+  type Context,
   Deferred,
   Effect,
   Exit,
@@ -38,6 +39,7 @@ import {
   INBOX_ITEM_EVENT,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
+import { Identity } from "../../identity/local.js";
 import {
   consumerConflict,
   consumerLost,
@@ -64,8 +66,6 @@ interface EventsOptions {
     InboxSummary,
     { readonly reason: string }
   >;
-  /** A saved identity permits subscription before communication finishes starting. */
-  readonly isRegistered: () => boolean;
   readonly gate: Effect.Semaphore;
   readonly webhook?: HarnessWebhookEvents;
   readonly poll?: HarnessPollEvents;
@@ -108,11 +108,17 @@ const requireNoReplay = (cursor?: string | null): void => {
   }
 };
 
-const requireRegistration = (options: EventsOptions): void => {
-  if (!options.isRegistered()) {
-    throw new ProtocolError(-32012, "Endpoint is not registered");
-  }
-};
+const requireRegistration = (runtime: EventsRuntime) =>
+  runtime.identity.me().pipe(
+    Effect.catchTag("IdentityError", () =>
+      Effect.fail(new ProtocolError(-32603, "Identity is unavailable")),
+    ),
+    Effect.flatMap((status) =>
+      status.kind === "registered"
+        ? Effect.void
+        : Effect.fail(new ProtocolError(-32012, "Endpoint is not registered")),
+    ),
+  );
 
 const requireAvailable = (occupied: boolean): void => {
   if (occupied) {
@@ -189,6 +195,7 @@ export const runEventOperation = async <A, E>(
 /* eslint-enable agent-code-guard/async-keyword -- Remaining operations use Effect. */
 
 interface EventsRuntime {
+  readonly identity: Context.Tag.Service<typeof Identity>;
   readonly services: Runtime.Runtime<never>;
   readonly options: EventsOptions;
   readonly lifetime: Scope.CloseableScope;
@@ -290,8 +297,8 @@ const stream = (
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
+      yield* requireRegistration(runtime);
       yield* Effect.sync(() => {
-        requireRegistration(runtime.options);
         requireInboxEvent(input.name);
         requireNoReplay(input.cursor);
       });
@@ -364,18 +371,25 @@ const itemDescriptors = (runtime: EventsRuntime) => {
 
 /** SDK validation exceptions become typed refusals for consumer-lifetime handling. */
 const authorizePoll = (runtime: EventsRuntime) =>
-  Effect.sync(() => {
-    requireRegistration(runtime.options);
-    requireAvailable(
-      admissionClosed(runtime) ||
-        runtime.active !== undefined ||
-        hasWebhookConsumer(runtime),
+  requireRegistration(runtime)
+    .pipe(
+      Effect.zipRight(
+        Effect.sync(() => {
+          requireAvailable(
+            admissionClosed(runtime) ||
+              runtime.active !== undefined ||
+              hasWebhookConsumer(runtime),
+          );
+        }),
+      ),
+    )
+    .pipe(
+      Effect.catchAllDefect((cause) =>
+        ProtocolError.isInstance(cause)
+          ? Effect.fail(cause)
+          : Effect.die(cause),
+      ),
     );
-  }).pipe(
-    Effect.catchAllDefect((cause) =>
-      ProtocolError.isInstance(cause) ? Effect.fail(cause) : Effect.die(cause),
-    ),
-  );
 
 const poll = (
   runtime: EventsRuntime,
@@ -438,40 +452,44 @@ const installReadHandlers = (
       ),
   );
 };
-const subscribe = (runtime: EventsRuntime, input: EventSubscribeInput) => {
-  requireRegistration(runtime.options);
-  if (input.name !== INBOX_ITEM_EVENT) {
-    throw new ProtocolError(-32011, "Event not found", { kind: "event" });
-  }
-  requireNoReplay(input.cursor);
-  const webhook = runtime.options.webhook;
-  if (webhook === undefined || input.delivery.mode !== "webhook") {
-    throw new ProtocolError(-32014, "Webhook delivery is unavailable", {
-      feature: "deliveryMode",
-      value: input.delivery.mode,
-    });
-  }
-  return webhook
-    .subscribe(
-      input,
-      Effect.sync(() => {
-        requireAvailable(
-          admissionClosed(runtime) ||
-            runtime.active !== undefined ||
-            hasPollingConsumer(runtime),
-        );
+const subscribe = (runtime: EventsRuntime, input: EventSubscribeInput) =>
+  requireRegistration(runtime).pipe(
+    Effect.zipRight(
+      Effect.suspend(() => {
+        if (input.name !== INBOX_ITEM_EVENT) {
+          throw new ProtocolError(-32011, "Event not found", { kind: "event" });
+        }
+        requireNoReplay(input.cursor);
+        const webhook = runtime.options.webhook;
+        if (webhook === undefined || input.delivery.mode !== "webhook") {
+          throw new ProtocolError(-32014, "Webhook delivery is unavailable", {
+            feature: "deliveryMode",
+            value: input.delivery.mode,
+          });
+        }
+        return webhook
+          .subscribe(
+            input,
+            Effect.sync(() => {
+              requireAvailable(
+                admissionClosed(runtime) ||
+                  runtime.active !== undefined ||
+                  hasPollingConsumer(runtime),
+              );
+            }),
+          )
+          .pipe(
+            Effect.map((grant) => ({ ...grant })),
+            Effect.tap(() =>
+              Effect.sync(() => {
+                reportOwnership(runtime);
+                runtime.wakeups.unsafeOffer(true);
+              }),
+            ),
+          );
       }),
-    )
-    .pipe(
-      Effect.map((grant) => ({ ...grant })),
-      Effect.tap(() =>
-        Effect.sync(() => {
-          reportOwnership(runtime);
-          runtime.wakeups.unsafeOffer(true);
-        }),
-      ),
-    );
-};
+    ),
+  );
 const unsubscribe = (runtime: EventsRuntime, input: EventUnsubscribeInput) => {
   if (input.name !== INBOX_ITEM_EVENT) {
     throw new ProtocolError(-32011, "Event not found", { kind: "event" });
@@ -600,11 +618,12 @@ const assembled = (runtime: EventsRuntime): HarnessEvents => ({
  */
 export const makeHarnessEvents = (
   options: EventsOptions,
-): Effect.Effect<HarnessEvents> =>
+): Effect.Effect<HarnessEvents, never, Identity> =>
   Effect.gen(function* () {
     const lifetime = yield* Scope.make();
     const wakeups = yield* Queue.sliding<boolean>(1);
     const runtime: EventsRuntime = {
+      identity: yield* Identity,
       services: yield* Effect.runtime(),
       options,
       lifetime,

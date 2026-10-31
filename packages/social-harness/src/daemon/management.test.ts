@@ -16,7 +16,6 @@ import { generateKeyPairSync } from "node:crypto";
 import { describe, expect } from "vitest";
 import type { RegistryLookupResult } from "../identity/registry/contract.js";
 import type { DaemonBootstrap } from "./bootstrap.js";
-import type { DaemonRegistrationState } from "./registration/index.js";
 import {
   issueTestCard,
   makeTestAuthority,
@@ -27,6 +26,7 @@ import {
   buildCertifiedFirstMessage,
   storeCertifiedFirstMessage,
 } from "../__tests__/certified-history-fixtures.js";
+import { identityLayerFor } from "../__tests__/daemon-runtime-fixtures.js";
 import { mcpTestCredential } from "../__tests__/mcp-http-fixtures.js";
 import { localGuidance } from "../__tests__/message-policy-fixtures.js";
 import { routerInstanceId } from "../__tests__/router-worker-fixtures.js";
@@ -54,6 +54,7 @@ import {
 } from "../host-protocol/index.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
+import { saveLocalIdentity } from "../identity/local-store.js";
 import { Registry } from "../identity/registry/index.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { makeDaemonManagementOperations } from "./management/index.js";
@@ -145,13 +146,6 @@ const makeMembershipRow = (members: readonly VerifiedAgentCard[]) =>
     };
   }).pipe(Effect.orDie);
 
-function activeRegistration(card: VerifiedAgentCard) {
-  return {
-    readRegistration: () => ({ kind: "active", agentCard: card }) as const,
-    registered: () => Effect.void,
-  };
-}
-
 function makeRegistryLayer(cards: readonly VerifiedAgentCard[]) {
   const lookup = (
     request: Parameters<Context.Tag.Service<typeof Registry>["lookup"]>[0],
@@ -203,10 +197,16 @@ const seedHistory = (fixture: IdentityFixture) =>
     return { local, remote, membership, record };
   });
 const activeOperations = (fixture: IdentityFixture) =>
-  makeDaemonManagementOperations({
-    bootstrap: fixture.bootstrap,
-    registration: activeRegistration(fixture.cards[0]),
-  }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
+  saveLocalIdentity(fixture.cards[0]).pipe(
+    Effect.zipRight(
+      makeDaemonManagementOperations({
+        bootstrap: fixture.bootstrap,
+      }).pipe(
+        Effect.provide(identityLayerFor(fixture.bootstrap)),
+        Effect.provide(makeRegistryLayer(fixture.cards)),
+      ),
+    ),
+  );
 
 type HistoryFixture = Effect.Effect.Success<ReturnType<typeof seedHistory>>;
 const savePermittedHistory = (
@@ -287,11 +287,10 @@ const refusesUnregisteredReads = () =>
       const fixture = yield* makeIdentityFixture;
       const operations = yield* makeDaemonManagementOperations({
         bootstrap: fixture.bootstrap,
-        registration: {
-          readRegistration: () => ({ kind: "unregistered" }),
-          registered: () => Effect.void,
-        },
-      }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
+      }).pipe(
+        Effect.provide(identityLayerFor(fixture.bootstrap)),
+        Effect.provide(makeRegistryLayer(fixture.cards)),
+      );
       expect(yield* operations.readStatus()).toEqual({ kind: "unregistered" });
       expect(
         yield* operations.readConversation(historyRequest).pipe(Effect.flip),
@@ -330,17 +329,6 @@ function heldRegistry(
   return Layer.succeed(Registry, service);
 }
 
-function registrationPort() {
-  let registration: DaemonRegistrationState = { kind: "unregistered" };
-  return {
-    readRegistration: () => registration,
-    registered: (agentCard: VerifiedAgentCard) =>
-      Effect.sync(() => {
-        registration = { kind: "active", agentCard };
-      }),
-  };
-}
-
 // @agent-code-guard/regression-only: cancellation cannot strand a successful Registry registration outside durable local identity.
 const finishesCanceledRegistration = () =>
   withDaemonStore(stateDirectory(), (store) =>
@@ -348,10 +336,15 @@ const finishesCanceledRegistration = () =>
       const fixture = yield* makeIdentityFixture;
       const entered = yield* Deferred.make<undefined>();
       const release = yield* Deferred.make<undefined>();
+      const identities = yield* Layer.build(
+        identityLayerFor(fixture.bootstrap),
+      ).pipe(Effect.provide(heldRegistry(fixture, entered, release)));
       const operations = yield* makeDaemonManagementOperations({
         bootstrap: fixture.bootstrap,
-        registration: registrationPort(),
-      }).pipe(Effect.provide(heldRegistry(fixture, entered, release)));
+      }).pipe(
+        Effect.provide(identities),
+        Effect.provide(heldRegistry(fixture, entered, release)),
+      );
       const request = Schema.decodeUnknownSync(managementRegisterRequestSchema)(
         {
           operationId: "opn_AAAAAAAAAAAAAAAAAAAAAA",
@@ -365,6 +358,9 @@ const finishesCanceledRegistration = () =>
       yield* Effect.sleep(Duration.zero);
       yield* Deferred.succeed(release, undefined);
       expect(Exit.isInterrupted(yield* Fiber.join(interruption))).toBe(true);
+      yield* operations
+        .readStatus()
+        .pipe(Effect.repeat({ until: (status) => status.kind === "active" }));
       expect((yield* store.readIdentity())?.agentId).toBe(
         fixture.cards[0].agentId,
       );

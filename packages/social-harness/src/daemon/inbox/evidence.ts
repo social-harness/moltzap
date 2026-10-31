@@ -11,7 +11,8 @@ import type {
   FirewallLocalEntry,
   FirewallRequestAdmission,
 } from "../../firewall/store/types.js";
-
+import type { Ed25519PublicKey } from "../../identity/keys.js";
+import { readRecentMessages } from "../../communication/conversations/index.js";
 import {
   EndpointStoreError,
   readBytes,
@@ -24,19 +25,6 @@ import {
   transaction,
 } from "../../communication/store/database/index.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
-const historySelect = `
-  SELECT c.ordinal AS position, c.rowid AS sequence, c.conversation_id,
-    s.canonical_record_core, m.canonical_membership,
-    CASE WHEN i.delivery_token IS NOT NULL
-      THEN 1 ELSE 0 END AS visible,
-    a.admitted AS answer_admitted
-  FROM certified_records c
-  JOIN staged_records s ON s.conversation_id = c.conversation_id AND s.record_hash = c.record_hash
-  JOIN memberships m ON m.conversation_id = c.conversation_id
-  LEFT JOIN pending_deliveries d ON d.conversation_id = c.conversation_id AND d.record_hash = c.record_hash
-  LEFT JOIN runtime_inbox i ON i.delivery_token = d.delivery_token
-  LEFT JOIN firewall_answers a ON a.conversation_id = c.conversation_id AND a.record_hash = c.record_hash
-`;
 /** A window entry with the global position that orders it among the other kind. */
 interface PositionedEntry {
   readonly sequence: number;
@@ -47,8 +35,8 @@ interface PositionedEntry {
 /** Where one window ends and which conversation it reads. */
 interface HistoryWindow {
   readonly maximumRecords: number;
-  readonly beforePosition: number;
-  readonly beforeSequence: number;
+  readonly registrySignerPublicKey: Ed25519PublicKey;
+  readonly candidateRecordHash?: string;
   readonly conversationId?: string;
   readonly conversation?: string;
 }
@@ -57,23 +45,25 @@ interface Peekable {
   readonly peek: () => PositionedEntry | undefined;
   readonly take: () => void;
 }
-/** Incoming evidence stops strictly before the candidate's local certification position. */
+/** Evidence captures recent conversation history when assessment begins. */
 export function readFirewallEvidence(
   input: FirewallEvidenceRange & {
     readonly maximumRecords: number;
+    readonly registrySignerPublicKey: Ed25519PublicKey;
   },
 ): Effect.Effect<FirewallEvidence, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const { slices } = yield* readFirewallEvidenceSlices({
       ranges: [
         {
-          beforeDelivery: input.beforeDelivery,
-          beforeRecord: input.beforeRecord,
+          candidateDelivery: input.candidateDelivery,
+          candidateRecord: input.candidateRecord,
           conversationId: input.conversationId,
           conversation: input.conversation,
         },
       ],
       maximumRecords: input.maximumRecords,
+      registrySignerPublicKey: input.registrySignerPublicKey,
     });
     const [slice] = slices;
     if (slice === undefined) {
@@ -86,6 +76,7 @@ export function readFirewallEvidence(
 export function readFirewallEvidenceSlices(input: {
   readonly ranges: readonly FirewallEvidenceRange[];
   readonly maximumRecords: number;
+  readonly registrySignerPublicKey: Ed25519PublicKey;
 }): Effect.Effect<
   FirewallEvidenceSlices,
   EndpointStoreError,
@@ -102,7 +93,8 @@ export function readFirewallEvidenceSlices(input: {
       }
       const slices = yield* Effect.forEach(
         input.ranges,
-        (range) => readSlice(range, input.maximumRecords),
+        (range) =>
+          readSlice(range, input.maximumRecords, input.registrySignerPublicKey),
         { concurrency: 1 },
       );
       return { slices };
@@ -148,12 +140,13 @@ export function readFirewallRequestAdmission(
   }).pipe(storeOperation, Effect.withSpan("readFirewallRequestAdmission"));
 }
 /**
- * One conversation's window before a candidate. A delivery or record that
+ * One conversation's recent window, excluding its candidate. A delivery or record that
  * names no certified record has no window.
  */
 function readSlice(
   range: FirewallEvidenceRange,
   maximumRecords: number,
+  registrySignerPublicKey: Ed25519PublicKey,
 ): Effect.Effect<
   FirewallEvidenceSlice,
   EndpointStoreError,
@@ -162,16 +155,15 @@ function readSlice(
   return Effect.gen(function* () {
     const candidate = yield* windowCandidate(range);
     if (candidate === undefined) {
-      return range.beforeDelivery === undefined &&
-        range.beforeRecord === undefined
+      return range.candidateDelivery === undefined &&
+        range.candidateRecord === undefined
         ? {
             pendingOutgoing:
               range.conversationId !== undefined &&
               (yield* unresolvedSend(range.conversationId)),
             ...(yield* boundedHistory({
               maximumRecords,
-              beforePosition: Number.MAX_SAFE_INTEGER,
-              beforeSequence: Number.MAX_SAFE_INTEGER,
+              registrySignerPublicKey,
               ...range,
             })),
           }
@@ -187,12 +179,11 @@ function readSlice(
       pendingOutgoing: yield* unresolvedSend(conversationId),
       ...(yield* boundedHistory({
         maximumRecords,
-        beforePosition: readInteger(candidate, "position"),
-        beforeSequence: readInteger(candidate, "sequence"),
+        registrySignerPublicKey,
+        candidateRecordHash: readText(candidate, "record_hash"),
         ...range,
         conversationId,
       })),
-      candidate: historyEntry(candidate),
     };
   }).pipe(storeOperation);
 }
@@ -219,17 +210,17 @@ function windowCandidate(
 > {
   return Effect.gen(function* () {
     const database = yield* SqlClient.SqlClient;
-    if (range.beforeDelivery !== undefined) {
+    if (range.candidateDelivery !== undefined) {
       return (yield* database.unsafe<Readonly<Record<string, unknown>>>(
-        `${historySelect} WHERE d.delivery_token = ?`,
-        [range.beforeDelivery],
+        "SELECT c.conversation_id,c.record_hash FROM pending_deliveries d JOIN certified_records c ON c.conversation_id=d.conversation_id AND c.record_hash=d.record_hash WHERE d.delivery_token=?",
+        [range.candidateDelivery],
       ))[0];
     }
-    return range.beforeRecord === undefined
+    return range.candidateRecord === undefined
       ? undefined
       : (yield* database.unsafe<Readonly<Record<string, unknown>>>(
-          `${historySelect} WHERE c.record_hash = ?`,
-          [range.beforeRecord],
+          "SELECT conversation_id,record_hash FROM certified_records WHERE record_hash=?",
+          [range.candidateRecord],
         ))[0];
   }).pipe(storeOperation);
 }
@@ -238,11 +229,16 @@ function boundedHistory(window: HistoryWindow) {
   return Effect.gen(function* () {
     const records = yield* recordEntries(window);
     const locals = yield* localEntries(window);
-    return mergedWindow(
-      peekable(records[Symbol.iterator]()),
-      peekable(locals[Symbol.iterator]()),
-      window.maximumRecords,
-    );
+    return {
+      ...mergedWindow(
+        peekable(records.entries[Symbol.iterator]()),
+        peekable(locals[Symbol.iterator]()),
+        window.maximumRecords,
+      ),
+      ...(records.candidate === undefined
+        ? {}
+        : { candidate: records.candidate }),
+    };
   }).pipe(storeOperation);
 }
 /**
@@ -273,30 +269,61 @@ function mergedWindow(
   }
   return historyWindow(history, false, false);
 }
-/** Selects only the newest bounded certified prefix before reading its payloads. */
+/** Communication verifies the bounded recent messages before policy reads them. */
 function recordEntries(window: HistoryWindow) {
   return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    const rows = yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      historySelect +
-        " WHERE c.rowid IN (SELECT rowid FROM certified_records WHERE conversation_id=? AND ordinal<? ORDER BY ordinal DESC LIMIT ?) ORDER BY c.ordinal DESC",
-      [
-        window.conversationId ?? null,
-        window.beforePosition,
-        window.maximumRecords + 1,
-      ],
-    );
-    return rows.map((row): PositionedEntry => {
-      const entry = historyEntry(row);
-      return {
-        sequence: readInteger(row, "sequence"),
-        local: false,
-        bytes:
-          entry.canonicalRecordCore.byteLength +
-          entry.canonicalMembership.byteLength,
-        entry,
-      };
+    if (window.conversationId === undefined) {
+      return { entries: [], candidate: undefined };
+    }
+    const messages = yield* readRecentMessages({
+      registrySignerPublicKey: window.registrySignerPublicKey,
+      conversationId: window.conversationId,
+      maximumRecords: window.maximumRecords,
+      ...(window.candidateRecordHash === undefined
+        ? {}
+        : { candidateRecordHash: window.candidateRecordHash }),
     });
+    const entries = yield* Effect.forEach(
+      messages,
+      (entry) =>
+        Effect.gen(function* () {
+          return {
+            sequence: entry.sequence,
+            local: false,
+            bytes: entry.bytes,
+            recordHash: entry.recordHash,
+            entry: yield* messageVisibility(entry),
+          } satisfies PositionedEntry & { readonly recordHash: string };
+        }),
+      { concurrency: 1 },
+    );
+    return {
+      entries: entries.filter(
+        (entry) => entry.recordHash !== window.candidateRecordHash,
+      ),
+      candidate: entries.find(
+        (entry) => entry.recordHash === window.candidateRecordHash,
+      )?.entry,
+    };
+  });
+}
+function messageVisibility(
+  entry: Effect.Effect.Success<ReturnType<typeof readRecentMessages>>[number],
+) {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const row = (yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      "SELECT EXISTS(SELECT 1 FROM pending_deliveries d JOIN runtime_inbox i ON i.delivery_token=d.delivery_token WHERE d.record_hash=?) AS visible,(SELECT admitted FROM firewall_answers WHERE record_hash=?) AS answer_admitted",
+      [entry.recordHash, entry.recordHash],
+    ))[0];
+    if (row === undefined) {
+      return yield* new EndpointStoreError({ reason: "corrupt" });
+    }
+    return {
+      message: entry.message,
+      visible: readInteger(row, "visible") === 1,
+      ...answerAdmission(row),
+    } satisfies FirewallHistoryEntry;
   }).pipe(storeOperation);
 }
 /** Reads local result evidence under the same conversation window and bound. */
@@ -304,12 +331,8 @@ function localEntries(window: HistoryWindow) {
   return Effect.gen(function* () {
     const database = yield* SqlClient.SqlClient;
     const rows = yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      "SELECT anchor,canonical_entry FROM firewall_local_evidence WHERE conversation=? AND anchor<? ORDER BY anchor DESC,sequence DESC LIMIT ?",
-      [
-        window.conversation ?? null,
-        window.beforeSequence,
-        window.maximumRecords + 1,
-      ],
+      "SELECT anchor,canonical_entry FROM firewall_local_evidence WHERE conversation=? ORDER BY anchor DESC,sequence DESC LIMIT ?",
+      [window.conversation ?? null, window.maximumRecords + 1],
     );
     return rows.map((row): PositionedEntry => {
       const canonicalEntry = readBytes(row, "canonical_entry");
@@ -349,16 +372,6 @@ function historyWindow(
 ) {
   history.reverse();
   return { history, overflow, earlierHistoryOmitted };
-}
-function historyEntry(
-  row: Readonly<Record<string, unknown>>,
-): FirewallHistoryEntry {
-  return {
-    canonicalRecordCore: readBytes(row, "canonical_record_core"),
-    canonicalMembership: readBytes(row, "canonical_membership"),
-    visible: readInteger(row, "visible") === 1,
-    ...answerAdmission(row),
-  };
 }
 /** Whether an admitted result showed or withheld a record; none for a record no result checked. */
 function answerAdmission(

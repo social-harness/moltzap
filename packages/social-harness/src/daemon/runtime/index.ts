@@ -3,16 +3,25 @@
  */
 
 import { SqlClient } from "@effect/sql";
-import { Cause, Deferred, Effect, Option, Queue, Scope, Stream } from "effect";
+import {
+  Cause,
+  type Context,
+  Deferred,
+  Effect,
+  Option,
+  Queue,
+  Scope,
+  Stream,
+} from "effect";
 import type { EndpointStoreError } from "../../communication/store/index.js";
 import type { FirewallOperations } from "../../firewall/index.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
 import type { HistoryExportPort } from "../inbox/host-traffic-log.js";
 import type { HarnessMcpEventHandler } from "../mcp/index.js";
-import type { DaemonRegistrationState } from "../registration/index.js";
 import { CollectiveEmitError } from "../../communication/collectives/index.js";
 import { Router } from "../../communication/router/index.js";
+import { Identity, LocalIdentity } from "../../identity/local.js";
 import { Registry } from "../../identity/registry/index.js";
 import {
   activationFailure,
@@ -36,18 +45,11 @@ export type { ProtocolEdges };
 /** The state one daemon starts from, read once before the network layers. */
 export interface DaemonStartup {
   readonly bootstrap: DaemonBootstrap;
-  readonly registration: DaemonRegistrationState;
   readonly firewall?: FirewallOperations;
 }
 
 /** The running daemon the lifecycle composes into MCP operations. */
 export interface RunningDaemon {
-  /** Status reports the saved identity before communication finishes starting. */
-  readonly readRegistration: () => DaemonRegistrationState;
-  /** The catalog follows the saved identity, independently of communication startup. */
-  readonly isRegistered: () => boolean;
-  /** Publishes the identity the registration operation has already saved. */
-  readonly registered: (agentCard: VerifiedAgentCard) => Effect.Effect<void>;
   readonly deliveryOperations: HostDelivery["operations"];
   readonly eventStore: HostDelivery["eventStore"];
   readonly subscriptionChanged: (active: boolean) => void;
@@ -69,7 +71,6 @@ interface DaemonInput extends DaemonStartup {
 
 /** Saved identity and acquired communication resources have independent lifetimes. */
 interface DaemonState {
-  registration: DaemonRegistrationState;
   protocol?: ActiveProtocol;
   subscriptionActive: boolean;
   handler?: SubscriptionHandler;
@@ -78,6 +79,7 @@ interface DaemonState {
 interface DaemonEnvironment extends ProtocolEnvironment {
   readonly state: DaemonState;
   readonly delivery: HostDelivery;
+  readonly identity: Context.Tag.Service<typeof Identity>;
 }
 
 const activationRuntimeFailure = (
@@ -162,14 +164,17 @@ const emitLocalItem = (
 /** Communication starts once, independently of the request that saves the identity. */
 const runProtocol = (
   environment: DaemonEnvironment,
-  registration: Deferred.Deferred<VerifiedAgentCard>,
+  registration: Stream.Stream<Option.Option<VerifiedAgentCard>>,
   ready: Deferred.Deferred<undefined>,
   reconciler: Effect.Effect<void, DaemonRuntimeError>,
 ): Effect.Effect<void> =>
-  (environment.state.registration.kind === "active"
-    ? Effect.succeed(environment.state.registration.agentCard)
-    : Deferred.await(registration)
-  ).pipe(
+  registration.pipe(
+    Stream.filterMap((card) => card),
+    Stream.take(1),
+    Stream.runHead,
+    Effect.flatMap((card) =>
+      Option.isSome(card) ? Effect.succeed(card.value) : Effect.interrupt,
+    ),
     Effect.flatMap((agentCard) =>
       acquireProtocol(
         environment,
@@ -227,25 +232,8 @@ const runSubscriptionChanges = (
 const assembleDaemon = (
   environment: DaemonEnvironment,
   changes: Queue.Queue<boolean>,
-  registration: Deferred.Deferred<VerifiedAgentCard>,
   ready: Deferred.Deferred<undefined>,
 ): RunningDaemon => ({
-  readRegistration: () => environment.state.registration,
-  isRegistered: () => environment.state.registration.kind === "active",
-  registered: (agentCard) =>
-    Effect.sync(() => {
-      if (environment.state.registration.kind === "active") {
-        return;
-      }
-      environment.state.registration = Object.freeze({
-        kind: "active",
-        agentCard,
-      });
-      environment.state.handler?.notify.toolsChanged();
-    }).pipe(
-      Effect.zipRight(Deferred.succeed(registration, agentCard)),
-      Effect.asVoid,
-    ),
   deliveryOperations: deliveryOperations(environment, ready),
   eventStore: environment.delivery.eventStore,
   subscriptionChanged: (active) => {
@@ -267,11 +255,11 @@ const assembleDaemon = (
 export const makeDaemon = (input: DaemonInput) =>
   Effect.gen(function* () {
     const daemonScope = yield* Scope.Scope;
-    const registration = yield* Deferred.make<VerifiedAgentCard>();
+    const registration = yield* LocalIdentity;
+    const identity = yield* Identity;
     const ready = yield* Deferred.make<undefined>();
     const changes = yield* Queue.unbounded<boolean>();
     const state: DaemonState = {
-      registration: input.registration,
       subscriptionActive: false,
     };
     const environment: DaemonEnvironment = {
@@ -283,10 +271,22 @@ export const makeDaemon = (input: DaemonInput) =>
       daemonScope,
       fatal: yield* Deferred.make<never, DaemonRuntimeError>(),
       state,
+      identity,
       delivery: yield* daemonDelivery(input, state, daemonScope),
       ...(input.firewall === undefined ? {} : { firewall: input.firewall }),
     };
-    const reconciler = publishPendingMessages(environment);
+    yield* superviseWorkers(environment, registration.changes, ready, changes);
+    return assembleDaemon(environment, changes, ready);
+  }).pipe(Effect.withSpan("makeDaemon"));
+
+function superviseWorkers(
+  environment: DaemonEnvironment,
+  registration: Stream.Stream<Option.Option<VerifiedAgentCard>>,
+  ready: Deferred.Deferred<undefined>,
+  changes: Queue.Queue<boolean>,
+) {
+  const reconciler = publishPendingMessages(environment);
+  return Effect.gen(function* () {
     yield* environment.delivery.inboxChanged.pipe(
       Stream.runForEach(() => Effect.ignore(reconciler)),
       Effect.catchAll((error) => reportStorageFault(environment, error)),
@@ -294,25 +294,32 @@ export const makeDaemon = (input: DaemonInput) =>
         failFromBackgroundCause(environment.fatal, cause),
       ),
       Effect.interruptible,
-      Effect.forkIn(daemonScope),
+      Effect.forkIn(environment.daemonScope),
     );
     yield* environment.delivery.runAdmission.pipe(
       Effect.catchAllCause((cause) =>
         failFromBackgroundCause(environment.fatal, cause),
       ),
       Effect.interruptible,
-      Effect.forkIn(daemonScope),
+      Effect.forkIn(environment.daemonScope),
     );
     yield* runProtocol(environment, registration, ready, reconciler).pipe(
       Effect.interruptible,
-      Effect.forkIn(daemonScope),
+      Effect.forkIn(environment.daemonScope),
     );
     yield* runSubscriptionChanges(environment, changes, reconciler).pipe(
       Effect.interruptible,
-      Effect.forkIn(daemonScope),
+      Effect.forkIn(environment.daemonScope),
     );
-    return assembleDaemon(environment, changes, registration, ready);
-  }).pipe(Effect.withSpan("makeDaemon"));
+    yield* registration.pipe(
+      Stream.drop(1),
+      Stream.runForEach(() =>
+        Effect.sync(() => environment.state.handler?.notify.toolsChanged()),
+      ),
+      Effect.forkIn(environment.daemonScope),
+    );
+  });
+}
 
 function daemonDelivery(
   input: DaemonInput,
@@ -339,6 +346,8 @@ function daemonDelivery(
                     sql,
                     firewall: input.firewall,
                     localAgentCard: state.protocol.agentCard,
+                    registrySignerPublicKey:
+                      input.bootstrap.configuration.registrySignerPublicKey,
                   };
             },
           }),
@@ -356,12 +365,15 @@ function deliveryOperations(
   return {
     ...operations,
     send: (request) =>
-      Effect.suspend(() =>
-        environment.state.registration.kind === "unregistered"
-          ? operations.send(request)
-          : Deferred.await(ready).pipe(
-              Effect.zipRight(operations.send(request)),
-            ),
+      environment.identity.me().pipe(
+        Effect.orDie,
+        Effect.flatMap((identity) =>
+          identity.kind === "unregistered"
+            ? operations.send(request)
+            : Deferred.await(ready).pipe(
+                Effect.zipRight(operations.send(request)),
+              ),
+        ),
       ),
   };
 }

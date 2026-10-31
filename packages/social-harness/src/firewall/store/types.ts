@@ -1,5 +1,6 @@
 /** @file Policy decisions and the persistence operations required by local assessment. */
 
+import type { Message } from "../../communication/message.js";
 import type { DeliveryToken } from "../../communication/store/index.js";
 /** Immutable bytes offered to the host under one delivery identity. */
 export interface ItemProjection {
@@ -8,13 +9,12 @@ export interface ItemProjection {
   readonly canonicalGuidance?: Uint8Array;
 }
 /**
- * A certified evidence row retains its original bytes and local visibility.
+ * A verified message retains its attribution and local visibility.
  * `answer` says whether an admitted result showed this answer record to the
  * runtime or withheld it; it is absent for every other record.
  */
 export interface FirewallHistoryEntry {
-  readonly canonicalRecordCore: Uint8Array;
-  readonly canonicalMembership: Uint8Array;
+  readonly message: Message;
   readonly visible: boolean;
   readonly answer?: "admitted" | "withheld";
 }
@@ -30,7 +30,7 @@ export interface FirewallLocalEntry {
 interface FirewallLocalEvidence extends FirewallLocalEntry {
   readonly conversation: string;
 }
-/** One conversation's evidence window before one candidate. */
+/** Recent conversation evidence captured for one candidate. */
 export interface FirewallEvidenceSlice {
   readonly pendingOutgoing: boolean;
   readonly history: ReadonlyArray<FirewallHistoryEntry | FirewallLocalEntry>;
@@ -41,14 +41,13 @@ export interface FirewallEvidenceSlice {
 /** The captured evidence used by one assessment. */
 export type FirewallEvidence = FirewallEvidenceSlice;
 /**
- * Where one evidence window ends and which conversation it reads: before an
- * incoming delivery's record, before a certified record, or the whole recent
- * window of a conversation for an outgoing candidate. `conversation` is the
- * conversation's canonical address, under which local evidence is kept.
+ * A delivery or record identifies the candidate and conversation, not a time
+ * boundary. Recent history excludes that candidate. `conversation` selects
+ * local evidence stored under the conversation's canonical address.
  */
 export interface FirewallEvidenceRange {
-  readonly beforeDelivery?: DeliveryToken;
-  readonly beforeRecord?: string;
+  readonly candidateDelivery?: DeliveryToken;
+  readonly candidateRecord?: string;
   readonly conversationId?: string;
   readonly conversation?: string;
 }

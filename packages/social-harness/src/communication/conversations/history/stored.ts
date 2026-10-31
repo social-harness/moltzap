@@ -192,7 +192,7 @@ export function readStoredRecord(
  * @param registrySignerPublicKey Registry key the member cards verify under.
  * @param history Retained memberships and anchors named by these records.
  * @param records Durable record rows, in page order.
- * @returns The verified records and shared message values, in page order.
+ * @returns The verified messages and their history positions, in page order.
  */
 export function readStoredHistory(
   registrySignerPublicKey: Ed25519PublicKey,
@@ -200,7 +200,7 @@ export function readStoredHistory(
   records: readonly StoredCertifiedRecord[],
 ): Effect.Effect<
   ReadonlyArray<{
-    readonly record: CertifiedRecord;
+    readonly recordHash: RecordHashValue;
     readonly message: Message;
   }>,
   StoredRowError
@@ -793,7 +793,10 @@ function withMessage(membership: VerifiedMembership, record: CertifiedRecord) {
     membership.members.map(agentViewOf),
     record.actionCertifiedRecord.recordCore.action.messageIntent,
   ).pipe(
-    Effect.map((message) => ({ record, message })),
+    Effect.map((message) => ({
+      recordHash: record.actionCertifiedRecord.recordHash,
+      message,
+    })),
     Effect.mapError(persistenceFailure),
   );
 }

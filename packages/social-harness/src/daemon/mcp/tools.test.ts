@@ -11,21 +11,22 @@ import { Effect, Option, Schema, SchemaAST } from "effect";
 import { describe, expect } from "vitest";
 import { requestId } from "../../__tests__/collective-operation-fixtures.js";
 import {
+  mcpIdentity,
   mcpTestCredential,
   mcpTestHeaders,
 } from "../../__tests__/mcp-http-fixtures.js";
 import { FirewallPolicyError } from "../../firewall/config.js";
 import { decodeHarnessSendErrorData } from "../../host-protocol/operations.js";
 import { AgentName, PrincipalId } from "../../identity/identifiers.js";
+import { Identity } from "../../identity/local.js";
 import { OperationId } from "../../identity/registry/contract.js";
 import {
   type HarnessMcpOperations,
   makeHarnessMcpHttpHandler,
-} from "./tools.js";
+} from "./index.js";
 
 const unused = () => Effect.dieMessage("invalid input reached an operation");
 const operations: HarnessMcpOperations = {
-  isRegistered: () => false,
   readStatus: () => Effect.succeed({ kind: "unregistered" }),
   readInboxSummary: () =>
     Effect.succeed({ pendingCount: 0, newestSequence: 0 }),
@@ -38,13 +39,13 @@ const operations: HarnessMcpOperations = {
   acknowledgeDelivery: unused,
 };
 
-const acquireHandler = (selected: HarnessMcpOperations) =>
+const acquireHandler = (selected: HarnessMcpOperations, registered = true) =>
   Effect.gen(function* () {
     const handler = yield* makeHarnessMcpHttpHandler({
       credential: mcpTestCredential,
       implementation: { name: "tool-contract-test", version: "1" },
       operations: selected,
-    });
+    }).pipe(Effect.provideService(Identity, mcpIdentity(registered)));
     yield* Effect.addFinalizer(() =>
       Effect.tryPromise(() => handler.close()).pipe(Effect.orDie),
     );
@@ -277,10 +278,7 @@ function registrationOperation(
 
 function checksInvocationPrivacy() {
   return Effect.gen(function* () {
-    const handler = yield* acquireHandler({
-      ...operations,
-      isRegistered: () => true,
-    });
+    const handler = yield* acquireHandler(operations);
     const sentinel = "private-mcp-sentinel-1304";
     const malformedText = yield* request(handler, "tools/call", {
       name: "send_message",
@@ -296,10 +294,7 @@ function checksInvocationPrivacy() {
 
 function checksStructuralPrivacy() {
   return Effect.gen(function* () {
-    const handler = yield* acquireHandler({
-      ...operations,
-      isRegistered: () => true,
-    });
+    const handler = yield* acquireHandler(operations);
     const sentinel = "private-token-sentinel-1304";
     const response = yield* request(handler, "tools/call", {
       name: "acknowledge_delivery",
@@ -315,7 +310,7 @@ function checksStructuralPrivacy() {
 
 function checksDiagnosticCap() {
   return Effect.gen(function* () {
-    const handler = yield* acquireHandler(operations);
+    const handler = yield* acquireHandler(operations, false);
     const sentinel = "private-excess-sentinel-1304";
     const response = yield* request(handler, "tools/call", {
       name: "status",
@@ -343,10 +338,7 @@ describe("MCP tool argument diagnostics", () => {
     "retains invocation diagnostics for $name",
     (call) =>
       Effect.gen(function* () {
-        const handler = yield* acquireHandler({
-          ...operations,
-          isRegistered: () => true,
-        });
+        const handler = yield* acquireHandler(operations);
         const response = yield* request(handler, "tools/call", {
           name: call.name,
           arguments: call.arguments,
@@ -379,7 +371,6 @@ describe("MCP structural argument diagnostics", () => {
     Effect.gen(function* () {
       const handler = yield* acquireHandler({
         ...operations,
-        isRegistered: () => true,
         readPolicy: unused,
         updatePolicy: unused,
         readDecisions: unused,
@@ -403,10 +394,13 @@ describe("MCP registration validation", () => {
     (call) =>
       Effect.gen(function* () {
         const accepted: unknown[] = [];
-        const handler = yield* acquireHandler({
-          ...operations,
-          register: registrationOperation(accepted),
-        });
+        const handler = yield* acquireHandler(
+          {
+            ...operations,
+            register: registrationOperation(accepted),
+          },
+          false,
+        );
         const valid = {
           operationId: `opn_${"A".repeat(22)}`,
           principalId: `prn_${"A".repeat(22)}`,
@@ -445,7 +439,6 @@ describe("MCP semantic failures", () => {
     Effect.gen(function* () {
       const handler = yield* acquireHandler({
         ...operations,
-        isRegistered: () => true,
         readConversation: () => Effect.fail({ reason: "invalid-continuation" }),
         searchConversations: () => Effect.fail({ reason: "invalid-address" }),
         readPolicy: unused,
@@ -470,37 +463,32 @@ const fieldDescriptionsSchema = Schema.Record({
 });
 
 // @agent-code-guard/regression-only: descriptions expose identifier, retry and pagination intent to tool consumers.
-describe("MCP tool discoverability", () => {
-  it("describes every tool and the key input fields", () =>
-    Effect.gen(function* () {
-      const inactive = yield* acquireHandler(operations);
-      const active = yield* acquireHandler({
-        ...operations,
-        isRegistered: () => true,
-      });
-      const inactiveResponse = yield* request(inactive, "tools/list", {});
-      const activeResponse = yield* request(active, "tools/list", {});
-      const before = yield* Schema.decodeUnknown(catalogSchema)(
-        inactiveResponse.result,
-      );
-      const after = yield* Schema.decodeUnknown(catalogSchema)(
-        activeResponse.result,
-      );
-      for (const tool of [...before.tools, ...after.tools]) {
-        expect(tool.description.trim().length).toBeGreaterThan(0);
-      }
-      const registration = yield* Schema.decodeUnknown(fieldDescriptionsSchema)(
-        before.tools.find((tool) => tool.name === "register")?.inputSchema
-          .properties,
-      );
-      expect(
-        registration.operationId?.description.trim().length,
-      ).toBeGreaterThan(0);
-      expect(
-        registration.principalId?.description.trim().length,
-      ).toBeGreaterThan(0);
-      expect(registration.agentName?.description.trim().length).toBeGreaterThan(
-        0,
-      );
-    }));
-});
+it("describes every MCP tool and the key input fields", () =>
+  Effect.gen(function* () {
+    const inactive = yield* acquireHandler(operations, false);
+    const active = yield* acquireHandler(operations);
+    const inactiveResponse = yield* request(inactive, "tools/list", {});
+    const activeResponse = yield* request(active, "tools/list", {});
+    const before = yield* Schema.decodeUnknown(catalogSchema)(
+      inactiveResponse.result,
+    );
+    const after = yield* Schema.decodeUnknown(catalogSchema)(
+      activeResponse.result,
+    );
+    for (const tool of [...before.tools, ...after.tools]) {
+      expect(tool.description.trim().length).toBeGreaterThan(0);
+    }
+    const registration = yield* Schema.decodeUnknown(fieldDescriptionsSchema)(
+      before.tools.find((tool) => tool.name === "register")?.inputSchema
+        .properties,
+    );
+    expect(registration.operationId?.description.trim().length).toBeGreaterThan(
+      0,
+    );
+    expect(registration.principalId?.description.trim().length).toBeGreaterThan(
+      0,
+    );
+    expect(registration.agentName?.description.trim().length).toBeGreaterThan(
+      0,
+    );
+  }));

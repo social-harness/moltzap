@@ -1,5 +1,6 @@
 /** @file Private typed contract for endpoint persistence operations. */
 
+import type { IdentityBinding } from "../../identity/local-store.js";
 import type { EndpointStoreError } from "./database/values.js";
 import { canonicalIdentifier } from "../../encoding/identifier.js";
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- The private Effect Schema and decoded nominal value intentionally share one domain name. */
@@ -19,11 +20,8 @@ export type StoreMutation = "inserted" | "existing";
 export function isSemanticStoreRejection(error: EndpointStoreError): boolean {
   return error.reason === "conflict" || error.reason === "invalid-input";
 }
-/** Canonical bytes bound to the one local identity. */
-export interface IdentityBinding {
-  readonly agentId: string;
-  readonly canonicalAgentCard: Uint8Array;
-}
+/** Identity owns the canonical local binding used during protocol recovery. */
+export type { IdentityBinding } from "../../identity/local-store.js";
 /** One locally authored immutable message intent and its completion. */
 export interface MessageIntent {
   readonly conversationId: string;

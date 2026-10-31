@@ -4,9 +4,10 @@ import type { McpHttpHandler } from "@modelcontextprotocol/server";
 import { Effect, Redacted } from "effect";
 import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
 import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
-import { makeHarnessMcpHttpHandler } from "../daemon/mcp/tools.js";
+import { makeHarnessMcpHttpHandler } from "../daemon/mcp/index.js";
+import { Identity } from "../identity/local.js";
 import { openInboxFixture } from "./inbox-fixture.js";
-import { loopbackMcpEndpoint } from "./mcp-http-fixtures.js";
+import { loopbackMcpEndpoint, mcpIdentity } from "./mcp-http-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
 
 /** Bearer credential accepted only by the local fixture. */
@@ -39,13 +40,12 @@ export const nativePollFixture = Effect.fn("nativePollFixture")(function* (
     },
     operations: {
       ...delivery.operations,
-      isRegistered: () => true,
       readStatus: unused,
       register: unused,
       searchConversations: unused,
       readConversation: unused,
     },
-  });
+  }).pipe(Effect.provideService(Identity, mcpIdentity()));
   return {
     store,
     handler,

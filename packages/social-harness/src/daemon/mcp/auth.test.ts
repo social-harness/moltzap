@@ -10,20 +10,21 @@ import { Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
 import {
   connectInProcessClient,
+  mcpIdentity,
   mcpTestCredential,
   mcpTestHeaders,
 } from "../../__tests__/mcp-http-fixtures.js";
+import { Identity } from "../../identity/local.js";
 import {
   type HarnessMcpOperations,
   makeHarnessMcpHttpHandler,
-} from "./tools.js";
+} from "./index.js";
 
 const implementation = { name: "authenticated-daemon-test", version: "1" };
 const unrelated = () => Effect.dieMessage("Unrelated daemon operation");
 const revision = "a".repeat(64);
 const policy = { rules: [], fixedRules: [], activeRevision: revision };
 const operations: HarnessMcpOperations = {
-  isRegistered: () => true,
   readStatus: () => Effect.succeed({ kind: "unregistered" }),
   register: unrelated,
   searchConversations: () =>
@@ -44,8 +45,8 @@ const acquireHandler = (active = true) =>
     const handler = yield* makeHarnessMcpHttpHandler({
       credential: mcpTestCredential,
       implementation,
-      operations: { ...operations, isRegistered: () => active },
-    });
+      operations: operations,
+    }).pipe(Effect.provideService(Identity, mcpIdentity(active)));
     yield* Effect.addFinalizer(() =>
       Effect.tryPromise(() => handler.close()).pipe(Effect.orDie),
     );

@@ -47,6 +47,14 @@
       "reason": "Identity request authentication and immutable Registry resolution"
     },
     {
+      "file": "identity/local.ts",
+      "reason": "Local identity service and scoped registration"
+    },
+    {
+      "file": "identity/local-store.ts",
+      "reason": "Single owner of the saved identity binding used during recovery"
+    },
+    {
       "file": "identity/signing/http-signature.ts",
       "reason": "Bootstrap and registered HTTP signing and verification boundary"
     },
@@ -328,7 +336,9 @@
         "src/identity/signing/http-errors.ts",
         "src/identity/registry/index.ts",
         "src/identity/bounded-cache.ts",
-        "src/identity/registry/contract.ts"
+        "src/identity/registry/contract.ts",
+        "src/identity/local.ts",
+        "src/identity/local-store.ts"
       ],
       "reason": "Identity, request authentication and immutable Registry resolution"
     },
