@@ -130,7 +130,7 @@ const acquireFixture = Effect.fn("acquireConsumerFixture")(function* (
     gate: gate.gate,
     poll,
     summary,
-    protocolActive: () => true,
+    isRegistered: () => true,
   });
   const requests = yield* Scope.make();
   const close = Effect.all([events.close, Scope.close(requests, Exit.void)], {

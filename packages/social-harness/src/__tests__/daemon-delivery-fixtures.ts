@@ -1,6 +1,6 @@
 /** @file Daemon delivery tests use real conversation state and configurable message checks. */
 import { SqlClient } from "@effect/sql";
-import { Effect, Queue, Schema, Scope } from "effect";
+import { Effect, Queue, Schema, Scope, Stream } from "effect";
 
 import type { MessageMiddleware, MiddlewareResult } from "../firewall/check.js";
 import type { InboundItem } from "../host-protocol/items.js";
@@ -231,8 +231,7 @@ function pendingMessages(subject: Fixture) {
 }
 
 /**
- * Run the admission worker for the test scope, publishing through `runPass`
- * after each committed admission.
+ * Reconcile inbox updates while the admission worker checks queued messages.
  * @returns A queue that receives one value per completed admission.
  */
 function startAdmission(
@@ -241,15 +240,17 @@ function startAdmission(
 ) {
   return Effect.gen(function* () {
     const completed = yield* Queue.unbounded<undefined>();
-    yield* delivery
-      .runAdmission(
+    yield* delivery.inboxChanged.pipe(
+      Stream.runForEach(() =>
         runPass.pipe(
           Effect.orDie,
           Effect.zipRight(Queue.offer(completed, undefined)),
           Effect.asVoid,
         ),
-      )
-      .pipe(Effect.forkScoped);
+      ),
+      Effect.forkScoped,
+    );
+    yield* delivery.runAdmission.pipe(Effect.forkScoped);
     return completed;
   });
 }

@@ -74,7 +74,7 @@ const acquireFixture = (block?: BlockedOperation) =>
             delivery.operations.acknowledgeDelivery(deliveryToken),
             block,
           ),
-        protocolActive: () => true,
+        isRegistered: () => true,
         readStatus: unreachable,
         register: unreachable,
         searchConversations: unreachable,

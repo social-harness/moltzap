@@ -138,12 +138,8 @@ export interface HarnessMcpOperations extends DeliveryOperations {
   readonly readDecisions?: (
     request: typeof firewallDecisionsRequestSchema.Type,
   ) => Effect.Effect<typeof firewallDecisionsSchema.Type, FirewallPolicyError>;
-  /**
-   * Whether the daemon's protocol is up. The catalog lists the
-   * post-registration tools, and admits their calls and the inbox
-   * subscription, only while it is.
-   */
-  readonly protocolActive: () => boolean;
+  /** A saved identity exposes the registered tool catalog and inbox subscriptions. */
+  readonly isRegistered: () => boolean;
   readonly readStatus: () => Effect.Effect<
     ManagementStatusResult,
     ClosedOperationError
@@ -889,7 +885,7 @@ const toolHandlers = {
 
 /** Registration and installed operations determine one catalog for every client. */
 const currentTools = (operations: HarnessMcpOperations): readonly ToolName[] =>
-  (operations.protocolActive() ? activeTools : inactiveTools).filter((name) => {
+  (operations.isRegistered() ? activeTools : inactiveTools).filter((name) => {
     if (name === "policy_read") {
       return operations.readPolicy !== undefined;
     }
@@ -1039,7 +1035,7 @@ const acquireHandler = (
       ...(webhook === undefined ? {} : { webhook }),
       ...(poll === undefined ? {} : { poll }),
       summary: options.operations.readInboxSummary,
-      protocolActive: options.operations.protocolActive,
+      isRegistered: options.operations.isRegistered,
       gate,
       keepAliveMillis: options.keepAliveMillis,
       onActiveChange: options.onSubscriptionActiveChange,

@@ -193,6 +193,9 @@ export interface EndpointRecovery {
 /** Certified records bounded by the conversation head captured for the first page. */
 export interface HistoryPage {
   readonly records: readonly CertifiedRecord[];
+  readonly memberships: readonly StoredMembership[];
+  readonly anchors: readonly StoredAnchor[];
+  readonly authoredRecordHashes: readonly string[];
   readonly continuation: string | null;
 }
 /** A remote request is identified by its authenticated certified record. */

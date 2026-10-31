@@ -79,7 +79,7 @@ const PRIVATE_STATUS_DEFECT = "private status defect";
 
 const unusedOperation = Effect.dieMessage("operation is outside this test");
 const operations: HarnessMcpOperations = {
-  protocolActive: () => false,
+  isRegistered: () => false,
   readEvent: () => Effect.fail({ reason: "unknown-event" }),
   readInboxSummary: () =>
     Effect.succeed({ pendingCount: 0, newestSequence: 0 }),
@@ -342,7 +342,7 @@ function observeListeningSubscription(keepAliveMillis?: number) {
   return Effect.gen(function* () {
     const subscriptionActive = yield* Deferred.make<undefined>();
     const { port, server } = yield* acquireBoundaryServer(
-      { ...operations, protocolActive: () => true },
+      { ...operations, isRegistered: () => true },
       (active) => {
         if (active) {
           Effect.runSync(Deferred.succeed(subscriptionActive, undefined));
@@ -403,7 +403,7 @@ const SENDS_WITH_GUIDANCE: readonly SendResult[] = [
 function preservesAdmittedSendGuidance(result: SendResult) {
   return Effect.gen(function* () {
     const endpoint = yield* acquireSendEndpoint({
-      protocolActive: () => true,
+      isRegistered: () => true,
       send: () => Effect.succeed(result),
     });
 
@@ -430,7 +430,7 @@ const distinguishesSendValidationFailures = () =>
     });
     const refused = yield* acquireSendEndpoint({
       ...operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
       send: () => Effect.fail(new SendError({ reason: "not-registered" })),
     });
     expect(yield* refused.send(sendInput).pipe(Effect.flip)).toMatchObject({
@@ -438,7 +438,7 @@ const distinguishesSendValidationFailures = () =>
     });
     const invalidOutput = yield* acquireSendEndpoint({
       ...operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
       send: () =>
         Effect.succeed({
           kind: "collective",
@@ -461,7 +461,7 @@ const carriesARefusalDetailAcrossTheDaemonBoundary = (
   Effect.gen(function* () {
     const endpoint = yield* acquireSendEndpoint({
       ...operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
       send: () => Effect.fail(refusal),
     });
 
@@ -494,7 +494,7 @@ const carriesDeliveryPendingAcrossTheDaemonBoundary = () =>
     const pending = new SendError({ reason: "delivery-pending" });
     const endpoint = yield* acquireSendEndpoint({
       ...operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
       send: () => Effect.fail(pending),
     });
 
@@ -507,7 +507,7 @@ const answersOutcomeUnknownForAnUntypedSendFailure = () =>
   Effect.gen(function* () {
     const endpoint = yield* acquireSendEndpoint({
       ...operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
       send: () => Effect.dieMessage("send defect"),
     });
 
@@ -521,7 +521,7 @@ const reportsOutcomeUnknownWhenTheConnectionDropsMidSend = () =>
     const started = yield* Deferred.make<undefined>();
     const { port, server } = yield* acquireBoundaryServer({
       ...operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
       send: () =>
         Deferred.succeed(started, undefined).pipe(
           Effect.zipRight(Effect.never),
@@ -625,7 +625,7 @@ function reportsAmbiguousSendAnswer(
 ) {
   return Effect.gen(function* () {
     const endpoint = yield* acquireSendEndpoint({
-      protocolActive: () => true,
+      isRegistered: () => true,
       send: () => Effect.succeed(sendResult),
     });
     yield* routeRequestsThrough(answerSendWithMessage(message));
@@ -679,7 +679,7 @@ const classifiesAnHttpAnswerToASend = (
   Effect.gen(function* () {
     const { port } = yield* acquireBoundaryServer({
       ...operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
     });
     const endpoint = yield* acquireHarnessEndpoint(
       new URL(`http://127.0.0.1:${port}/mcp`),
@@ -703,7 +703,7 @@ const keepsARefusedConnectionNetworkUnavailable = () =>
     const serverScope = yield* Scope.make();
     const { port } = yield* acquireBoundaryServer({
       ...operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
     }).pipe(Scope.extend(serverScope));
     const endpoint = yield* acquireHarnessEndpoint(
       new URL(`http://127.0.0.1:${port}/mcp`),
@@ -719,7 +719,7 @@ const keepsARefusedConnectionNetworkUnavailable = () =>
   });
 
 function acquireSendEndpoint(
-  selected: Pick<HarnessMcpOperations, "protocolActive" | "send">,
+  selected: Pick<HarnessMcpOperations, "isRegistered" | "send">,
 ) {
   return Effect.gen(function* () {
     const { port } = yield* acquireBoundaryServer({
@@ -790,7 +790,7 @@ function rejectsSendBookkeepingArguments() {
     const executed: unknown[] = [];
     const { port } = yield* acquireBoundaryServer({
       ...operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
       send: (input) =>
         Effect.sync(() => {
           executed.push(input);
@@ -847,7 +847,7 @@ function readsRetainedEventThroughSdk() {
     yield* store.acknowledgeInboxItem(deliveryToken);
     const { port } = yield* acquireBoundaryServer({
       ...operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
       readEvent: ({ eventId }) => readRuntimeEvent(eventId).pipe(store.run),
     });
     const client = yield* acquireProtocolClient(port, "retained-event-client");
@@ -920,7 +920,7 @@ function preservesFirewallRefusal() {
       feedback: [{ nextAction: "revise", text: "Include Carol in the reply." }],
     });
     const endpoint = yield* acquireSendEndpoint({
-      protocolActive: () => true,
+      isRegistered: () => true,
       send: () => Effect.fail(refusal),
     });
     const error = yield* Effect.flip(endpoint.send(sendInput));

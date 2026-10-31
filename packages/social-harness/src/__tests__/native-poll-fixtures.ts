@@ -39,7 +39,7 @@ export const nativePollFixture = Effect.fn("nativePollFixture")(function* (
     },
     operations: {
       ...delivery.operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
       readStatus: unused,
       register: unused,
       searchConversations: unused,

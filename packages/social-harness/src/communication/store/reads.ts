@@ -101,6 +101,21 @@ export function recoverStoredState(
   }).pipe(storeOperation, Effect.withSpan("recoverStoredState"));
 }
 
+/** Lists only memberships whose conversations have certified history. */
+export const readCertifiedMemberships = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(`
+    SELECT state.conversation_id, membership.membership_hash,
+           membership.canonical_membership
+    FROM conversation_state AS state
+    LEFT JOIN memberships AS membership
+      ON membership.conversation_id = state.conversation_id
+    WHERE state.head_record_hash IS NOT NULL
+    ORDER BY state.conversation_id
+  `);
+  return Object.freeze(rows.map(readMembership));
+}).pipe(storeOperation, Effect.withSpan("readCertifiedMemberships"));
+
 /** Pages stop at the original certified head and can be replayed after restart. */
 export function readStoredConversation(
   request:
@@ -137,7 +152,15 @@ export function readStoredConversation(
               }),
             ).toString("base64url")
           : null;
-      return { records, continuation };
+      return {
+        records,
+        memberships: yield* readMemberships(conversationId),
+        anchors: yield* readAnchors(conversationId, [
+          ...new Set(records.map((record) => record.anchorHash)),
+        ]),
+        authoredRecordHashes: yield* readAuthoredRecordHashes(records),
+        continuation,
+      };
     }),
   ).pipe(Effect.withSpan("readStoredConversation"));
 }
@@ -201,31 +224,43 @@ function readMemberships(
         `SELECT conversation_id, membership_hash, canonical_membership
          FROM memberships ${conversationId === undefined ? "" : "WHERE conversation_id = ?"} ORDER BY conversation_id`,
         [...(conversationId === undefined ? [] : [conversationId])],
-      )).map((row) =>
-        Object.freeze({
-          conversationId: readText(row, "conversation_id"),
-          membershipHash: readText(row, "membership_hash"),
-          canonicalMembership: readBytes(row, "canonical_membership"),
-        }),
-      ),
+      )).map(readMembership),
     );
   }).pipe(storeOperation);
 }
+function readMembership(
+  row: Readonly<Record<string, unknown>>,
+): StoredMembership {
+  return Object.freeze({
+    conversationId: readText(row, "conversation_id"),
+    membershipHash: readText(row, "membership_hash"),
+    canonicalMembership: readBytes(row, "canonical_membership"),
+  });
+}
 function readAnchors(
   conversationId?: string,
+  anchorHashes?: readonly string[],
 ): Effect.Effect<
   readonly StoredAnchor[],
   EndpointStoreError,
   SqlClient.SqlClient
 > {
   return Effect.gen(function* () {
+    if (anchorHashes?.length === 0) {
+      return Object.freeze([]);
+    }
     const database = yield* SqlClient.SqlClient;
     return Object.freeze(
       (yield* database.unsafe<Readonly<Record<string, unknown>>>(
         `SELECT conversation_id, anchor_hash, previous_anchor_hash,
                 selected_record_hash, canonical_anchor
-         FROM anchors ${conversationId === undefined ? "" : "WHERE conversation_id = ?"} ORDER BY conversation_id, rowid`,
-        [...(conversationId === undefined ? [] : [conversationId])],
+         FROM anchors WHERE ${conversationId === undefined ? "1" : "conversation_id = ?"}
+         ${anchorHashes === undefined ? "" : `AND anchor_hash IN (${anchorHashes.map(() => "?").join(", ")})`}
+         ORDER BY conversation_id, rowid`,
+        [
+          ...(conversationId === undefined ? [] : [conversationId]),
+          ...(anchorHashes ?? []),
+        ],
       )).map((row) => {
         const previousAnchorHash = readOptionalText(
           row,
@@ -244,6 +279,31 @@ function readAnchors(
         });
       }),
     );
+  }).pipe(storeOperation);
+}
+
+function readAuthoredRecordHashes(records: readonly CertifiedRecord[]) {
+  return Effect.gen(function* () {
+    if (records.length === 0) {
+      return Object.freeze([]);
+    }
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      `WITH page(author_agent_id, msg_id, record_hash) AS (
+         VALUES ${records.map(() => "(?, ?, ?)").join(", ")}
+       )
+       SELECT page.record_hash FROM page
+       JOIN message_intents AS intent
+         ON intent.author_agent_id = page.author_agent_id
+        AND intent.msg_id = page.msg_id
+        AND intent.completed_record_hash = page.record_hash`,
+      records.flatMap((record) => [
+        record.authorAgentId,
+        record.msgId,
+        record.recordHash,
+      ]),
+    );
+    return Object.freeze(rows.map((row) => readText(row, "record_hash")));
   }).pipe(storeOperation);
 }
 function readEvidence(conversationId?: string) {

@@ -8,7 +8,6 @@ import type {
   DaemonBootstrap,
   DaemonConfigurationError,
 } from "../bootstrap.js";
-import type { DaemonActivationError } from "../errors.js";
 import type {
   HarnessMcpOperations,
   ManagementReadConversationResult,
@@ -32,9 +31,9 @@ import {
 import { AgentAddress } from "../../communication/records/values.js";
 import {
   decodeRuntimeValue,
-  type EndpointRecovery,
   type EndpointStoreError,
   type HistoryPage,
+  type StoredMembership,
 } from "../../communication/store/index.js";
 import * as Store from "../../communication/store/index.js";
 import { compareAscii } from "../../encoding/identifier.js";
@@ -77,12 +76,10 @@ type RegistryService = Context.Tag.Service<typeof Registry>;
 type MessageAddress = ManagementSearchConversationsResult["addresses"][number];
 type HistoryRecord = ManagementReadConversationResult["records"][number];
 
-/** The daemon's registration state and the activation a registration starts. */
+/** Saved registration state and its notification to daemon-owned communication startup. */
 interface RegistrationPort {
   readonly readRegistration: () => DaemonRegistrationState;
-  readonly activateRegistered: (
-    agentCard: VerifiedAgentCard,
-  ) => Effect.Effect<void, DaemonActivationError>;
+  readonly registered: (agentCard: VerifiedAgentCard) => Effect.Effect<void>;
 }
 
 interface ManagementInput {
@@ -91,7 +88,7 @@ interface ManagementInput {
 }
 
 interface SearchConversationAddressesInput {
-  readonly recovery: EndpointRecovery;
+  readonly memberships: readonly StoredMembership[];
   readonly request: ManagementSearchConversationsRequest;
   readonly bootstrap: DaemonBootstrap;
   readonly localAgentCard: VerifiedAgentCard;
@@ -138,18 +135,6 @@ const historyFailureReasons = {
   persistence: "persistence-failed",
 } as const satisfies Readonly<
   Record<EndpointStoreError["reason"], ManagementFailure>
->;
-
-/**
- * Maps activation failures to the caller-visible registration result.
- */
-const activationFailureReasons = {
-  persistence: "persistence-failed",
-  upstream: "dependency-unavailable",
-  representation: "dependency-unavailable",
-  "outbox-too-old": "persistence-failed",
-} as const satisfies Readonly<
-  Record<DaemonActivationError["reason"], ManagementFailure>
 >;
 
 function encodeRegisterResult(
@@ -278,7 +263,7 @@ function renderMembershipAddress(
 }
 
 function decodeStoredMembership(
-  stored: EndpointRecovery["memberships"][number],
+  stored: StoredMembership,
   input: {
     readonly bootstrap: DaemonBootstrap;
     readonly localAgentCard: VerifiedAgentCard;
@@ -305,23 +290,9 @@ function searchConversationAddresses(
         input.localAgentCard,
       );
     }
-    const memberships = new Map(
-      input.recovery.memberships.map((membership) => [
-        membership.conversationId,
-        membership,
-      ]),
-    );
-    const certifiedConversationIds = input.recovery.positions
-      .filter((position) => position.headRecordHash !== undefined)
-      .map((position) => position.conversationId);
     const addresses = yield* Effect.forEach(
-      certifiedConversationIds,
-      (conversationId) => {
-        const membership = memberships.get(conversationId);
-        return membership === undefined
-          ? Effect.fail(persistenceFailure())
-          : decodeStoredMembership(membership, input);
-      },
+      input.memberships,
+      (membership) => decodeStoredMembership(membership, input),
       { concurrency: 1 },
     );
     addresses.sort(compareAscii);
@@ -380,7 +351,6 @@ function mapHistoryStoreFailure(
 
 function readHistoryPage(input: {
   readonly page: HistoryPage;
-  readonly recovery: EndpointRecovery;
   readonly bootstrap: DaemonBootstrap;
   readonly agentCard: VerifiedAgentCard;
 }): Effect.Effect<
@@ -391,7 +361,7 @@ function readHistoryPage(input: {
   return Effect.gen(function* () {
     const verified = yield* readStoredHistory(
       input.bootstrap.configuration.registrySignerPublicKey,
-      input.recovery,
+      input.page,
       input.page.records,
     ).pipe(Effect.mapError(persistenceFailure));
     const views = yield* readHistoryViews(input.page.records).pipe(
@@ -401,17 +371,12 @@ function readHistoryPage(input: {
     for (const { record, author } of verified) {
       const certified = record.actionCertifiedRecord;
       const recordHash = certified.recordHash;
-      const intent = input.recovery.messageIntents.find(
-        (candidate) =>
-          candidate.completedRecordHash === recordHash &&
-          candidate.authorAgentId === input.agentCard.agentId,
-      );
       const view = views.find(
         (candidate) => candidate.recordHash === recordHash,
       );
       if (
         view === undefined &&
-        intent !== undefined &&
+        input.page.authoredRecordHashes.includes(recordHash) &&
         author.agentId === input.agentCard.agentId
       ) {
         records.push({
@@ -471,11 +436,9 @@ function readStatusOperation(
 }
 
 /**
- * Registration and the activation it starts run as one uninterruptible step,
- * so a cancelled MCP request still lets the Registry call, the binding commit,
- * the daemon's switch to active and the protocol activation finish. The
- * Registry call still ends at its own deadline, because
- * `registerDaemonIdentity` runs it in a detached interruptible fiber.
+ * Registry registration, durable identity binding and notification finish even
+ * when the host cancels its request. Communication starts in the daemon scope.
+ * The detached Registry call retains its own deadline.
  */
 function registerOperation(
   input: ManagementInput,
@@ -493,11 +456,8 @@ function registerOperation(
         Effect.mapError(mapRegistrationFailure),
         Effect.tap((result) =>
           result.kind === "registered"
-            ? input.registration.activateRegistered(result.agentCard)
+            ? input.registration.registered(result.agentCard)
             : Effect.void,
-        ),
-        Effect.catchTag("DaemonActivationError", (error) =>
-          Effect.fail({ reason: activationFailureReasons[error.reason] }),
         ),
         Effect.flatMap(encodeRegisterResult),
       ),
@@ -511,11 +471,11 @@ function searchConversationsOperation(
   return (request) =>
     Effect.gen(function* () {
       const localAgentCard = yield* readActiveCard(input.registration);
-      const recovery = yield* Store.recover().pipe(
+      const memberships = yield* Store.readCertifiedMemberships.pipe(
         Effect.mapError(persistenceFailure),
       );
       return yield* searchConversationAddresses({
-        recovery,
+        memberships,
         request,
         bootstrap: input.bootstrap,
         localAgentCard,
@@ -547,12 +507,8 @@ function readConversationOperation(
       const page = yield* Store.readConversation(storeRequest).pipe(
         Effect.mapError(mapHistoryStoreFailure),
       );
-      const recovery = yield* Store.recover().pipe(
-        Effect.mapError(persistenceFailure),
-      );
       return yield* readHistoryPage({
         page,
-        recovery,
         bootstrap: input.bootstrap,
         agentCard: localAgentCard,
       });

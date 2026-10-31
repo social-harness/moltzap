@@ -23,7 +23,7 @@ const unrelated = () => Effect.dieMessage("Unrelated daemon operation");
 const revision = "a".repeat(64);
 const policy = { rules: [], fixedRules: [], activeRevision: revision };
 const operations: HarnessMcpOperations = {
-  protocolActive: () => true,
+  isRegistered: () => true,
   readStatus: () => Effect.succeed({ kind: "unregistered" }),
   register: unrelated,
   searchConversations: () =>
@@ -44,7 +44,7 @@ const acquireHandler = (active = true) =>
     const handler = yield* makeHarnessMcpHttpHandler({
       credential: mcpTestCredential,
       implementation,
-      operations: { ...operations, protocolActive: () => active },
+      operations: { ...operations, isRegistered: () => active },
     });
     yield* Effect.addFinalizer(() =>
       Effect.tryPromise(() => handler.close()).pipe(Effect.orDie),

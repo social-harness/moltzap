@@ -119,7 +119,7 @@ const deliveryFixture = (
     slot.active = collectives;
     const handler = yield* deliveryHandler({
       ...delivery.operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
       readStatus: unreachable,
       register: unreachable,
       searchConversations: unreachable,

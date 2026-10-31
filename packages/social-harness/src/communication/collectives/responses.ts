@@ -3,24 +3,21 @@
 import type * as SqlClient from "@effect/sql/SqlClient";
 import { Clock, Effect, Either, Option, Schema } from "effect";
 import type { CollectiveSendError } from "./ports.js";
-import type { PreparedResponse } from "./prepared.js";
 import type { CertifiedAnswer } from "./shared-answers.js";
 import type { CollectiveState } from "./state.js";
-import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
 import {
   type BindHold,
+  type PreparedSend,
   preparedSendData,
   resolutionFailure,
 } from "../conversations/index.js";
+import { MessageIntent, MsgId, RecordHash } from "../records/index.js";
 import {
-  type Content,
-  type MessageAddressInput,
-  MessageIntent,
-  MsgId,
-  RecordHash,
-} from "../records/index.js";
-import { agentAddressOf } from "../records/values.js";
+  type AgentAddress,
+  agentAddressOf,
+  type GroupAddress,
+} from "../records/values.js";
 import * as Store from "../store/index.js";
 import {
   decodeRuntimeValue,
@@ -39,7 +36,6 @@ import {
 import { durableEmit, durableSend } from "./persistence.js";
 import {
   matchOpenRequest,
-  type OpenRequest,
   type ReceivedRequest,
   unmatchedAnswerError,
 } from "./received-request.js";
@@ -49,24 +45,38 @@ import {
   readCollectiveValue,
   type ResponseValue,
 } from "./wire/index.js";
-type MessageContent = Content;
 const contentInvalid = () => new SendError({ reason: "content-invalid" });
 const collectiveFailure = (
   operationId: CollectiveId,
   failure: CollectiveFailure,
 ) => new CollectiveError({ operationId, failure });
 
-/** Capture the exact schema-valid answer and its original request before assessment. */
-export function prepareResponse(
+/** Validate the named request and create one immutable answer message. */
+export function makeAnswerMessage(
   state: CollectiveState,
-  to: MessageAddressInput,
+  to: AgentAddress | GroupAddress,
   response: CollectiveResponse,
 ) {
   return Effect.gen(function* () {
-    const { operationId, request } = yield* openRequest(state, to, response);
+    const now = yield* Clock.currentTimeMillis;
+    const { operationId, request } = yield* matchOpenRequest(
+      state.requests,
+      to,
+      now,
+      response,
+    ).pipe(Effect.mapError((unmatched) => unmatchedAnswerError(unmatched)));
     const value: ResponseValue = { ...response, kind: "response", operationId };
-    const content = yield* responseContent(request, value);
-    const message = yield* state.ports
+    if (value.action === "accept") {
+      yield* validateAnswer(request.requestedSchema, value.content).pipe(
+        Effect.mapError((fields) =>
+          collectiveFailure(operationId, { kind: "answer-invalid", fields }),
+        ),
+      );
+    }
+    const content = yield* encodeCollectiveContent(value).pipe(
+      Effect.mapError(contentInvalid),
+    );
+    return yield* state.ports
       .prepareMessage({
         to: request.to,
         content,
@@ -77,34 +87,28 @@ export function prepareResponse(
           Effect.fail(resolutionFailure(error)),
         ),
       );
-    const snapshot = yield* readCollectiveValue(
-      (yield* preparedSendData(message)).intent.content,
-    ).pipe(
-      Effect.catchTag("CollectivePartInvalidError", () => contentInvalid()),
-    );
-    if (Option.isNone(snapshot) || snapshot.value.kind !== "response") {
-      return yield* contentInvalid();
-    }
-    return {
-      operationId,
-      request,
-      value: snapshot.value,
-      message,
-    } satisfies PreparedResponse;
-  }).pipe(Effect.withSpan("prepareResponse"));
+  }).pipe(Effect.withSpan("makeAnswerMessage"));
 }
 
-/** Claim and bind the prepared answer only while its original request remains live. */
-export function acceptResponse(
+/** Claim one answer using the exact message assessed by the caller. */
+export function answer(
   state: CollectiveState,
-  prepared: PreparedResponse,
+  message: PreparedSend,
 ): Effect.Effect<
   CollectiveSendOutcome,
   CollectiveSendError,
   SqlClient.SqlClient
 > {
   return Effect.gen(function* () {
-    const { operationId, request, value, message } = prepared;
+    const value = yield* decodeAnswer(message);
+    const { operationId } = value;
+    const request = state.requests.get(operationId);
+    if (
+      request === undefined ||
+      request.to !== message.collective?.destination
+    ) {
+      return yield* collectiveFailure(operationId, { kind: "request-none" });
+    }
     const { certified } = yield* state.ports
       .acceptMessage(message, claimRequest(state, request, value))
       .pipe(
@@ -135,7 +139,7 @@ export function acceptResponse(
       msgId,
       address: request.to,
     } satisfies CollectiveSendOutcome;
-  }).pipe(Effect.withSpan("acceptResponse"));
+  }).pipe(Effect.withSpan("answer"));
 }
 
 /** A retained response claim stays unavailable while its original intent certifies. */
@@ -189,61 +193,31 @@ export function restoreResponse(
   }).pipe(Effect.withSpan("restoreResponse"));
 }
 
-/**
- * Resolve the request before checking an answer or reserving its one response.
- */
-function openRequest(
-  state: CollectiveState,
-  to: MessageAddressInput,
-  response: CollectiveResponse,
-): Effect.Effect<
-  OpenRequest<ReceivedRequest>,
-  SendError | CollectiveError,
-  SqlClient.SqlClient
-> {
+/** The answer payload and durable claim must name the same request. */
+function decodeAnswer(
+  message: PreparedSend,
+): Effect.Effect<ResponseValue, SendError> {
   return Effect.gen(function* () {
-    const now = yield* Clock.currentTimeMillis;
-    const self = state.ports.self.agentName;
-    const { address } = yield* canonicalMessageAddress(to, self);
-    return yield* matchOpenRequest(state.requests, address, now, response).pipe(
-      Effect.mapError((unmatched) => unmatchedAnswerError(unmatched)),
+    const snapshot = yield* readCollectiveValue(
+      (yield* preparedSendData(message)).intent.content,
+    ).pipe(
+      Effect.catchTag("CollectivePartInvalidError", () => contentInvalid()),
     );
+    if (
+      Option.isNone(snapshot) ||
+      snapshot.value.kind !== "response" ||
+      message.collective?.role !== "response" ||
+      snapshot.value.operationId !== message.collective.operationId
+    ) {
+      return yield* contentInvalid();
+    }
+    return snapshot.value;
   });
 }
 
 /**
- * Validate an `accept` answer against the request's stored schema and build
- * the response message's content, which carries no text.
- */
-function responseContent(
-  request: ReceivedRequest,
-  response: ResponseValue,
-): Effect.Effect<
-  MessageContent,
-  SendError | CollectiveError,
-  SqlClient.SqlClient
-> {
-  const validated =
-    response.action === "accept"
-      ? validateAnswer(request.requestedSchema, response.content).pipe(
-          Effect.mapError((fields) =>
-            collectiveFailure(response.operationId, {
-              kind: "answer-invalid",
-              fields,
-            }),
-          ),
-        )
-      : Effect.void;
-  return validated.pipe(
-    Effect.zipRight(
-      encodeCollectiveContent(response).pipe(Effect.mapError(contentInvalid)),
-    ),
-  );
-}
-
-/**
- * Hold the request's one answer: match the request `openRequest` matched
- * again by its operationId, still open in its conversation and before its deadline,
+ * Hold the selected request's one answer while it is still open in its
+ * conversation and before its deadline,
  * and claim it. The match and the claim run in one step, with no yield
  * between them, so of two concurrent answers only one is sent. The hold's
  * release reopens a request whose answer bound nothing.

@@ -181,7 +181,7 @@ function admitResult(
 ) {
   return runtime.delivery
     .queueLocalItem(item, provenance)
-    .pipe(Effect.zipRight(admitPending(runtime)));
+    .pipe(Effect.zipRight(Queue.take(runtime.completed)), Effect.asVoid);
 }
 
 /** The item a read-event returns for one delivery token. */

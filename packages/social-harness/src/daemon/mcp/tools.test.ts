@@ -25,7 +25,7 @@ import {
 
 const unused = () => Effect.dieMessage("invalid input reached an operation");
 const operations: HarnessMcpOperations = {
-  protocolActive: () => false,
+  isRegistered: () => false,
   readStatus: () => Effect.succeed({ kind: "unregistered" }),
   readInboxSummary: () =>
     Effect.succeed({ pendingCount: 0, newestSequence: 0 }),
@@ -279,7 +279,7 @@ function checksInvocationPrivacy() {
   return Effect.gen(function* () {
     const handler = yield* acquireHandler({
       ...operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
     });
     const sentinel = "private-mcp-sentinel-1304";
     const malformedText = yield* request(handler, "tools/call", {
@@ -298,7 +298,7 @@ function checksStructuralPrivacy() {
   return Effect.gen(function* () {
     const handler = yield* acquireHandler({
       ...operations,
-      protocolActive: () => true,
+      isRegistered: () => true,
     });
     const sentinel = "private-token-sentinel-1304";
     const response = yield* request(handler, "tools/call", {
@@ -345,7 +345,7 @@ describe("MCP tool argument diagnostics", () => {
       Effect.gen(function* () {
         const handler = yield* acquireHandler({
           ...operations,
-          protocolActive: () => true,
+          isRegistered: () => true,
         });
         const response = yield* request(handler, "tools/call", {
           name: call.name,
@@ -379,7 +379,7 @@ describe("MCP structural argument diagnostics", () => {
     Effect.gen(function* () {
       const handler = yield* acquireHandler({
         ...operations,
-        protocolActive: () => true,
+        isRegistered: () => true,
         readPolicy: unused,
         updatePolicy: unused,
         readDecisions: unused,
@@ -445,7 +445,7 @@ describe("MCP semantic failures", () => {
     Effect.gen(function* () {
       const handler = yield* acquireHandler({
         ...operations,
-        protocolActive: () => true,
+        isRegistered: () => true,
         readConversation: () => Effect.fail({ reason: "invalid-continuation" }),
         searchConversations: () => Effect.fail({ reason: "invalid-address" }),
         readPolicy: unused,
@@ -476,7 +476,7 @@ describe("MCP tool discoverability", () => {
       const inactive = yield* acquireHandler(operations);
       const active = yield* acquireHandler({
         ...operations,
-        protocolActive: () => true,
+        isRegistered: () => true,
       });
       const inactiveResponse = yield* request(inactive, "tools/list", {});
       const activeResponse = yield* request(active, "tools/list", {});

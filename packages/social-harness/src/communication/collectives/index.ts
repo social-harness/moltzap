@@ -10,7 +10,11 @@ import {
   Option,
   Schema,
 } from "effect";
-import type { AgentAddress, MessageAddressInput } from "../records/index.js";
+import type {
+  AgentAddress,
+  GroupAddress,
+  MessageAddressInput,
+} from "../records/index.js";
 import type { InboundItem } from "./inbound.js";
 import type {
   CertifiedMessage,
@@ -18,7 +22,6 @@ import type {
   CollectiveSendError,
   MessageClassifier,
 } from "./ports.js";
-import type { PreparedCollective } from "./prepared.js";
 import {
   decodeCanonical,
   encodeCanonical,
@@ -26,7 +29,11 @@ import {
 import { AgentCard, AgentView } from "../../identity/cards.js";
 import { canonicalMessageAddress } from "../conversations/address.js";
 import { SendError } from "../conversations/errors.js";
-import { preparedSendData, resolutionFailure } from "../conversations/index.js";
+import {
+  type PreparedSend,
+  preparedSendData,
+  resolutionFailure,
+} from "../conversations/index.js";
 import { InboundMessage } from "../conversations/message.js";
 import { agentAddressOf } from "../records/values.js";
 import * as Store from "../store/index.js";
@@ -70,11 +77,7 @@ import {
   requestWait,
   withinRequestWait,
 } from "./request-sends.js";
-import {
-  acceptResponse,
-  prepareResponse,
-  restoreResponse,
-} from "./responses.js";
+import { answer, makeAnswerMessage, restoreResponse } from "./responses.js";
 import {
   type CollectiveState,
   encodeLocalCollective,
@@ -89,6 +92,15 @@ import {
   type ResponseValue,
   withoutCollectivePart,
 } from "./wire/index.js";
+
+/** Captured message identities remain fixed while the caller checks policy. */
+export type PreparedCollective =
+  | {
+      readonly kind: "message";
+      readonly to: AgentAddress | GroupAddress;
+      readonly message: PreparedSend;
+    }
+  | { readonly kind: "collective"; readonly gather: PreparedGather };
 
 /** The daemon's collective layer for one active identity. */
 export interface CollectiveOperations {
@@ -183,8 +195,12 @@ function prepareCapturedOperation(
   input: SendInput,
 ): Effect.Effect<PreparedCollective, CollectiveSendError, SqlClient.SqlClient> {
   if ("collectiveResponse" in input) {
-    return prepareResponse(state, input.to, input.collectiveResponse).pipe(
-      Effect.map((response) => ({ kind: "response", response })),
+    return canonicalMessageAddress(input.to, state.ports.self.agentName).pipe(
+      Effect.flatMap(({ address }) =>
+        makeAnswerMessage(state, address, input.collectiveResponse).pipe(
+          Effect.map((message) => ({ kind: "message", to: address, message })),
+        ),
+      ),
     );
   }
   if (
@@ -212,7 +228,7 @@ function prepareCapturedOperation(
         ),
       );
     return {
-      kind: "multicast",
+      kind: "message",
       to: address,
       message,
     } satisfies PreparedCollective;
@@ -228,9 +244,10 @@ function acceptOperation(
   SqlClient.SqlClient
 > {
   switch (prepared.kind) {
-    case "response":
-      return acceptResponse(state, prepared.response);
-    case "multicast":
+    case "message":
+      if (prepared.message.collective?.role === "response") {
+        return answer(state, prepared.message);
+      }
       return state.ports
         .acceptMessage(prepared.message, Effect.succeed(Effect.void))
         .pipe(
@@ -916,8 +933,6 @@ function abandonGroupRequest(
 
 /** Certified references accompany canonical results for upper-layer projection. */
 export { ResultProvenance } from "./ports.js";
-/** Prepared operation identities are private daemon integration data. */
-export type { PreparedCollective } from "./prepared.js";
 /** The failure an emit port returns when the service cannot keep an item. */
 export { CollectiveEmitError } from "./contracts.js";
 /** The items those operations emit. */

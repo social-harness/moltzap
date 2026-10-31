@@ -1,10 +1,9 @@
 /**
- * @file The running daemon: its registration state, the activation gate,
- * subscriptions, delivery passes and the fatal signal that stops it.
+ * @file Owns the saved identity, communication startup and supervised daemon workers.
  */
 
 import { SqlClient } from "@effect/sql";
-import { Cause, Deferred, Effect, Option, Queue, Scope } from "effect";
+import { Cause, Deferred, Effect, Option, Queue, Scope, Stream } from "effect";
 import type { EndpointStoreError } from "../../communication/store/index.js";
 import type { Firewall } from "../../firewall/index.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
@@ -43,35 +42,19 @@ export interface DaemonStartup {
 
 /** The running daemon the lifecycle composes into MCP operations. */
 export interface RunningDaemon {
-  /** The registration status reads; active from the bind commit on. */
+  /** Status reports the saved identity before communication finishes starting. */
   readonly readRegistration: () => DaemonRegistrationState;
-  /**
-   * Whether the protocol is up: from the moment activation acquires the
-   * engine and Router worker for the bound card. The MCP catalog reads it.
-   */
-  readonly protocolActive: () => boolean;
-  /**
-   * Marks the daemon active with the card just bound, then activates its
-   * protocol. A failure or defect also stops the daemon, since the binding
-   * is durable; only an interrupt leaves it running. Hosts listening for
-   * tool list changes hear once the protocol is up.
-   */
-  readonly activateRegistered: (
-    agentCard: VerifiedAgentCard,
-  ) => Effect.Effect<void, DaemonActivationError>;
+  /** The catalog follows the saved identity, independently of communication startup. */
+  readonly isRegistered: () => boolean;
+  /** Publishes the identity the registration operation has already saved. */
+  readonly registered: (agentCard: VerifiedAgentCard) => Effect.Effect<void>;
   readonly deliveryOperations: HostDelivery["operations"];
   readonly eventStore: HostDelivery["eventStore"];
   readonly subscriptionChanged: (active: boolean) => void;
   readonly installHandler: (
     handler: SubscriptionHandler,
   ) => Effect.Effect<void>;
-  readonly runSubscriptions: Effect.Effect<never, DaemonRuntimeError>;
   readonly awaitFailure: Effect.Effect<never, DaemonRuntimeError>;
-  /**
-   * Activates the protocol of a daemon that started registered. A failure or
-   * defect fails it in the phase registration activation would stop in.
-   */
-  readonly activateAtStart: Effect.Effect<void, DaemonRuntimeError>;
 }
 
 type SubscriptionHandler = Pick<
@@ -84,31 +67,10 @@ interface DaemonInput extends DaemonStartup {
   readonly edges: ProtocolEdges;
 }
 
-/** Status can expose the retained identity before communication resources are ready. */
-type DaemonIdentity =
-  | { readonly kind: "unregistered" }
-  | { readonly kind: "bound"; readonly card: VerifiedAgentCard }
-  | { readonly kind: "running"; readonly protocol: ActiveProtocol };
-
-/**
- * The identity of a daemon bound to its card and not yet running.
- * @param card The card the store committed for this daemon.
- * @returns The frozen bound identity.
- */
-const boundIdentity = (card: VerifiedAgentCard): DaemonIdentity =>
-  Object.freeze({ kind: "bound", card });
-
-/**
- * The identity of a daemon whose protocol runs.
- * @param protocol The protocol resources acquired for the bound card.
- * @returns The frozen running identity.
- */
-const runningIdentity = (protocol: ActiveProtocol): DaemonIdentity =>
-  Object.freeze({ kind: "running", protocol });
-
-/** Mutable daemon state shared with supervised protocol resources. */
+/** Saved identity and acquired communication resources have independent lifetimes. */
 interface DaemonState {
-  identity: DaemonIdentity;
+  registration: DaemonRegistrationState;
+  protocol?: ActiveProtocol;
   subscriptionActive: boolean;
   handler?: SubscriptionHandler;
 }
@@ -116,17 +78,6 @@ interface DaemonState {
 interface DaemonEnvironment extends ProtocolEnvironment {
   readonly state: DaemonState;
   readonly delivery: HostDelivery;
-}
-
-type InitializeProtocol = (
-  agentCard: VerifiedAgentCard,
-) => Effect.Effect<void, DaemonActivationError>;
-
-interface DaemonAssembly {
-  readonly environment: DaemonEnvironment;
-  readonly changes: Queue.Queue<boolean>;
-  readonly reconciler: Effect.Effect<void, DaemonRuntimeError>;
-  readonly initialize: InitializeProtocol;
 }
 
 const activationRuntimeFailure = (
@@ -162,8 +113,7 @@ const activationStopped = (
  * The pass runs with or without a subscriber, so the collective layer
  * consumes protocol messages even while no host is attached. The active protocol
  * and subscriber are read once the delivery gate is held. A failed pass
- * releases the gate, signals the storage failure, and fails with it, so
- * startup and registration stop there instead of continuing.
+ * releases the gate and signals the fatal storage failure.
  * @param environment The daemon's state, delivery and fatal signal.
  * @returns Completion after every current delivery is consumed or offered.
  */
@@ -173,10 +123,10 @@ const publishPendingMessages = (
   environment.delivery
     .runPass(() => {
       const { state } = environment;
-      if (state.identity.kind !== "running") {
+      const { protocol } = state;
+      if (protocol === undefined) {
         return undefined;
       }
-      const { protocol } = state.identity;
       const handler = state.subscriptionActive ? state.handler : undefined;
       return {
         readPending: protocol.engine.readPendingMessages(),
@@ -196,20 +146,9 @@ const publishPendingMessages = (
       }),
     );
 
-/**
- * Queue an item the collective layer emitted and start a publication pass.
- * The pass is forked because the layer can emit from inside one, which holds
- * the delivery gate. An item the store cannot keep signals the storage
- * failure and fails the emission, so a pass that emitted it ends and
- * releases the gate.
- * @param environment The daemon's delivery, fatal signal and scope.
- * @param reconciler The publication pass to fork.
- * @param queued Queues the emitted result, with its provenance, or failure.
- * @returns Completion once the item is durable and the pass is forked.
- */
+/** A failed durable emission stops the daemon and refuses the collective result. */
 const emitLocalItem = (
   environment: DaemonEnvironment,
-  reconciler: Effect.Effect<void, DaemonRuntimeError>,
   queued: Effect.Effect<void, EndpointStoreError>,
 ): Effect.Effect<void, CollectiveEmitError> =>
   queued.pipe(
@@ -218,71 +157,52 @@ const emitLocalItem = (
         Effect.zipRight(Effect.fail(new CollectiveEmitError())),
       ),
     ),
-    Effect.zipRight(
-      Effect.forkIn(Effect.ignore(reconciler), environment.daemonScope),
-    ),
-    Effect.asVoid,
   );
 
-/**
- * Activate the protocol for one immutable daemon identity and publish the
- * deliveries it recovered.
- * @param environment Daemon-owned dependencies, state and resource scope.
- * @param activationGate Serializes registration and restart activation.
- * @param reconciler Publishes durable pending deliveries after transitions.
- * @param agentCard Verified local identity to activate.
- * @returns Completion after engine and worker fibers are running and the
- *   first pass has run.
- */
-const initializeProtocol = (
+/** Communication starts once, independently of the request that saves the identity. */
+const runProtocol = (
   environment: DaemonEnvironment,
-  activationGate: Effect.Semaphore,
+  registration: Deferred.Deferred<VerifiedAgentCard>,
+  ready: Deferred.Deferred<undefined>,
   reconciler: Effect.Effect<void, DaemonRuntimeError>,
-  agentCard: VerifiedAgentCard,
-): Effect.Effect<void, DaemonActivationError> =>
-  activationGate
-    .withPermits(1)(
-      Effect.gen(function* () {
-        const { identity } = environment.state;
-        if (identity.kind === "unregistered") {
-          return yield* Effect.fail(activationFailure("representation"));
-        }
-        const boundCard =
-          identity.kind === "bound"
-            ? identity.card
-            : identity.protocol.agentCard;
-        if (
-          boundCard.agentId !== agentCard.agentId ||
-          boundCard.publicKey.x !== agentCard.publicKey.x
-        ) {
-          return yield* Effect.fail(activationFailure("representation"));
-        }
-        if (identity.kind === "running") {
-          return;
-        }
-        yield* acquireProtocol(
-          environment,
-          {
-            retain: (protocol) => {
-              environment.state.identity = runningIdentity(protocol);
-              environment.state.handler?.notify.toolsChanged();
-            },
-            publishPending: Effect.ignore(reconciler),
-            emit: (item, provenance, terminal) =>
-              emitLocalItem(
-                environment,
-                reconciler,
-                environment.delivery.queueLocalItem(item, provenance, terminal),
-              ),
+): Effect.Effect<void> =>
+  (environment.state.registration.kind === "active"
+    ? Effect.succeed(environment.state.registration.agentCard)
+    : Deferred.await(registration)
+  ).pipe(
+    Effect.flatMap((agentCard) =>
+      acquireProtocol(
+        environment,
+        {
+          retain: (protocol) => {
+            environment.state.protocol = protocol;
           },
-          agentCard,
-        );
-        yield* reconciler.pipe(
-          Effect.mapError(() => activationFailure("persistence")),
-        );
-      }),
-    )
-    .pipe(Effect.withSpan("initializeProtocol"));
+          publishPending: Effect.ignore(reconciler),
+          emit: (item, provenance, terminal) =>
+            emitLocalItem(
+              environment,
+              environment.delivery.queueLocalItem(item, provenance, terminal),
+            ),
+        },
+        agentCard,
+      ),
+    ),
+    Effect.zipRight(Deferred.succeed(ready, undefined)),
+    Effect.zipRight(
+      reconciler.pipe(Effect.mapError(() => activationFailure("persistence"))),
+    ),
+    Effect.catchAllCause((cause) =>
+      Cause.isInterruptedOnly(cause)
+        ? Effect.interrupt
+        : activationStopped(cause).pipe(
+            Effect.flatMap((failure) =>
+              Deferred.fail(environment.fatal, failure),
+            ),
+            Effect.asVoid,
+          ),
+    ),
+    Effect.withSpan("runProtocol"),
+  );
 
 const runSubscriptionChanges = (
   environment: DaemonEnvironment,
@@ -304,72 +224,29 @@ const runSubscriptionChanges = (
     ),
   );
 
-const activateRegistered = (
+const assembleDaemon = (
   environment: DaemonEnvironment,
-  initialize: InitializeProtocol,
-  agentCard: VerifiedAgentCard,
-): Effect.Effect<void, DaemonActivationError> =>
-  Effect.sync(() => {
-    if (environment.state.identity.kind !== "running") {
-      environment.state.identity = boundIdentity(agentCard);
-    }
-  }).pipe(
-    Effect.zipRight(initialize(agentCard)),
-    Effect.tapErrorCause((cause) =>
-      Cause.isInterruptedOnly(cause)
-        ? Effect.void
-        : activationStopped(cause).pipe(
-            Effect.flatMap((failure) =>
-              Deferred.fail(environment.fatal, failure),
-            ),
-          ),
+  changes: Queue.Queue<boolean>,
+  registration: Deferred.Deferred<VerifiedAgentCard>,
+  ready: Deferred.Deferred<undefined>,
+): RunningDaemon => ({
+  readRegistration: () => environment.state.registration,
+  isRegistered: () => environment.state.registration.kind === "active",
+  registered: (agentCard) =>
+    Effect.sync(() => {
+      if (environment.state.registration.kind === "active") {
+        return;
+      }
+      environment.state.registration = Object.freeze({
+        kind: "active",
+        agentCard,
+      });
+      environment.state.handler?.notify.toolsChanged();
+    }).pipe(
+      Effect.zipRight(Deferred.succeed(registration, agentCard)),
+      Effect.asVoid,
     ),
-  );
-
-const activateAtStart = (
-  environment: DaemonEnvironment,
-  initialize: InitializeProtocol,
-): Effect.Effect<void, DaemonRuntimeError> =>
-  Effect.suspend(() => {
-    const { identity } = environment.state;
-    if (identity.kind === "unregistered") {
-      return Effect.void;
-    }
-    return initialize(
-      identity.kind === "bound" ? identity.card : identity.protocol.agentCard,
-    ).pipe(
-      Effect.catchAllCause((cause) =>
-        Cause.isInterruptedOnly(cause)
-          ? Effect.interrupt
-          : activationStopped(cause).pipe(
-              Effect.flatMap((failure) => Effect.fail(failure)),
-            ),
-      ),
-    );
-  });
-
-const assembleDaemon = ({
-  environment,
-  changes,
-  reconciler,
-  initialize,
-}: DaemonAssembly): RunningDaemon => ({
-  readRegistration: () => {
-    const { identity } = environment.state;
-    return identity.kind === "unregistered"
-      ? identity
-      : Object.freeze({
-          kind: "active",
-          agentCard:
-            identity.kind === "bound"
-              ? identity.card
-              : identity.protocol.agentCard,
-        });
-  },
-  protocolActive: () => environment.state.identity.kind === "running",
-  activateRegistered: (agentCard) =>
-    activateRegistered(environment, initialize, agentCard),
-  deliveryOperations: environment.delivery.operations,
+  deliveryOperations: deliveryOperations(environment, ready),
   eventStore: environment.delivery.eventStore,
   subscriptionChanged: (active) => {
     changes.unsafeOffer(active);
@@ -379,40 +256,26 @@ const assembleDaemon = ({
       environment.state.handler = handler;
       changes.unsafeOffer(handler.hasActiveSubscription());
     }),
-  runSubscriptions: runSubscriptionChanges(environment, changes, reconciler),
   awaitFailure: Deferred.await(environment.fatal),
-  activateAtStart: activateAtStart(environment, initialize),
 });
 
 /**
- * Acquire the running daemon without activating its protocol or starting the
- * MCP listener.
+ * Start daemon-scoped workers; communication waits for a saved identity.
  * @param input The startup state, history export and protocol edges.
- * @returns The daemon's registration port, delivery operations and
- *   supervised lifecycle effects.
+ * @returns The daemon's saved-identity port, delivery operations and fatal signal.
  */
-export const makeDaemon = (
-  input: DaemonInput,
-): Effect.Effect<
-  RunningDaemon,
-  DaemonRuntimeError,
-  Registry | Router | Scope.Scope | SqlClient.SqlClient
-> =>
+export const makeDaemon = (input: DaemonInput) =>
   Effect.gen(function* () {
     const daemonScope = yield* Scope.Scope;
-    const sql = yield* SqlClient.SqlClient;
-    const activationGate = yield* Effect.makeSemaphore(1);
+    const registration = yield* Deferred.make<VerifiedAgentCard>();
+    const ready = yield* Deferred.make<undefined>();
     const changes = yield* Queue.unbounded<boolean>();
     const state: DaemonState = {
-      identity:
-        input.registration.kind === "unregistered"
-          ? Object.freeze({ kind: "unregistered" })
-          : boundIdentity(input.registration.agentCard),
+      registration: input.registration,
       subscriptionActive: false,
     };
-    const delivery = yield* daemonDelivery(input, state, daemonScope);
     const environment: DaemonEnvironment = {
-      sql,
+      sql: yield* SqlClient.SqlClient,
       bootstrap: input.bootstrap,
       edges: input.edges,
       registry: yield* Registry,
@@ -420,23 +283,35 @@ export const makeDaemon = (
       daemonScope,
       fatal: yield* Deferred.make<never, DaemonRuntimeError>(),
       state,
-      delivery,
+      delivery: yield* daemonDelivery(input, state, daemonScope),
       ...(input.firewall === undefined ? {} : { firewall: input.firewall }),
     };
     const reconciler = publishPendingMessages(environment);
-    yield* delivery.runAdmission(Effect.ignore(reconciler)).pipe(
+    yield* environment.delivery.inboxChanged.pipe(
+      Stream.runForEach(() => Effect.ignore(reconciler)),
+      Effect.catchAll((error) => reportStorageFault(environment, error)),
       Effect.catchAllCause((cause) =>
         failFromBackgroundCause(environment.fatal, cause),
       ),
+      Effect.interruptible,
       Effect.forkIn(daemonScope),
     );
-    return assembleDaemon({
-      environment,
-      changes,
-      reconciler,
-      initialize: (agentCard) =>
-        initializeProtocol(environment, activationGate, reconciler, agentCard),
-    });
+    yield* environment.delivery.runAdmission.pipe(
+      Effect.catchAllCause((cause) =>
+        failFromBackgroundCause(environment.fatal, cause),
+      ),
+      Effect.interruptible,
+      Effect.forkIn(daemonScope),
+    );
+    yield* runProtocol(environment, registration, ready, reconciler).pipe(
+      Effect.interruptible,
+      Effect.forkIn(daemonScope),
+    );
+    yield* runSubscriptionChanges(environment, changes, reconciler).pipe(
+      Effect.interruptible,
+      Effect.forkIn(daemonScope),
+    );
+    return assembleDaemon(environment, changes, registration, ready);
   }).pipe(Effect.withSpan("makeDaemon"));
 
 function daemonDelivery(
@@ -450,27 +325,46 @@ function daemonDelivery(
       historyExport: input.historyExport,
       experiments: input.bootstrap.configuration,
       collectives: () => {
-        if (state.identity.kind !== "running") {
-          return undefined;
-        }
-        return state.identity.protocol.collectives;
+        return state.protocol?.collectives;
       },
       ...(input.firewall === undefined
         ? {}
         : {
             firewall: input.firewall,
             firewallEnvironment: () => {
-              return state.identity.kind !== "running" ||
+              return state.protocol === undefined ||
                 input.firewall === undefined
                 ? undefined
                 : {
                     sql,
                     firewall: input.firewall,
-                    localAgentCard: state.identity.protocol.agentCard,
+                    localAgentCard: state.protocol.agentCard,
                   };
             },
           }),
       scope,
     }).pipe(Effect.mapError(() => runtimeFailure("storage")));
   });
+}
+
+/** Registered callers wait for communication; unregistered calls retain their existing refusals. */
+function deliveryOperations(
+  environment: DaemonEnvironment,
+  ready: Deferred.Deferred<undefined>,
+): HostDelivery["operations"] {
+  const operations = environment.delivery.operations;
+  const afterStartup = <A, E>(operation: () => Effect.Effect<A, E>) =>
+    Effect.suspend(() =>
+      environment.state.registration.kind === "unregistered"
+        ? operation()
+        : Deferred.await(ready).pipe(Effect.flatMap(operation)),
+    );
+  return {
+    ...operations,
+    send: (request) => afterStartup(() => operations.send(request)),
+    readEvent: (request) => afterStartup(() => operations.readEvent(request)),
+    readInbox: (request) => afterStartup(() => operations.readInbox(request)),
+    acknowledgeDelivery: (token) =>
+      afterStartup(() => operations.acknowledgeDelivery(token)),
+  };
 }

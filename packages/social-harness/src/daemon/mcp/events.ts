@@ -64,8 +64,8 @@ interface EventsOptions {
     InboxSummary,
     { readonly reason: string }
   >;
-  /** Whether the daemon's protocol is up; a subscription needs it. */
-  readonly protocolActive: () => boolean;
+  /** A saved identity permits subscription before communication finishes starting. */
+  readonly isRegistered: () => boolean;
   readonly gate: Effect.Semaphore;
   readonly webhook?: HarnessWebhookEvents;
   readonly poll?: HarnessPollEvents;
@@ -108,8 +108,8 @@ const requireNoReplay = (cursor?: string | null): void => {
   }
 };
 
-const requireProtocolActive = (options: EventsOptions): void => {
-  if (!options.protocolActive()) {
+const requireRegistration = (options: EventsOptions): void => {
+  if (!options.isRegistered()) {
     throw new ProtocolError(-32012, "Endpoint is not registered");
   }
 };
@@ -291,7 +291,7 @@ const stream = (
   Effect.scoped(
     Effect.gen(function* () {
       yield* Effect.sync(() => {
-        requireProtocolActive(runtime.options);
+        requireRegistration(runtime.options);
         requireInboxEvent(input.name);
         requireNoReplay(input.cursor);
       });
@@ -365,7 +365,7 @@ const itemDescriptors = (runtime: EventsRuntime) => {
 /** SDK validation exceptions become typed refusals for consumer-lifetime handling. */
 const authorizePoll = (runtime: EventsRuntime) =>
   Effect.sync(() => {
-    requireProtocolActive(runtime.options);
+    requireRegistration(runtime.options);
     requireAvailable(
       admissionClosed(runtime) ||
         runtime.active !== undefined ||
@@ -439,7 +439,7 @@ const installReadHandlers = (
   );
 };
 const subscribe = (runtime: EventsRuntime, input: EventSubscribeInput) => {
-  requireProtocolActive(runtime.options);
+  requireRegistration(runtime.options);
   if (input.name !== INBOX_ITEM_EVENT) {
     throw new ProtocolError(-32011, "Event not found", { kind: "event" });
   }

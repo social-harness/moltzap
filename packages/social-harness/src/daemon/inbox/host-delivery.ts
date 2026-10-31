@@ -6,8 +6,10 @@ import {
   Deferred,
   Effect,
   Option,
+  PubSub,
   Queue,
-  type Scope,
+  Scope,
+  Stream,
   Struct,
 } from "effect";
 import type {
@@ -143,9 +145,9 @@ export interface HostDelivery {
     },
   ) => Effect.Effect<void, EndpointStoreError>;
   /** Daemon-owned checks run outside the delivery pass and publish only committed admissions. */
-  readonly runAdmission: (
-    publish: Effect.Effect<void>,
-  ) => Effect.Effect<never, EndpointStoreError>;
+  readonly runAdmission: Effect.Effect<never, EndpointStoreError>;
+  /** Signals that pending inbox items may have changed. */
+  readonly inboxChanged: Stream.Stream<undefined>;
 }
 
 type DeliveryContext = HostDeliveryInput & {
@@ -154,6 +156,7 @@ type DeliveryContext = HostDeliveryInput & {
   readonly admissionWake: Queue.Queue<undefined>;
   readonly admissionFailure: Deferred.Deferred<never, EndpointStoreError>;
   readonly activeConversations: Set<string>;
+  readonly inboxUpdates: PubSub.PubSub<undefined>;
 };
 
 const notRegistered = Effect.fail({ reason: "not-registered" });
@@ -242,7 +245,7 @@ function checkOutgoing(
 
 function outgoingCandidate(prepared: PreparedCollective): OutgoingCandidate {
   switch (prepared.kind) {
-    case "multicast":
+    case "message":
       return {
         to: prepared.to,
         gather: false,
@@ -250,17 +253,6 @@ function outgoingCandidate(prepared: PreparedCollective): OutgoingCandidate {
           {
             canonicalIntent: prepared.message.canonicalIntent,
             canonicalMembership: prepared.message.canonicalMembership,
-          },
-        ],
-      };
-    case "response":
-      return {
-        to: prepared.response.request.to,
-        gather: false,
-        messages: [
-          {
-            canonicalIntent: prepared.response.message.canonicalIntent,
-            canonicalMembership: prepared.response.message.canonicalMembership,
           },
         ],
       };
@@ -559,6 +551,11 @@ const queueLocalItem =
         }).pipe(Effect.provideService(SqlClient.SqlClient, input.sql));
       }
       input.state.localItems.set(deliveryToken, item);
+      if (input.firewall === undefined) {
+        yield* PubSub.publish(input.inboxUpdates, undefined);
+      } else {
+        yield* Queue.offer(input.admissionWake, undefined);
+      }
     });
 
 /**
@@ -634,6 +631,10 @@ export const makeHostDelivery = (
   service: HostDeliveryInput,
 ): Effect.Effect<HostDelivery, EndpointStoreError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
+    const inboxUpdates = yield* PubSub.sliding<undefined>(1);
+    yield* Effect.addFinalizer(() => PubSub.shutdown(inboxUpdates)).pipe(
+      Effect.provideService(Scope.Scope, service.scope),
+    );
     const input: DeliveryContext = {
       ...service,
       sql: yield* SqlClient.SqlClient,
@@ -641,6 +642,7 @@ export const makeHostDelivery = (
       admissionWake: yield* Queue.sliding<undefined>(1),
       admissionFailure: yield* Deferred.make<never, EndpointStoreError>(),
       activeConversations: new Set(),
+      inboxUpdates,
     };
     return {
       detach: Effect.sync(() => {
@@ -649,8 +651,11 @@ export const makeHostDelivery = (
       runPass: <E>(prepare: () => PassInput<E> | undefined) =>
         runPass(input, prepare),
       queueLocalItem: queueLocalItem(input),
-      runAdmission: (publish: Effect.Effect<void>) =>
-        runAdmission(admissionContext(input), publish),
+      runAdmission: runAdmission(
+        admissionContext(input),
+        PubSub.publish(inboxUpdates, undefined).pipe(Effect.asVoid),
+      ),
+      inboxChanged: Stream.fromPubSub(inboxUpdates),
       operations: deliveryOperations(input),
       eventStore: eventOperations(input),
     };

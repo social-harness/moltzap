@@ -72,7 +72,7 @@ const makeFixture = () =>
           : {
               prepare: () =>
                 Effect.succeed({
-                  kind: "multicast" as const,
+                  kind: "message" as const,
                   to: bob,
                   message: { canonicalIntent: "{}", canonicalMembership: "{}" },
                 }),

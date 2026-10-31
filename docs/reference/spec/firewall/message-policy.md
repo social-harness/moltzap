@@ -96,10 +96,10 @@ preserve the same guidance.
 
 A check receives the candidate, verified participants, rules, owner facts and
 bounded conversation evidence once. The assessment applies to that captured
-context and exact prepared candidate, without a freshness comparison or
+context and exact candidate, without a freshness comparison or
 automatic reassessment when later context arrives. Acceptance preserves the
-assessed recipients, canonical content and operation/message identities;
-communication separately revalidates a named request's liveness and deadline.
+assessed recipients, content and message identity. Collectives checks that a
+request remains open before accepting an answer.
 
 In-flight checks keep their captured rules. Later checks use successful edits.
 
@@ -158,8 +158,8 @@ gather requests carry exactly the checked content. Assessment uses destination
 history although requests travel through separate direct conversations.
 
 Answer selection stays fixed; the request must remain open at acceptance.
-Expiry, close or a prior answer can refuse an otherwise approved answer; its
-retained judgment remains and disposition becomes withheld. Assessment consumes
+Expiry, close or a prior answer can refuse an otherwise approved answer.
+The saved firewall judgment remains unchanged. Assessment consumes
 the original deadline and request wait. Passing the deadline returns
 `deadline-passed` without sending. The check's separate timeout can exceed the
 request wait.

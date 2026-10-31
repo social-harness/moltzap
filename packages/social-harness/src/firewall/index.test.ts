@@ -426,8 +426,17 @@ it("persists replacement of an initial rule across restart", () =>
     const configuration = yield* options(fixture().path);
     const directory = stateDirectory();
     const replacement = { ...INITIAL, text: "Ask before booking a meeting." };
-    const read = yield* replaceAndReopen(directory, configuration, replacement);
-    expect(read.rules).toContainEqual(replacement);
+    const { policy, summaries } = yield* replaceAndReopen(
+      directory,
+      configuration,
+      replacement,
+    );
+    expect(policy.rules).toContainEqual(replacement);
+    expect(summaries.activations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ addedRuleIds: [replacement.id] }),
+      ]),
+    );
   }));
 function replaceAndReopen(
   directory: string,
@@ -447,7 +456,10 @@ function replaceAndReopen(
     return yield* withDaemonStore(directory, () =>
       Effect.gen(function* () {
         const reopened = yield* makeFirewall(configuration);
-        return yield* reopened.readPolicy();
+        return {
+          policy: yield* reopened.readPolicy(),
+          summaries: yield* reopened.readDecisions({}),
+        };
       }),
     );
   });

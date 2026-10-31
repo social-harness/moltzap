@@ -82,6 +82,7 @@ export {
 } from "./queues/index.js";
 /** History pages remain anchored while later records are appended. */
 export {
+  readCertifiedMemberships,
   readStoredConversation as readConversation,
   recoverStoredState as recover,
 } from "./reads.js";

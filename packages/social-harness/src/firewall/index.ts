@@ -37,6 +37,7 @@ import {
   editableDocumentSchema,
   type FirewallConfiguration,
   firewallConfigurationSchema,
+  type firewallDecisionsSchema,
   type FirewallInstallation,
   FirewallPolicyError,
   FirewallSettings,
@@ -55,6 +56,7 @@ import { makeJevDecisionProvider } from "./jev.js";
 import {
   type FirewallActivation,
   type FirewallCompletion,
+  readDecisions,
   readFirewallPolicy,
   withoutTraces,
   writeFirewallPolicy,
@@ -106,6 +108,10 @@ export interface Firewall {
   readonly updatePolicy: (
     request: typeof policyUpdateSchema.Type,
   ) => Effect.Effect<typeof policyUpdateResultSchema.Type, FirewallPolicyError>;
+  /** Returns saved decision summaries without private assessment content. */
+  readonly readDecisions: (request: {
+    readonly since?: number;
+  }) => Effect.Effect<typeof firewallDecisionsSchema.Type, FirewallPolicyError>;
   /** Returns completed assessments in input order. The caller saves their decisions. */
   readonly check: (
     inputs: readonly PreparedFirewallCheck[],
@@ -120,6 +126,19 @@ const storedPolicySchema = exactStruct({
 });
 const persistenceFailure = () =>
   new FirewallPolicyError({ reason: "persistence-failed" });
+
+/** Saved summaries remain readable when no message policy is configured. */
+export const decisionReader = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  return (request: { readonly since?: number }) =>
+    readDecisions(request).pipe(
+      Effect.provideService(SqlClient.SqlClient, sql),
+      Effect.catchTag("EndpointStoreError", () =>
+        Effect.fail(persistenceFailure()),
+      ),
+    );
+}).pipe(Effect.withSpan("decisionReader"));
+
 type PolicyEditPath = NonNullable<FirewallPolicyError["path"]>;
 const invalidRule = (
   problem: PolicyProblem,
@@ -215,6 +234,7 @@ function liveFirewall(
     const permits = yield* Effect.makeSemaphore(
       options.configuration.maximumConcurrentChecks,
     );
+    const readSavedDecisions = yield* decisionReader;
     function activate(replacement: ActiveRules) {
       active = replacement;
     }
@@ -240,6 +260,7 @@ function liveFirewall(
           activeRevision: active.configurationDigest,
         })),
       updatePolicy,
+      readDecisions: readSavedDecisions,
       check: (inputs) =>
         Effect.suspend(() => checkBatch(options, active, permits, inputs)),
     };

@@ -130,7 +130,7 @@ interface MemoryInbox {
  * scenarios die.
  */
 const inboxOperations = (inbox: MemoryInbox): HarnessMcpOperations => ({
-  protocolActive: () => true,
+  isRegistered: () => true,
   readStatus: unreachable,
   register: unreachable,
   searchConversations: unreachable,
@@ -195,7 +195,7 @@ const acquireRacingEventsServer = Effect.gen(function* () {
   const gate = yield* Effect.makeSemaphore(1);
   const events: HarnessEvents = yield* makeHarnessEvents({
     gate: yieldAfterReservation(gate, () => events),
-    protocolActive: () => true,
+    isRegistered: () => true,
     summary: () =>
       Effect.sync(() => ({
         pendingCount: unread.length,

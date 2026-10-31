@@ -31,6 +31,24 @@ it(
 );
 it("rejects an unreadable cursor instead of starting a different history read", () =>
   withDaemonStore(stateDirectory(), rejectsUnreadableCursor));
+it("lists certified conversations while another foundation remains unfinished", () =>
+  withDaemonStore(stateDirectory(), (store) =>
+    Effect.gen(function* () {
+      yield* store.bindIdentity(identity);
+      yield* store.putConversationFoundation(foundation);
+      yield* store.putConversationFoundation(
+        storedConversation("unfinished-history").foundation,
+      );
+      yield* append(store, 0);
+      assert.deepStrictEqual(yield* store.readCertifiedMemberships, [
+        {
+          conversationId: foundation.conversationId,
+          membershipHash: foundation.membershipHash,
+          canonicalMembership: foundation.canonicalMembership,
+        },
+      ]);
+    }),
+  ));
 
 function replaysHistory() {
   return Effect.gen(function* () {

@@ -148,7 +148,7 @@ const makeMembershipRow = (members: readonly VerifiedAgentCard[]) =>
 function activeRegistration(card: VerifiedAgentCard) {
   return {
     readRegistration: () => ({ kind: "active", agentCard: card }) as const,
-    activateRegistered: () => Effect.void,
+    registered: () => Effect.void,
   };
 }
 
@@ -287,7 +287,7 @@ const refusesUnregisteredReads = () =>
         bootstrap: fixture.bootstrap,
         registration: {
           readRegistration: () => ({ kind: "unregistered" }),
-          activateRegistered: () => Effect.void,
+          registered: () => Effect.void,
         },
       }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
       expect(yield* operations.readStatus()).toEqual({ kind: "unregistered" });
@@ -332,7 +332,7 @@ function registrationPort() {
   let registration: DaemonRegistrationState = { kind: "unregistered" };
   return {
     readRegistration: () => registration,
-    activateRegistered: (agentCard: VerifiedAgentCard) =>
+    registered: (agentCard: VerifiedAgentCard) =>
       Effect.sync(() => {
         registration = { kind: "active", agentCard };
       }),

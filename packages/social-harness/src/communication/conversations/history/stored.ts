@@ -161,16 +161,16 @@ export const recordFromStore = (
  * row's columns must match the anchor it holds, and the record row must pass
  * `recordFromStore`.
  * @param membership Verified membership of the record's conversation.
- * @param recovery Store snapshot holding the record's anchor row.
+ * @param history Retained anchors needed to verify this record.
  * @param stored Durable record row.
  * @returns The complete verified record.
  */
 export function readStoredRecord(
   membership: VerifiedMembership,
-  recovery: EndpointRecovery,
+  history: Pick<EndpointRecovery, "anchors">,
   stored: StoredCertifiedRecord,
 ): Effect.Effect<CertifiedRecord, StoredRowError> {
-  const anchor = recovery.anchors.find(
+  const anchor = history.anchors.find(
     (candidate) =>
       candidate.conversationId === stored.conversationId &&
       candidate.anchorHash === stored.anchorHash,
@@ -190,15 +190,14 @@ export function readStoredRecord(
  * row checks startup and recovery apply. Each membership the page names is
  * verified once, however many of its records the page holds.
  * @param registrySignerPublicKey Registry key the member cards verify under.
- * @param recovery Store snapshot holding the memberships and anchors the
- *   records name.
+ * @param history Retained memberships and anchors named by these records.
  * @param records Durable record rows, in page order.
  * @returns The complete verified records, each with its author's verified
  *   card from the record's membership, in page order.
  */
 export function readStoredHistory(
   registrySignerPublicKey: Ed25519PublicKey,
-  recovery: EndpointRecovery,
+  history: Pick<EndpointRecovery, "memberships" | "anchors">,
   records: readonly StoredCertifiedRecord[],
 ): Effect.Effect<
   ReadonlyArray<{
@@ -209,7 +208,7 @@ export function readStoredHistory(
 > {
   const named = new Set(records.map((stored) => stored.conversationId));
   return Effect.forEach(
-    recovery.memberships.filter((row) => named.has(row.conversationId)),
+    history.memberships.filter((row) => named.has(row.conversationId)),
     (row) => verifyStoredMembership(row, registrySignerPublicKey),
     { concurrency: 1 },
   ).pipe(
@@ -223,7 +222,7 @@ export function readStoredHistory(
           );
           return membership === undefined
             ? Effect.fail(persistenceFailure())
-            : readStoredRecord(membership, recovery, stored).pipe(
+            : readStoredRecord(membership, history, stored).pipe(
                 Effect.flatMap((record) => withAuthor(membership, record)),
               );
         },

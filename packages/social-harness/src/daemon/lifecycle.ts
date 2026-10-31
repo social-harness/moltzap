@@ -1,15 +1,14 @@
 /** @file Private lifecycle composition for one registered endpoint daemon. */
 
+import type { SqlClient } from "@effect/sql";
 import type { Implementation } from "@modelcontextprotocol/server";
 import { NodeFileSystem } from "@effect/platform-node";
-import { SqlClient } from "@effect/sql";
 import { Console, Effect, type Scope } from "effect";
 import type { Router } from "../communication/router/api/client.js";
 import type { Registry } from "../identity/registry/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { makeRouterWorker } from "../communication/router/index.js";
-import { FirewallPolicyError } from "../firewall/config.js";
-import { readDecisions } from "../firewall/store/index.js";
+import { decisionReader } from "../firewall/index.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { packageVersion } from "../release/index.js";
 import { DaemonRuntimeError, runtimeFailure } from "./errors.js";
@@ -93,11 +92,9 @@ export const runDaemonRuntime = (
       registration: daemon,
     });
     return yield* Effect.gen(function* () {
-      yield* daemon.activateAtStart;
       yield* registerAtStart(
         management,
         daemon.readRegistration().kind === "active",
-        daemon,
         input.bootstrap.configuration.registration,
       );
       const handler = yield* makeHandler(
@@ -107,7 +104,6 @@ export const runDaemonRuntime = (
         daemon,
       );
       yield* daemon.installHandler(handler);
-      yield* daemon.runSubscriptions.pipe(Effect.forkScoped);
       yield* dependencies
         .acquireListener({
           port: input.bootstrap.configuration.mcpPort,
@@ -129,21 +125,14 @@ function makeHandler(
   daemon: RunningDaemon,
 ) {
   return Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
+    const readDecisions =
+      input.firewall?.readDecisions ?? (yield* decisionReader);
     return yield* dependencies
       .makeHandler({
         implementation: DAEMON_IMPLEMENTATION,
         operations: Object.freeze({
           ...management,
-          readDecisions: (request: { readonly since?: number }) =>
-            readDecisions(request).pipe(
-              Effect.provideService(SqlClient.SqlClient, sql),
-              Effect.catchTag("EndpointStoreError", () =>
-                Effect.fail(
-                  new FirewallPolicyError({ reason: "persistence-failed" }),
-                ),
-              ),
-            ),
+          readDecisions,
           ...(input.firewall === undefined
             ? {}
             : {
@@ -151,7 +140,7 @@ function makeHandler(
                 updatePolicy: input.firewall.updatePolicy,
               }),
           ...daemon.deliveryOperations,
-          protocolActive: daemon.protocolActive,
+          isRegistered: daemon.isRegistered,
         }),
         credential: input.bootstrap.mcpCredential,
         eventStore: daemon.eventStore,
@@ -161,11 +150,10 @@ function makeHandler(
   });
 }
 
-/** The existing management operation commits and activates a new registration before MCP listens. */
+/** Automatic registration saves the identity before the MCP listener opens. */
 function registerAtStart(
   management: DaemonManagementOperations,
   active: boolean,
-  daemon: RunningDaemon,
   request?: ManagementRegisterRequest,
 ) {
   if (request === undefined || active) {
@@ -173,11 +161,6 @@ function registerAtStart(
   }
   return management.register(request).pipe(
     Effect.mapError(registrationFailure),
-    Effect.catchAllCause((cause) =>
-      daemon.readRegistration().kind === "active"
-        ? daemon.awaitFailure
-        : Effect.failCause(cause),
-    ),
     Effect.flatMap((result) =>
       result.kind === "registered"
         ? Effect.void
