@@ -132,8 +132,11 @@ part; answer/close content is the data part alone. The data value contains
 | Declined answer | `kind: "response"`, `operationId`, `action: "decline"` |
 | Close | `kind: "close"`, `operationId`, `included`, `closedAt`, `closedBy` |
 
-`included` is an array of certified record hashes. Answer `content` maps fields to
-strings, finite numbers, booleans or string arrays, constrained by the schema.
+`included` lists answer message identities in member order. Each entry has
+exactly `authorAgentId: AgentId` and `msgId: MsgId` and identifies a retained
+answer to this operation. Each author occurs at most once. Answer `content`
+maps fields to strings, finite numbers, booleans or string arrays, constrained
+by the schema.
 Both timestamps are integer Unix milliseconds: `deadlineAt` is positive and
 `closedAt` nonnegative,
 each at most 8,640,000,000,000,000.
