@@ -272,7 +272,10 @@ Read the complete draft after editing it. Check that the opening establishes
 its purpose, each section serves that purpose, and each paragraph adds
 something the intended reader needs. Watch for changes of purpose within a
 page, such as a setup procedure turning into a catalogue of every setting.
-Rewrite awkward passages in place.
+Rewrite awkward passages in place. Preserve the owner's edits and deliberate
+cuts. Rewrite an adequate passage only to fix a concrete reader problem or an
+agreed contract change. Reorganizing a document does not justify restoring cut
+material or restating it under another heading.
 
 Review a specification with the source closed. Ask the reader to identify
 the actors, follow a concrete input through the system, explain the result,

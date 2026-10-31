@@ -12,9 +12,9 @@ and permitted conversation evidence. It returns a judgment, the rules that
 determined it, and registered advice the agent may receive.
 
 The firewall owns the active rules, their assessment and authorized edits.
-The daemon supplies the text to assess, verified attribution and conversation
-evidence. It applies the judgment to sending or delivery and saves the result.
-The saved delivery view determines what the agent can read after restart.
+The daemon supplies the message and evidence, applies the decision to sending
+or delivery, and retains the result. Storage preserves those records and rule
+changes across restart.
 
 The firewall is optional and experimental. Without a message-policy file,
 `sharnessd` installs none. It checks messages between agents. The host owns
@@ -94,12 +94,7 @@ preserve the same guidance.
 
 ## Evidence
 
-The daemon selects the conversation evidence for a check and marks which
-messages the agent has seen. Assessment evidence can also include content kept
-private from the agent. The firewall uses that distinction when selecting
-advice.
-
-A check captures the candidate, verified participants, rules, owner facts and
+A check receives the candidate, verified participants, rules, owner facts and
 bounded conversation evidence once. The assessment applies to that captured
 context and exact prepared candidate, without a freshness comparison or
 automatic reassessment when later context arrives. Acceptance preserves the
