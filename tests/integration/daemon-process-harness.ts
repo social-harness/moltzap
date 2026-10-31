@@ -109,6 +109,8 @@ export interface DaemonProcessFixture {
   readonly stateDirectory: string;
   readonly agentPrivateKeyFile: string;
   readonly admissionCredentialFile: string;
+  readonly mcpCredentialFile: string;
+  readonly mcpCredential: Redacted.Redacted;
   readonly firewall?: FirewallMode;
   readonly wireVersions?: ProcessWireVersions;
 }
@@ -657,6 +659,7 @@ export const makeDaemonProcessFixture = (
     const keyPath = join(directory, "agent-key.pem");
     const credentialPath = join(directory, "admission.txt");
     yield* makeDirectory(stateDirectory);
+    const credentials = yield* makeMcpCredential(directory);
     yield* Effect.all(
       [
         writePrivateFile(keyPath, makePrivateKeyPem()),
@@ -670,9 +673,11 @@ export const makeDaemonProcessFixture = (
       stateDirectory,
       agentPrivateKeyFile: keyPath,
       admissionCredentialFile: credentialPath,
+      ...credentials,
       environment: {
         SHARNESS_STATE_DIRECTORY: stateDirectory,
         SHARNESS_MCP_PORT: String(port),
+        SHARNESS_MCP_CREDENTIAL_FILE: credentials.mcpCredentialFile,
         SHARNESS_REGISTRY_ORIGIN: infrastructure.registryOrigin.origin,
         SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY:
           infrastructure.registrySignerPublicKeyJson,
@@ -686,6 +691,15 @@ export const makeDaemonProcessFixture = (
       ...(firewall === undefined ? {} : { firewall }),
     };
   }).pipe(Effect.withSpan("makeDaemonProcessFixture"));
+
+function makeMcpCredential(directory: string) {
+  return Effect.gen(function* () {
+    const mcpCredentialFile = join(directory, "mcp-credential");
+    const mcpCredential = Redacted.make(randomBytes(32).toString("base64url"));
+    yield* writePrivateFile(mcpCredentialFile, Redacted.value(mcpCredential));
+    return { mcpCredentialFile, mcpCredential };
+  });
+}
 
 /** The command that runs one fixture's daemon. */
 const daemonCommand = (
@@ -842,9 +856,9 @@ const callExpectingProtocolError = (
     }),
   );
 
-/** Acquires a private management-only MCP session against one real daemon. */
+/** Acquires a authenticated daemon MCP session against one real daemon. */
 export const acquireDaemonManagementClient = (
-  endpoint: URL,
+  fixture: Pick<DaemonProcessFixture, "endpoint" | "mcpCredential">,
 ): Effect.Effect<DaemonManagementClient, ProcessTestError, Scope.Scope> =>
   Effect.gen(function* () {
     const client = new Client(
@@ -857,9 +871,19 @@ export const acquireDaemonManagementClient = (
     yield* Effect.acquireRelease(
       Effect.tryPromise({
         try: (signal) =>
-          client.connect(new StreamableHTTPClientTransport(endpoint), {
-            signal,
-          }),
+          client.connect(
+            new StreamableHTTPClientTransport(fixture.endpoint, {
+              requestInit: {
+                headers: {
+                  Authorization: `Bearer ${Redacted.value(fixture.mcpCredential)}`,
+                },
+                redirect: "error",
+              },
+            }),
+            {
+              signal,
+            },
+          ),
         catch: (cause) =>
           processTestError("could not connect management client", cause),
       }),

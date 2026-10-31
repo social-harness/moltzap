@@ -33,6 +33,11 @@ import { describe, expect } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import { requestId } from "../../__tests__/collective-operation-fixtures.js";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
+import {
+  mcpTestCredential,
+  mcpTestHeaders,
+} from "../../__tests__/mcp-http-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import {
   CollectiveError,
@@ -58,9 +63,7 @@ import {
   type SendResult,
   SendResultSchema,
 } from "../../host-protocol/send-result.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
-import { openDaemonStore } from "../store.js";
 import { acquireHarnessMcpHttpServer } from "./http.js";
 import {
   type HarnessMcpOperations,
@@ -83,7 +86,6 @@ const operations: HarnessMcpOperations = {
   readInbox: () => Effect.succeed({ items: [] }),
   readStatus: () => Effect.succeed({ kind: "unregistered" }),
   register: () => unusedOperation,
-  searchAgents: () => unusedOperation,
   searchConversations: () => unusedOperation,
   readConversation: () => unusedOperation,
   send: () => unusedOperation,
@@ -97,6 +99,7 @@ function acquireBoundaryServer(
 ) {
   return Effect.gen(function* () {
     const handler = yield* makeHarnessMcpHttpHandler({
+      credential: mcpTestCredential,
       implementation: IMPLEMENTATION,
       operations: selectedOperations,
       ...(onSubscriptionActiveChange === undefined
@@ -128,6 +131,7 @@ function acquireProtocolClient(port: number, name: string) {
           client.connect(
             new StreamableHTTPClientTransport(
               new URL(`http://127.0.0.1:${port}/mcp`),
+              { requestInit: { headers: mcpTestHeaders } },
             ),
             { signal },
           ),
@@ -348,6 +352,7 @@ function observeListeningSubscription(keepAliveMillis?: number) {
     );
     const endpoint = yield* acquireHarnessEndpoint(
       new URL(`http://127.0.0.1:${port}/mcp`),
+      { credential: mcpTestCredential, receiveMode: "push" },
     );
     const receive = yield* endpoint.messages.pipe(
       Stream.runHead,
@@ -524,6 +529,7 @@ const reportsOutcomeUnknownWhenTheConnectionDropsMidSend = () =>
     });
     const endpoint = yield* acquireHarnessEndpoint(
       new URL(`http://127.0.0.1:${port}/mcp`),
+      { credential: mcpTestCredential, receiveMode: "push" },
     );
     const sending = yield* Effect.fork(
       endpoint.send(sendInput).pipe(Effect.flip),
@@ -677,6 +683,7 @@ const classifiesAnHttpAnswerToASend = (
     });
     const endpoint = yield* acquireHarnessEndpoint(
       new URL(`http://127.0.0.1:${port}/mcp`),
+      { credential: mcpTestCredential, receiveMode: "push" },
     );
     yield* routeRequestsThrough(answerSendWithStatus(status));
 
@@ -700,6 +707,7 @@ const keepsARefusedConnectionNetworkUnavailable = () =>
     }).pipe(Scope.extend(serverScope));
     const endpoint = yield* acquireHarnessEndpoint(
       new URL(`http://127.0.0.1:${port}/mcp`),
+      { credential: mcpTestCredential, receiveMode: "push" },
     );
     yield* Scope.close(serverScope, Exit.void);
 
@@ -720,6 +728,7 @@ function acquireSendEndpoint(
     });
     return yield* acquireHarnessEndpoint(
       new URL(`http://127.0.0.1:${port}/mcp`),
+      { credential: mcpTestCredential, receiveMode: "push" },
     );
   });
 }
@@ -815,9 +824,7 @@ function rejectsSendBookkeepingArguments() {
 function readsRetainedEventThroughSdk() {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const store = yield* openDaemonStore(yield* fs.makeTempDirectoryScoped(), {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
+    const store = yield* openInboxFixture(yield* fs.makeTempDirectoryScoped());
     const deliveryToken = Schema.decodeUnknownSync(DeliveryToken)(
       digest("dlv_", 7),
     );
@@ -841,7 +848,7 @@ function readsRetainedEventThroughSdk() {
     const { port } = yield* acquireBoundaryServer({
       ...operations,
       protocolActive: () => true,
-      readEvent: ({ eventId }) => readRuntimeEvent(store, eventId),
+      readEvent: ({ eventId }) => readRuntimeEvent(eventId).pipe(store.run),
     });
     const client = yield* acquireProtocolClient(port, "retained-event-client");
     const result = yield* Effect.tryPromise(() =>

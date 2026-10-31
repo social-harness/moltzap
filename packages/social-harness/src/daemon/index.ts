@@ -5,12 +5,11 @@
 
 import { NodeHttpClient } from "@effect/platform-node";
 import { Data, Duration, Effect, Layer, Option } from "effect";
-import { Router } from "../communication/router/api/client.js";
-import {
-  type EndpointStoreError,
-  inspectEndpointStore,
-  type OutboxTooOldError,
+import type {
+  EndpointStoreError,
+  OutboxTooOldError,
 } from "../communication/store/index.js";
+import { Router } from "../communication/router/api/client.js";
 import {
   type FirewallPolicyError,
   type LoadedMessagePolicy,
@@ -44,7 +43,7 @@ import {
   requireAdmission,
   requireAdmissionToCreate,
 } from "./registration/index.js";
-import { openDaemonStore } from "./store.js";
+import { inspectEndpointStore, layer as storageLayer } from "./store.js";
 import { spanExport } from "./telemetry.js";
 
 // safer-arch-ignore no-large-public-surface: Daemon process composition, firewall installation and the actual Registry and Router client tags with their operation values share the trusted service embedding boundary.
@@ -55,10 +54,9 @@ const ROUTER_POLL_TIMEOUT = Duration.seconds(35);
 
 const liveWireVersions = wireVersions.liveSet;
 
-/** Offline and managed checking use the firewall's supported public contract. */
+/** Managed firewall configuration and checking contracts for daemon embeddings. */
 export {
   CheckInputError,
-  checkMessage,
   type DecisionProvider,
   DecisionProviderError,
   type DecisionRequest,
@@ -150,32 +148,35 @@ export namespace Daemon {
       yield* requireAdmissionToCreate(opening, bootstrap).pipe(
         Effect.mapError(configurationFailure),
       );
-      const store = yield* openDaemonStore(configuration.stateDirectory, {
-        liveWireVersions: yield* liveWireVersions,
-      }).pipe(Effect.mapError(storageFailure));
-      const firewall =
-        options === undefined
-          ? undefined
-          : yield* makeFirewall(options, store).pipe(
-              Effect.mapError((cause) => installFailure(cause, loaded)),
-            );
-      const registration = yield* readDaemonRegistrationState({
-        store,
-        bootstrap,
-      }).pipe(Effect.mapError(storageFailure));
-      yield* requireAdmission(registration, bootstrap).pipe(
-        Effect.mapError(configurationFailure),
-      );
-      const networkContext = yield* Layer.build(networkLayer(configuration));
-      return yield* runDaemonRuntime({
-        store,
-        bootstrap,
-        registration,
-        firewall,
-      }).pipe(
-        Effect.provide(networkContext),
-        Effect.mapError(runtimeStartupFailure),
-      );
+      const persistence = yield* Layer.build(
+        storageLayer({
+          stateDirectory: configuration.stateDirectory,
+          liveWireVersions: yield* liveWireVersions,
+        }),
+      ).pipe(Effect.mapError(storageFailure));
+      return yield* Effect.gen(function* () {
+        const firewall =
+          options === undefined
+            ? undefined
+            : yield* makeFirewall(options).pipe(
+                Effect.mapError((cause) => installFailure(cause, loaded)),
+              );
+        const registration = yield* readDaemonRegistrationState({
+          bootstrap,
+        }).pipe(Effect.mapError(storageFailure));
+        yield* requireAdmission(registration, bootstrap).pipe(
+          Effect.mapError(configurationFailure),
+        );
+        const network = yield* Layer.build(networkLayer(configuration));
+        return yield* runDaemonRuntime({
+          bootstrap,
+          registration,
+          firewall,
+        }).pipe(
+          Effect.provide(network),
+          Effect.mapError(runtimeStartupFailure),
+        );
+      }).pipe(Effect.provide(persistence));
     }).pipe(Effect.withSpan("Daemon.layer"));
 
   /**

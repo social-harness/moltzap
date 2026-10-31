@@ -1,23 +1,40 @@
-/** @file Managed policy edits retain fixed protection, authority and complete state across restart. */
+/** @file Editable policies retain fixed-rule protection and complete state across restart. */
 import { live as it } from "@effect/vitest";
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests create exact operator configuration and rule files around real persistent edits.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect } from "vitest";
-import type { FirewallStore } from "./store/index.js";
+import { testAgentView } from "../__tests__/agent-card-fixtures.js";
 import {
   stateDirectory,
   withDaemonStore,
 } from "../__tests__/store-schema-fixtures.js";
+import {
+  decodeRuntimeValue,
+  encodeRuntimeValue,
+} from "../communication/store/index.js";
 import { readCredential } from "../daemon/credentials.js";
+import {
+  firewallCheckSchema,
+  Message,
+  MessageContext,
+  type MessageMiddleware,
+} from "./check.js";
 import {
   loadMessagePolicy,
   MAXIMUM_BEHAVIOR_BYTES,
   policyInstallationError,
 } from "./config.js";
-import { makeFirewall } from "./index.js";
-/* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Indexed safe errors, assigned authority and atomic policy state are the public edit contract. */
+import {
+  type FirewallOptions,
+  makeFirewall,
+  type PreparedFirewallCheck,
+} from "./index.js";
+import { readFirewallPolicy, writeFirewallPolicy } from "./store/index.js";
+/* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Indexed safe errors and atomic policy state are the public edit contract. */
+
+// @agent-code-guard/regression-only: Construction and restart regressions protect fixed rules, immutable provenance and retained-result privacy.
 
 const FORMAT = "org.social-harness/message-policy/v2";
 
@@ -162,10 +179,10 @@ it(
       },
     ]);
     const configuration = yield* options(path);
-    yield* withDaemonStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), () =>
       Effect.gen(function* () {
-        const installed = yield* makeFirewall(configuration, store);
-        const read = yield* installed.policy.read();
+        const installed = yield* makeFirewall(configuration);
+        const read = yield* installed.readPolicy();
         expect(read.fixedRules).toEqual(
           expect.arrayContaining([
             expect.objectContaining({ id: FIXED.id }),
@@ -173,19 +190,15 @@ it(
           ]),
         );
         expect(read.rules).toMatchObject(policy.text?.initialRules ?? []);
-        expect(read.rules).toMatchObject([
-          { owner: "owner" },
-          { owner: "owner" },
-        ]);
-        const error = yield* installed.policy
-          .update({ remove: ["working-hours"] }, "owner")
+        const error = yield* installed
+          .updatePolicy({ remove: ["working-hours"] })
           .pipe(Effect.flip);
         expect(error).toMatchObject({
           reason: "fixed-rule",
           ruleId: "working-hours",
           path: ["remove", 0],
         });
-        expect(yield* installed.policy.read()).toEqual(read);
+        expect(yield* installed.readPolicy()).toEqual(read);
       }),
     );
   }),
@@ -197,13 +210,10 @@ it(
     const { path, root } = fixture();
     const state = stateDirectory();
     const first = yield* options(path);
-    yield* withDaemonStore(state, (store) =>
+    yield* withDaemonStore(state, () =>
       Effect.gen(function* () {
-        const installed = yield* makeFirewall(first, store);
-        yield* installed.policy.update(
-          { remove: [INITIAL.id, "ask-first"] },
-          "owner",
-        );
+        const installed = yield* makeFirewall(first);
+        yield* installed.updatePolicy({ remove: [INITIAL.id, "ask-first"] });
       }),
     );
     writeFileSync(
@@ -211,10 +221,10 @@ it(
       NORM.replace("Ask first.", "Consult the owner first."),
     );
     const next = yield* options(path);
-    yield* withDaemonStore(state, (store) =>
+    yield* withDaemonStore(state, () =>
       Effect.gen(function* () {
-        const restarted = yield* makeFirewall(next, store);
-        expect((yield* restarted.policy.read()).rules).toEqual([]);
+        const restarted = yield* makeFirewall(next);
+        expect((yield* restarted.readPolicy()).rules).toEqual([]);
       }),
     );
     writeFileSync(
@@ -231,10 +241,10 @@ it(
   Effect.fn(function* () {
     const { path } = seedFixture(255);
     const configuration = yield* options(path);
-    yield* withDaemonStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), () =>
       Effect.gen(function* () {
-        const installed = yield* makeFirewall(configuration, store);
-        expect((yield* installed.policy.read()).rules).toHaveLength(256);
+        const installed = yield* makeFirewall(configuration);
+        expect((yield* installed.readPolicy()).rules).toHaveLength(256);
       }),
     );
   }),
@@ -257,14 +267,11 @@ it("names the fixed behavior colliding with a stored editable rule", () =>
     const configuration = yield* options(path);
     yield* withDaemonStore(
       state,
-      Effect.fn(function* (store) {
-        const installed = yield* makeFirewall(configuration, store);
-        yield* installed.policy.update(
-          {
-            add: [{ ...FIXED, id: "new-fixed" }],
-          },
-          "owner",
-        );
+      Effect.fn(function* () {
+        const installed = yield* makeFirewall(configuration);
+        yield* installed.updatePolicy({
+          add: [{ ...FIXED, id: "new-fixed" }],
+        });
       }),
     );
     writeFileSync(
@@ -274,10 +281,8 @@ it("names the fixed behavior colliding with a stored editable rule", () =>
     const installation = yield* options(path);
     yield* withDaemonStore(
       state,
-      Effect.fn(function* (store) {
-        const error = yield* makeFirewall(installation, store).pipe(
-          Effect.flip,
-        );
+      Effect.fn(function* () {
+        const error = yield* makeFirewall(installation).pipe(Effect.flip);
         const startup = policyInstallationError(
           error,
           installation.behaviorRulePaths,
@@ -296,28 +301,17 @@ it(
   "adds a shared norm's BEHAVIOR.md text as the rule its frontmatter and body map to",
   Effect.fn(function* () {
     const configuration = yield* options(fixture().path);
-    yield* withDaemonStore(stateDirectory(), (store) =>
+    yield* withDaemonStore(stateDirectory(), () =>
       Effect.gen(function* () {
-        const installed = yield* makeFirewall(configuration, store);
-        yield* installed.policy.update(
-          { add: [{ behavior: SHARED }] },
-          "owner",
-        );
-        expect((yield* installed.policy.read()).rules).toContainEqual({
+        const installed = yield* makeFirewall(configuration);
+        yield* installed.updatePolicy({ add: [{ behavior: SHARED }] });
+        expect((yield* installed.readPolicy()).rules).toContainEqual({
           id: "meeting-booking",
           applies: "both",
           text: "Each member holds a slot before confirming it.",
-          owner: "owner",
           guidance: "Hold a slot before you confirm one.",
           feedback: { text: "Hold the slot first.", nextAction: "revise" },
         });
-        const { activations } = yield* installed.policy.decisions({});
-        expect(activations).toEqual([
-          expect.objectContaining({
-            addedRuleIds: ["meeting-booking"],
-            removedRuleIds: [],
-          }),
-        ]);
       }),
     );
   }),
@@ -416,110 +410,214 @@ it.each(REFUSED_EDITS)(
 function refusedEdit(edit: (typeof REFUSED_EDITS)[number]["edit"]) {
   return Effect.gen(function* () {
     const configuration = yield* options(fixture().path);
-    return yield* withDaemonStore(stateDirectory(), (store) =>
+    return yield* withDaemonStore(stateDirectory(), () =>
       Effect.gen(function* () {
-        const installed = yield* makeFirewall(configuration, store);
-        const before = yield* installed.policy.read();
-        const error = yield* installed.policy
-          .update(edit, "owner")
-          .pipe(Effect.flip);
-        return { error, before, after: yield* installed.policy.read() };
+        const installed = yield* makeFirewall(configuration);
+        const before = yield* installed.readPolicy();
+        const error = yield* installed.updatePolicy(edit).pipe(Effect.flip);
+        return { error, before, after: yield* installed.readPolicy() };
       }),
     );
   });
 }
 
-it(
-  "limits runtime edits to its own rules and preserves ownership across restart",
-  Effect.fn(function* () {
+it("persists replacement of an initial rule across restart", () =>
+  Effect.gen(function* () {
     const configuration = yield* options(fixture().path);
-    const path = stateDirectory();
-    const adopted = { ...INITIAL, id: "runtime-norm", text: "预约前确认。" };
-    const revision = yield* withDaemonStore(path, (store) =>
-      adoptNorm(store, configuration, adopted),
-    );
-    yield* withDaemonStore(path, (store) =>
-      Effect.gen(function* () {
-        const installed = yield* makeFirewall(configuration, store);
-        expect((yield* installed.policy.read()).activeRevision).toBe(revision);
-        yield* installed.policy.update(
-          { remove: [adopted.id], add: [{ ...adopted, text: "确认后预订。" }] },
-          "runtime",
-        );
-        yield* installed.policy.update(
-          { remove: [adopted.id], add: [adopted] },
-          "owner",
-        );
-        expect((yield* installed.policy.read()).rules).toContainEqual({
-          ...adopted,
-          owner: "owner",
-        });
-        expect(
-          (yield* installed.policy
-            .update({ remove: [adopted.id] }, "runtime")
-            .pipe(Effect.flip)).reason,
-        ).toBe("owner-rule");
-        yield* installed.policy.update({ remove: [adopted.id] }, "owner");
-      }),
-    );
-  }),
-);
-
-it(
-  "rejects supplied ownership metadata before applying any update",
-  Effect.fn(function* () {
-    const configuration = yield* options(fixture().path);
-    yield* withDaemonStore(stateDirectory(), (store) =>
-      Effect.gen(function* () {
-        const installed = yield* makeFirewall(configuration, store);
-        const before = yield* installed.policy.read();
-        const forged = { ...INITIAL, id: "forged", owner: "runtime" };
-        const error = yield* installed.policy
-          .update({ add: [forged] }, "runtime")
-          .pipe(Effect.flip);
-        expect(error).toMatchObject({
-          reason: "invalid-rule",
-          problem: "schema",
-        });
-        expect(yield* installed.policy.read()).toEqual(before);
-      }),
-    );
-  }),
-);
-
-function adoptNorm(
-  store: FirewallStore,
-  configuration: Effect.Effect.Success<ReturnType<typeof options>>,
-  adopted: Omit<typeof INITIAL, "id" | "text"> & {
-    readonly id: string;
-    readonly text: string;
-  },
+    const directory = stateDirectory();
+    const replacement = { ...INITIAL, text: "Ask before booking a meeting." };
+    const read = yield* replaceAndReopen(directory, configuration, replacement);
+    expect(read.rules).toContainEqual(replacement);
+  }));
+function replaceAndReopen(
+  directory: string,
+  configuration: Parameters<typeof makeFirewall>[0],
+  replacement: Omit<typeof INITIAL, "text"> & { readonly text: string },
 ) {
   return Effect.gen(function* () {
-    const installed = yield* makeFirewall(configuration, store);
-    const before = yield* installed.policy.read();
-    expect(before.rules).toMatchObject([
-      { owner: "owner" },
-      { owner: "owner" },
-    ]);
-    const changed = yield* installed.policy.update(
-      { add: [adopted] },
-      "runtime",
+    yield* withDaemonStore(directory, () =>
+      Effect.gen(function* () {
+        const installed = yield* makeFirewall(configuration);
+        yield* installed.updatePolicy({
+          remove: [INITIAL.id],
+          add: [replacement],
+        });
+      }),
     );
-    const own = yield* installed.policy.read();
-    expect(own.rules).toContainEqual({ ...adopted, owner: "runtime" });
-    const refused = yield* installed.policy
-      .update(
-        {
-          remove: [INITIAL.id, adopted.id],
-          add: [{ ...adopted, id: "replacement" }],
-        },
-        "runtime",
-      )
-      .pipe(Effect.flip);
-    expect(refused.reason).toBe("owner-rule");
-    expect(yield* installed.policy.read()).toEqual(own);
-    return changed.activeRevision;
+    return yield* withDaemonStore(directory, () =>
+      Effect.gen(function* () {
+        const reopened = yield* makeFirewall(configuration);
+        return yield* reopened.readPolicy();
+      }),
+    );
+  });
+}
+
+it("omits provider traces from the completed result while preserving its judgment", () =>
+  withDaemonStore(stateDirectory(), () =>
+    Effect.gen(function* () {
+      const trace = { format: "test-provider/v1", data: "private response" };
+      const middleware: MessageMiddleware = {
+        id: "privacy",
+        revision: "v1",
+        rules: [{ id: "privacy" }],
+        check: () =>
+          Effect.succeed({
+            findings: [{ ruleId: "privacy", outcome: "violation" }],
+            expectations: [],
+            trace,
+          }),
+      };
+      const firewall = yield* makeFirewall(codeOptions(middleware));
+      const [checked] = yield* firewall.check([yield* preparedCheck()]);
+      const completed = yield* Effect.fromNullable(checked);
+      expect(completed.result.judgment).toBe("reject");
+      expect(completed.result.checks[0]?.trace).toEqual(trace);
+      expect(completed.completion.admit).toBe(false);
+      const retained = yield* decodeRuntimeValue(
+        firewallCheckSchema,
+        completed.completion.canonicalResult,
+      );
+      expect(retained.checks).toHaveLength(1);
+      expect(retained.checks[0]).not.toHaveProperty("trace");
+      expect(retained.checks[0]).toMatchObject({
+        findings: [{ ruleId: "privacy", outcome: "violation" }],
+      });
+    }),
+  ));
+
+it("captures immutable installation provenance and distinguishes provider model changes", () =>
+  withDaemonStore(stateDirectory(), () =>
+    Effect.gen(function* () {
+      const registration = {
+        id: "model-policy",
+        revision: "v1",
+        rules: [{ id: "privacy" }],
+        provenance: { format: "provider", data: "model-one" },
+        check: () =>
+          Effect.succeed({
+            findings: [{ ruleId: "privacy", outcome: "violation" as const }],
+            expectations: [],
+          }),
+      };
+      const first = yield* makeFirewall(codeOptions(registration));
+      registration.provenance.data = "model-two";
+      const second = yield* makeFirewall(codeOptions(registration));
+      const candidate = yield* preparedCheck();
+      const original = yield* retainedInstallation(first, candidate);
+      const changed = yield* retainedInstallation(second, candidate);
+      expect(original.installation.incoming[0]?.provenance.data).toBe(
+        "model-one",
+      );
+      expect(changed.installation.incoming[0]?.provenance.data).toBe(
+        "model-two",
+      );
+      expect(original.configurationDigest).not.toBe(
+        changed.configurationDigest,
+      );
+    }),
+  ));
+
+function retainedInstallation(
+  firewall: Effect.Effect.Success<ReturnType<typeof makeFirewall>>,
+  candidate: PreparedFirewallCheck,
+) {
+  return Effect.gen(function* () {
+    const [checked] = yield* firewall.check([candidate]);
+    return yield* decodeRuntimeValue(
+      Schema.Struct({
+        configurationDigest: Schema.String,
+        installation: Schema.Struct({
+          incoming: Schema.Array(
+            Schema.Struct({
+              provenance: Schema.Struct({ data: Schema.String }),
+            }),
+          ),
+        }),
+      }),
+      (yield* Effect.fromNullable(checked)).completion.canonicalInput,
+    );
+  });
+}
+
+function codeOptions(middleware: MessageMiddleware): FirewallOptions {
+  return {
+    incoming: [middleware],
+    outgoing: [middleware],
+    mode: "enforcement",
+    facts: [],
+    codeDigest: "a".repeat(64),
+    settings: {
+      timeoutMilliseconds: 1_000,
+      middlewareTimeoutMilliseconds: 100,
+      maximumInputBytes: 100_000,
+      maximumResultBytes: 100_000,
+    },
+  };
+}
+
+function preparedCheck() {
+  return Effect.gen(function* () {
+    const local = testAgentView("alice");
+    const peer = testAgentView("bob");
+    const message = new Message({
+      id: "draft",
+      sender: local.agentId,
+      recipients: [peer.agentId],
+      text: "Hello",
+    });
+    return {
+      direction: "outgoing",
+      message,
+      agents: [local, peer],
+      canonicalCandidate: yield* encodeRuntimeValue(message),
+      context: new MessageContext({
+        agentId: local.agentId,
+        principal: local.principalId,
+        participants: [{ agentId: peer.agentId, principal: peer.principalId }],
+        history: [],
+        facts: [],
+        gaps: [],
+      }),
+    } satisfies PreparedFirewallCheck;
+  });
+}
+
+it("refuses unknown stored editable properties as persistence failures", () =>
+  Effect.gen(function* () {
+    const configuration = yield* options(fixture().path);
+    yield* withDaemonStore(stateDirectory(), () =>
+      refuseUnknownStoredProperty(configuration),
+    );
+  }));
+
+function refuseUnknownStoredProperty(
+  configuration: Parameters<typeof makeFirewall>[0],
+) {
+  return Effect.gen(function* () {
+    yield* makeFirewall(configuration);
+    const reopened = yield* makeFirewall(configuration);
+    expect((yield* reopened.readPolicy()).rules).toContainEqual(INITIAL);
+    const bytes = yield* Effect.fromNullable(yield* readFirewallPolicy());
+    const saved = yield* decodeRuntimeValue(
+      Schema.Struct({
+        format: Schema.String,
+        rules: Schema.Array(
+          Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+        ),
+      }),
+      bytes,
+    );
+    const first = yield* Effect.fromNullable(saved.rules[0]);
+    yield* writeFirewallPolicy(
+      yield* encodeRuntimeValue({
+        ...saved,
+        rules: [{ ...first, unexpected: true }, ...saved.rules.slice(1)],
+      }),
+    );
+    expect(yield* Effect.flip(makeFirewall(configuration))).toMatchObject({
+      reason: "persistence-failed",
+    });
   });
 }
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore defaults after policy edit contract assertions. */

@@ -38,7 +38,10 @@ export interface Participant {
  */
 const joinParticipant = (fixture: DaemonProcessFixture, agent: AgentView) =>
   Effect.gen(function* () {
-    const endpoint = yield* acquireHarnessEndpoint(fixture.endpoint);
+    const endpoint = yield* acquireHarnessEndpoint(fixture.endpoint, {
+      credential: fixture.mcpCredential,
+      receiveMode: "push",
+    });
     const inbox = yield* Queue.unbounded<InboundDelivery>();
     yield* endpoint.messages.pipe(
       Stream.runForEach((delivery) => Queue.offer(inbox, delivery)),
@@ -55,7 +58,7 @@ const joinParticipant = (fixture: DaemonProcessFixture, agent: AgentView) =>
 /** Registers one running daemon through its management endpoint. */
 export const registerFixture = (fixture: DaemonProcessFixture) =>
   Effect.scoped(
-    acquireDaemonManagementClient(fixture.endpoint).pipe(
+    acquireDaemonManagementClient(fixture).pipe(
       Effect.flatMap((management) =>
         management.register(makeRegistrationRequest(fixture)).pipe(
           Effect.filterOrFail(

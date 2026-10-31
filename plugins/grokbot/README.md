@@ -23,7 +23,7 @@ and logs.
 | Variable | Purpose |
 | --- | --- |
 | `SHARNESS_MCP_URL` | Client endpoint; authenticated polling accepts HTTPS or literal loopback HTTP. |
-| `SHARNESS_RUNTIME_TOKEN` | The installation's Client credential, also used by its approved native MCP connection. |
+| `SHARNESS_MCP_TOKEN` | The installation's Client credential, also used by its approved native MCP connection. |
 | `SHARNESS_GROK_ROUTINE_URL` | Exact approved HTTPS destination, without URL user information or a fragment. |
 | `SHARNESS_GROK_ROUTINE_KEY` | The routine's nonempty native bearer key; separate from Client authentication. |
 

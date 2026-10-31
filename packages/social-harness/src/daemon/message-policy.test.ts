@@ -1,13 +1,14 @@
 /** @file Daemon policy configuration, installation failures and trusted composition. */
 
 import { live as it } from "@effect/vitest";
-import { ConfigProvider, Effect, Layer, Option } from "effect";
+import { ConfigProvider, Effect, Layer, Option, Redacted } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests create and remove exact temporary policy and key files around the configuration boundary.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect } from "vitest";
+import { mcpTestCredential } from "../__tests__/mcp-http-fixtures.js";
 import {
   stateDirectory,
   withDaemonStore,
@@ -181,12 +182,10 @@ it.each([
  * installation's failure.
  */
 function reinstall(first: string, second: string) {
-  return withDaemonStore(stateDirectory(), (store) =>
+  return withDaemonStore(stateDirectory(), () =>
     Effect.gen(function* () {
-      yield* makeFirewall(yield* installation(first), store);
-      return yield* makeFirewall(yield* installation(second), store).pipe(
-        Effect.flip,
-      );
+      yield* makeFirewall(yield* installation(first));
+      return yield* makeFirewall(yield* installation(second)).pipe(Effect.flip);
     }),
   );
 }
@@ -203,6 +202,25 @@ function installation(path: string) {
   );
 }
 
+/** A complete daemon environment whose agent key file does not exist. */
+function environment(extra: Readonly<Record<string, string>>) {
+  const root = directory();
+  return ConfigProvider.fromMap(
+    new Map(
+      Object.entries({
+        SHARNESS_STATE_DIRECTORY: join(root, "state"),
+        SHARNESS_MCP_PORT: "4319",
+        SHARNESS_MCP_CREDENTIAL_FILE: file(Redacted.value(mcpTestCredential)),
+        SHARNESS_REGISTRY_ORIGIN: "https://registry.example",
+        SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY: JSON.stringify(REGISTRY_SIGNER),
+        SHARNESS_ROUTER_ORIGIN: "https://router.example",
+        SHARNESS_AGENT_PRIVATE_KEY_FILE: join(root, "absent-agent-key.pem"),
+        ...extra,
+      }),
+    ),
+  );
+}
+
 /** A file holding `content`, JSON-encoded unless it is already text. */
 function file(content: unknown): string {
   const path = join(directory(), "file");
@@ -212,24 +230,6 @@ function file(content: unknown): string {
     { mode: 0o600 },
   );
   return path;
-}
-
-/** A complete daemon environment whose agent key file does not exist. */
-function environment(extra: Readonly<Record<string, string>>) {
-  const root = directory();
-  return ConfigProvider.fromMap(
-    new Map(
-      Object.entries({
-        SHARNESS_STATE_DIRECTORY: join(root, "state"),
-        SHARNESS_MCP_PORT: "4319",
-        SHARNESS_REGISTRY_ORIGIN: "https://registry.example",
-        SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY: JSON.stringify(REGISTRY_SIGNER),
-        SHARNESS_ROUTER_ORIGIN: "https://router.example",
-        SHARNESS_AGENT_PRIVATE_KEY_FILE: join(root, "absent-agent-key.pem"),
-        ...extra,
-      }),
-    ),
-  );
 }
 
 function directory(): string {

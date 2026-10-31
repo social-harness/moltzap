@@ -7,6 +7,7 @@
  * vouch for it.
  */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
 import { Effect } from "effect";
 import type { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import type { AgentId } from "../../../identity/identifiers.js";
@@ -100,7 +101,11 @@ export function acceptSuccessorRecord(
   run: SuccessorRun,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   record: ActionCertifiedRecord,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const { conversationId } = record.recordCore.action;
   const extended = headExtendedBy(run, record.recordCore.action);
   if (
@@ -146,7 +151,11 @@ export function acceptSuccessorVote(
     message: SignedMessage;
     statement: Extract<EvidenceStatement, { readonly kind: "durability_vote" }>;
   }>,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const { conversationId, recordHash, signerAgentId } = vote.statement;
   const conversation = run.runtime.conversations.get(conversationId);
   const membership = run.membership(conversationId);
@@ -203,7 +212,11 @@ function acceptStagedSuccessorVote(
   }>,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   statement: Extract<EvidenceStatement, { readonly kind: "durability_vote" }>,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const { conversation, fold } = target;
   const position = headPosition(conversation);
   const staged =
@@ -228,9 +241,13 @@ function acceptStagedSuccessorVote(
 function holdTowardConversion(
   run: SuccessorRun,
   membership: VerifiedMembership,
-  verified: Effect.Effect<boolean>,
+  verified: Effect.Effect<boolean, never, SqlClient.SqlClient>,
   hold: () => void,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return verified.pipe(
     Effect.flatMap((held) => {
       if (!held) {
@@ -246,7 +263,7 @@ function verifyHeldRecord(
   membership: VerifiedMembership,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   record: ActionCertifiedRecord,
-): Effect.Effect<boolean> {
+): Effect.Effect<boolean, never, SqlClient.SqlClient> {
   return verifyOuterMessage({ message: ingress.message, membership }).pipe(
     Effect.zipRight(
       verifyActionCertifiedRecord({
@@ -264,7 +281,7 @@ function verifyHeldVote(
   membership: VerifiedMembership,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   vote: Readonly<{ message: SignedMessage; statement: EvidenceStatement }>,
-): Effect.Effect<boolean> {
+): Effect.Effect<boolean, never, SqlClient.SqlClient> {
   return verifyDeliveredEvidence({
     outer: ingress.message,
     evidence: vote.message,
@@ -295,7 +312,7 @@ function verifyHeldVote(
 function maybeConvert(
   run: SuccessorRun,
   membership: VerifiedMembership,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     const conversationId = membership.descriptor.conversationId;
     const pending = run.pending.get(conversationId);

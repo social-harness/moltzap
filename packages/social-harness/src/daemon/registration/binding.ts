@@ -1,11 +1,13 @@
 /** @file The daemon's durable identity row: read, verify and bind. */
 
+import type { SqlClient } from "@effect/sql";
 import { Data, Effect } from "effect";
-import type {
-  EndpointStore,
-  IdentityBinding,
-} from "../../communication/store/index.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
+import {
+  bindIdentity,
+  type IdentityBinding,
+  readIdentity,
+} from "../../communication/store/index.js";
 import {
   decodeCanonical,
   encodeCanonical,
@@ -26,12 +28,6 @@ export class DaemonRegistrationRepresentationError extends Data.TaggedError(
 export type DaemonRegistrationState =
   | Readonly<{ kind: "unregistered" }>
   | Readonly<{ kind: "active"; agentCard: VerifiedAgentCard }>;
-
-/** Minimum endpoint-store authority used during identity bootstrap. */
-export interface DaemonRegistrationStore {
-  readonly readIdentity: EndpointStore["readIdentity"];
-  readonly bindIdentity: EndpointStore["bindIdentity"];
-}
 
 const persistenceFailure = (): DaemonRegistrationPersistenceError =>
   new DaemonRegistrationPersistenceError();
@@ -68,18 +64,17 @@ const verifyBinding = (
  * configured Registry signer and agent key.
  *
  * @param input Startup identity dependencies.
- * @param input.store Minimal durable identity store.
  * @param input.bootstrap Configured Registry and agent key authority.
  * @returns Either the sole unregistered state or one verified active card.
  */
 export const readDaemonRegistrationState = (input: {
-  readonly store: Pick<DaemonRegistrationStore, "readIdentity">;
   readonly bootstrap: DaemonBootstrap;
 }): Effect.Effect<
   DaemonRegistrationState,
-  DaemonRegistrationPersistenceError | DaemonRegistrationRepresentationError
+  DaemonRegistrationPersistenceError | DaemonRegistrationRepresentationError,
+  SqlClient.SqlClient
 > =>
-  input.store.readIdentity().pipe(
+  readIdentity().pipe(
     Effect.mapError(persistenceFailure),
     Effect.flatMap(
       (
@@ -101,18 +96,18 @@ export const readDaemonRegistrationState = (input: {
 
 /** Commits a Registry-issued card as the durable identity row. */
 export const bindCard = (
-  store: DaemonRegistrationStore,
   agentCard: VerifiedAgentCard,
 ): Effect.Effect<
   void,
-  DaemonRegistrationPersistenceError | DaemonRegistrationRepresentationError
+  DaemonRegistrationPersistenceError | DaemonRegistrationRepresentationError,
+  SqlClient.SqlClient
 > =>
   encodeCanonical(AgentCard, agentCard).pipe(
     Effect.mapError(representationFailure),
     Effect.flatMap((canonicalAgentCard) =>
-      store
-        .bindIdentity({ agentId: agentCard.agentId, canonicalAgentCard })
-        .pipe(Effect.mapError(persistenceFailure)),
+      bindIdentity({ agentId: agentCard.agentId, canonicalAgentCard }).pipe(
+        Effect.mapError(persistenceFailure),
+      ),
     ),
     Effect.asVoid,
   );

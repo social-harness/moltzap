@@ -1,11 +1,12 @@
 /** @file Real signed records and reopened stores support collective recovery tests. */
 
+import { SqlClient } from "@effect/sql";
 import { Deferred, Effect, Schema } from "effect";
 import { expect } from "vitest";
 import type { InboundItem } from "../communication/collectives/inbound.js";
 import type { CollectivePorts } from "../communication/collectives/ports.js";
-import type { DaemonStore } from "../daemon/store.js";
-import type { Fixture } from "./firewall-runtime-fixtures.js";
+import type { TestDatabase } from "./communication-test-database.js";
+import type { Fixture } from "./conversation-fixtures.js";
 import {
   type EndpointEngine,
   makeEndpointEngine,
@@ -22,7 +23,6 @@ import { RouterInstanceId } from "../communication/router/api/contract.js";
 import {
   decodeRuntimeValue,
   encodeRuntimeValue,
-  EndpointStoreError,
 } from "../communication/store/index.js";
 import { AgentCard } from "../identity/cards.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
@@ -44,13 +44,8 @@ export const anchor = {
   pollCursor: pollCursor(34),
 };
 /** Uses the same verified peer cards and Router anchor when reopening a real store. */
-export function resumeEngine(
-  subject: Fixture,
-  store: DaemonStore,
-  failOutbound = false,
-) {
+export function resumeEngine(subject: Fixture, store: TestDatabase) {
   return Effect.gen(function* () {
-    const writes = { fail: false };
     const engine = yield* makeEndpointEngine({
       localAgentCard: subject.local.card,
       signingAuthority: subject.local.authority,
@@ -66,21 +61,13 @@ export function resumeEngine(
                 : subject.remote.card,
           }),
       },
-      store: {
-        ...store,
-        enqueueOutbound: (message) =>
-          writes.fail
-            ? Effect.fail(new EndpointStoreError({ reason: "persistence" }))
-            : store.enqueueOutbound(message),
-      },
       reportStorageFault: () => Effect.void,
       routerWorker: {
         currentAnchor: Effect.succeed(anchor),
         awaitAnchor: Effect.succeed(anchor),
         send: () => Effect.void,
       },
-    });
-    writes.fail = failOutbound;
+    }).pipe(Effect.provideService(SqlClient.SqlClient, store.sql));
     return engine;
   }).pipe(Effect.withSpan("resumeEngine"));
 }
@@ -140,10 +127,10 @@ export function seedGroupFirstMessage(subject: Fixture) {
 
 /** Reads the exact durable intent that the resumed endpoint must continue. */
 export function boundIntent(
-  store: DaemonStore,
+  store: TestDatabase,
   role: "request" | "response" | "close",
 ) {
-  return store.readCollectiveMessages().pipe(
+  return store.run(store.store.readCollectiveMessages()).pipe(
     Effect.flatMap((messages) =>
       Effect.fromNullable(messages.find((message) => message.role === role)),
     ),
@@ -170,9 +157,9 @@ export function certifyBoundIntent(
 }
 
 /** Waits until the requester has durably bound its close message. */
-export function waitForClose(store: DaemonStore) {
+export function waitForClose(store: TestDatabase) {
   return untilLive(
-    store.readCollectiveMessages().pipe(
+    store.run(store.store.readCollectiveMessages()).pipe(
       Effect.map((messages) =>
         messages.some((message) => message.role === "close"),
       ),
@@ -183,7 +170,7 @@ export function waitForClose(store: DaemonStore) {
 
 /** Publishes a terminal result with the operation’s retained delivery identity. */
 export function retainingEmitter(
-  store: DaemonStore,
+  store: TestDatabase,
   emitted: Deferred.Deferred<InboundItem>,
 ): CollectivePorts["emit"] {
   return (item, ...[, terminal]) =>
@@ -193,14 +180,14 @@ export function retainingEmitter(
           "expected one retained collective result",
         );
       }
-      yield* store.publishCollectiveItem({
+      yield* store.store.publishCollectiveItem({
         ...terminal,
         canonicalItem: yield* encodeRuntimeValue(item),
         conversation: item.to,
         firewall: false,
       });
       yield* Deferred.succeed(emitted, item);
-    }).pipe(Effect.orDie, Effect.withSpan("retainingEmitter"));
+    }).pipe(store.run, Effect.orDie, Effect.withSpan("retainingEmitter"));
 }
 
 /** Verifies a signed peer packet through the engine’s ingress boundary. */

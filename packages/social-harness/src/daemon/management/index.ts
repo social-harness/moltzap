@@ -1,13 +1,9 @@
-/** @file Private owner-authorized management over Registry and endpoint state. */
+/** @file Registration, status and saved conversation reads for the daemon MCP interface. */
 
+import { SqlClient } from "@effect/sql";
 import { type Context, Data, Effect, Schema } from "effect";
 import type { SendError } from "../../communication/conversations/errors.js";
-import type {
-  EndpointRecovery,
-  EndpointStore,
-  EndpointStoreError,
-  HistoryPage,
-} from "../../communication/store/index.js";
+import type { RegistryRegisterResult } from "../../identity/registry/contract.js";
 import type {
   DaemonBootstrap,
   DaemonConfigurationError,
@@ -17,7 +13,6 @@ import type {
   HarnessMcpOperations,
   ManagementReadConversationResult,
   ManagementRegisterResult,
-  ManagementSearchAgentsResult,
   ManagementSearchConversationsRequest,
   ManagementSearchConversationsResult,
   ManagementStatusResult,
@@ -31,24 +26,27 @@ import {
   verifyStoredMembership,
 } from "../../communication/conversations/index.js";
 import {
-  type CertifiedRecord,
   deriveConversationId,
   type VerifiedMembership,
 } from "../../communication/records/index.js";
 import { AgentAddress } from "../../communication/records/values.js";
+import {
+  decodeRuntimeValue,
+  type EndpointRecovery,
+  type EndpointStoreError,
+  type HistoryPage,
+} from "../../communication/store/index.js";
+import * as Store from "../../communication/store/index.js";
 import { compareAscii } from "../../encoding/identifier.js";
+import { localGuidanceSchema } from "../../host-protocol/advice.js";
+import { InboundItem } from "../../host-protocol/items.js";
 import {
   AgentCard,
   agentViewOf,
   type VerifiedAgentCard,
 } from "../../identity/cards.js";
-import { SignedMessage } from "../../identity/envelope/signed-message.js";
-import {
-  RegistryInvalidResponseError,
-  type RegistryLookupResult,
-  type RegistryRegisterResult,
-} from "../../identity/registry/contract.js";
 import { Registry } from "../../identity/registry/index.js";
+import { readHistoryViews } from "../inbox/store.js";
 import {
   type DaemonRegistrationPersistenceError,
   type DaemonRegistrationRefusedError,
@@ -61,7 +59,6 @@ import {
 type ManagementOperation =
   | "readStatus"
   | "register"
-  | "searchAgents"
   | "searchConversations"
   | "readConversation";
 
@@ -79,7 +76,6 @@ type ManagementFailure =
 type RegistryService = Context.Tag.Service<typeof Registry>;
 type MessageAddress = ManagementSearchConversationsResult["addresses"][number];
 type HistoryRecord = ManagementReadConversationResult["records"][number];
-type SignerEvidence = HistoryRecord["actionSignatures"][number];
 
 /** The daemon's registration state and the activation a registration starts. */
 interface RegistrationPort {
@@ -90,7 +86,6 @@ interface RegistrationPort {
 }
 
 interface ManagementInput {
-  readonly store: EndpointStore;
   readonly bootstrap: DaemonBootstrap;
   readonly registration: RegistrationPort;
 }
@@ -106,16 +101,32 @@ class DaemonManagementError extends Data.TaggedError("DaemonManagementError")<{
   readonly reason: ManagementFailure;
 }> {}
 
-/** Closed management-only projection consumed by the MCP presentation. */
+/** Registration and history operations presented through MCP. */
 export type DaemonManagementOperations = Pick<
   HarnessMcpOperations,
   ManagementOperation
 >;
 
-/** The one signature a verified signer message's JWS representation carries. */
-const representationSignature = Schema.Struct({
-  signatures: Schema.Tuple(Schema.Struct({ signature: Schema.String })),
-});
+/** Captures Registry and database dependencies for registration and saved history reads. */
+export const makeDaemonManagementOperations = (
+  input: ManagementInput,
+): Effect.Effect<
+  DaemonManagementOperations,
+  never,
+  Registry | SqlClient.SqlClient
+> =>
+  Effect.gen(function* () {
+    const registry = yield* Registry;
+    const sql = yield* SqlClient.SqlClient;
+    const operations: DaemonManagementOperations = {
+      readStatus: readStatusOperation(input.registration),
+      register: registerOperation(input, registry, sql),
+      searchConversations: searchConversationsOperation(input, sql),
+      readConversation: readConversationOperation(input, registry, sql),
+    };
+    return Object.freeze(operations);
+  }).pipe(Effect.withSpan("makeDaemonManagementOperations"));
+
 const historyFailureReasons = {
   "invalid-continuation": "invalid-continuation",
   "invalid-input": "history-gap",
@@ -130,9 +141,7 @@ const historyFailureReasons = {
 >;
 
 /**
- * The register tool's closed reason for an activation failure: a local
- * storage fault is persistence-failed; an upstream or representation fault
- * is dependency-unavailable.
+ * Maps activation failures to the caller-visible registration result.
  */
 const activationFailureReasons = {
   persistence: "persistence-failed",
@@ -172,23 +181,6 @@ function encodeStatus(
         kind: "active",
         agentCard,
         agent: agentViewOf(state.agentCard),
-      }),
-    ),
-  );
-}
-
-function encodeLookupResult(
-  result: RegistryLookupResult,
-): Effect.Effect<ManagementSearchAgentsResult, DaemonManagementError> {
-  if (result.kind === "not_found") {
-    return Effect.succeed(result);
-  }
-  return encodeAgentCard(result.agentCard).pipe(
-    Effect.map((agentCard) =>
-      Object.freeze({
-        kind: "found",
-        agentCard,
-        agent: agentViewOf(result.agentCard),
       }),
     ),
   );
@@ -237,12 +229,6 @@ function mapRegistrationFailure(
       return exhaustive;
     }
   }
-}
-
-function mapRegistryFailure(error: unknown): DaemonManagementError {
-  return error instanceof RegistryInvalidResponseError
-    ? incompatibleDaemon()
-    : managementFailure("dependency-unavailable");
 }
 
 function validateAddressForLocalAgent(
@@ -392,82 +378,77 @@ function mapHistoryStoreFailure(
   return managementFailure(historyFailureReasons[error.reason]);
 }
 
-/**
- * Project one verified record to the MCP history record: its author's view,
- * its core, anchor, and each certificate's signers with their signatures, in
- * certificate order.
- * @param record Complete certified evidence verified by the history reader.
- * @param author The verified card of the record's author.
- * @returns The owner-visible history record with ordered signer evidence.
- */
-function projectHistoryRecord(
-  record: CertifiedRecord,
-  author: VerifiedAgentCard,
-): Effect.Effect<HistoryRecord, DaemonManagementError> {
-  const certified = record.actionCertifiedRecord;
-  return Effect.all({
-    actionSignatures: projectSigners(certified.actionCertificate.signatures),
-    durabilityVotes: projectSigners(record.durabilityCertificate.votes),
-  }).pipe(
-    Effect.map(({ actionSignatures, durabilityVotes }) => ({
-      author: agentViewOf(author),
-      recordHash: certified.recordHash,
-      recordCore: certified.recordCore,
-      routerAnchor: certified.routerAnchor,
-      actionSignatures,
-      durabilityVotes,
-    })),
-  );
-}
-
-function projectSigners(
-  representations: CertifiedRecord["durabilityCertificate"]["votes"],
-): Effect.Effect<
-  readonly [SignerEvidence, ...SignerEvidence[]],
-  DaemonManagementError
-> {
-  return Effect.forEach(
-    representations,
-    (representation) =>
-      Effect.all({
-        message: Schema.decodeUnknown(SignedMessage)(representation),
-        jws: Schema.decodeUnknown(representationSignature)(representation),
-      }).pipe(
-        Effect.map(({ message, jws }) => ({
-          signerAgentId: message.senderAgentId,
-          signature: jws.signatures[0].signature,
-        })),
-      ),
-    { concurrency: 1 },
-  ).pipe(Effect.mapError(persistenceFailure));
-}
-
 function readHistoryPage(input: {
   readonly page: HistoryPage;
   readonly recovery: EndpointRecovery;
   readonly bootstrap: DaemonBootstrap;
-}): Effect.Effect<ManagementReadConversationResult, DaemonManagementError> {
-  return readStoredHistory(
-    input.bootstrap.configuration.registrySignerPublicKey,
-    input.recovery,
-    input.page.records,
-  ).pipe(
-    Effect.mapError(persistenceFailure),
-    Effect.flatMap((records) =>
-      Effect.forEach(
-        records,
-        (entry) => projectHistoryRecord(entry.record, entry.author),
-        { concurrency: 1 },
-      ),
-    ),
-    Effect.map((records) =>
-      Object.freeze({
-        kind: "page" as const,
-        records: Object.freeze(records),
-        continuation: input.page.continuation,
-      }),
-    ),
-  );
+  readonly agentCard: VerifiedAgentCard;
+}): Effect.Effect<
+  ManagementReadConversationResult,
+  DaemonManagementError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const verified = yield* readStoredHistory(
+      input.bootstrap.configuration.registrySignerPublicKey,
+      input.recovery,
+      input.page.records,
+    ).pipe(Effect.mapError(persistenceFailure));
+    const views = yield* readHistoryViews(input.page.records).pipe(
+      Effect.mapError(persistenceFailure),
+    );
+    const records: HistoryRecord[] = [];
+    for (const { record, author } of verified) {
+      const certified = record.actionCertifiedRecord;
+      const recordHash = certified.recordHash;
+      const intent = input.recovery.messageIntents.find(
+        (candidate) =>
+          candidate.completedRecordHash === recordHash &&
+          candidate.authorAgentId === input.agentCard.agentId,
+      );
+      const view = views.find(
+        (candidate) => candidate.recordHash === recordHash,
+      );
+      if (
+        view === undefined &&
+        intent !== undefined &&
+        author.agentId === input.agentCard.agentId
+      ) {
+        records.push({
+          kind: "sent",
+          author: agentViewOf(author),
+          recordHash,
+          content: certified.recordCore.action.messageIntent.content,
+        });
+      }
+      if (view !== undefined) {
+        records.push(yield* receivedHistoryRecord(view, recordHash));
+      }
+    }
+    return { kind: "page", records, continuation: input.page.continuation };
+  });
+}
+
+function receivedHistoryRecord(
+  view: Effect.Effect.Success<ReturnType<typeof readHistoryViews>>[number],
+  recordHash: HistoryRecord["recordHash"],
+): Effect.Effect<HistoryRecord, DaemonManagementError> {
+  return Effect.gen(function* () {
+    const item = yield* decodeRuntimeValue(InboundItem, view.canonicalItem);
+    const guidance =
+      view.canonicalGuidance === undefined
+        ? undefined
+        : yield* decodeRuntimeValue(
+            localGuidanceSchema,
+            view.canonicalGuidance,
+          );
+    return {
+      kind: "received" as const,
+      recordHash,
+      item,
+      ...(guidance === undefined ? {} : { guidance }),
+    };
+  }).pipe(Effect.mapError(persistenceFailure));
 }
 
 function persistenceFailure(): DaemonManagementError {
@@ -482,10 +463,12 @@ function managementFailure(reason: ManagementFailure): DaemonManagementError {
   return new DaemonManagementError({ reason });
 }
 
-const readStatusOperation =
-  (registration: RegistrationPort): DaemonManagementOperations["readStatus"] =>
-  () =>
+function readStatusOperation(
+  registration: RegistrationPort,
+): DaemonManagementOperations["readStatus"] {
+  return () =>
     Effect.suspend(() => encodeStatus(registration.readRegistration()));
+}
 
 /**
  * Registration and the activation it starts run as one uninterruptible step,
@@ -493,23 +476,20 @@ const readStatusOperation =
  * the daemon's switch to active and the protocol activation finish. The
  * Registry call still ends at its own deadline, because
  * `registerDaemonIdentity` runs it in a detached interruptible fiber.
- * @param input Exclusive store, fixed bootstrap, and registration activation port.
- * @param registry Captured immutable Registry capability used for registration.
- * @returns The cancellation-safe registration operation.
  */
-const registerOperation =
-  (
-    input: ManagementInput,
-    registry: RegistryService,
-  ): DaemonManagementOperations["register"] =>
-  (request) =>
+function registerOperation(
+  input: ManagementInput,
+  registry: RegistryService,
+  sql: SqlClient.SqlClient,
+): DaemonManagementOperations["register"] {
+  return (request) =>
     Effect.uninterruptible(
       registerDaemonIdentity({
         request,
-        store: input.store,
         bootstrap: input.bootstrap,
       }).pipe(
         Effect.provideService(Registry, registry),
+        Effect.provideService(SqlClient.SqlClient, sql),
         Effect.mapError(mapRegistrationFailure),
         Effect.tap((result) =>
           result.kind === "registered"
@@ -522,46 +502,33 @@ const registerOperation =
         Effect.flatMap(encodeRegisterResult),
       ),
     );
+}
 
-const searchAgentsOperation =
-  (
-    input: ManagementInput,
-    registry: RegistryService,
-  ): DaemonManagementOperations["searchAgents"] =>
-  (request) =>
-    readActiveCard(input.registration).pipe(
-      Effect.flatMap(() =>
-        registry
-          .lookup(request)
-          .pipe(
-            Effect.mapError(mapRegistryFailure),
-            Effect.flatMap(encodeLookupResult),
-          ),
-      ),
-    );
-
-const searchConversationsOperation =
-  (input: ManagementInput): DaemonManagementOperations["searchConversations"] =>
-  (request) =>
+function searchConversationsOperation(
+  input: ManagementInput,
+  sql: SqlClient.SqlClient,
+): DaemonManagementOperations["searchConversations"] {
+  return (request) =>
     Effect.gen(function* () {
       const localAgentCard = yield* readActiveCard(input.registration);
-      const recovery = yield* input.store
-        .recover()
-        .pipe(Effect.mapError(persistenceFailure));
+      const recovery = yield* Store.recover().pipe(
+        Effect.mapError(persistenceFailure),
+      );
       return yield* searchConversationAddresses({
         recovery,
         request,
         bootstrap: input.bootstrap,
         localAgentCard,
       });
-    });
+    }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+}
 
-const readConversationOperation =
-  (
-    input: ManagementInput,
-    registry: RegistryService,
-  ): DaemonManagementOperations["readConversation"] =>
-  (request) =>
+function readConversationOperation(
+  input: ManagementInput,
+  registry: RegistryService,
+  sql: SqlClient.SqlClient,
+): DaemonManagementOperations["readConversation"] {
+  return (request) =>
     Effect.gen(function* () {
       const localAgentCard = yield* readActiveCard(input.registration);
       const storeRequest =
@@ -577,39 +544,17 @@ const readConversationOperation =
                 ? {}
                 : { afterRecordHash: request.afterRecordHash }),
             };
-      const page = yield* input.store
-        .readConversation(storeRequest)
-        .pipe(Effect.mapError(mapHistoryStoreFailure));
-      const recovery = yield* input.store
-        .recover()
-        .pipe(Effect.mapError(persistenceFailure));
+      const page = yield* Store.readConversation(storeRequest).pipe(
+        Effect.mapError(mapHistoryStoreFailure),
+      );
+      const recovery = yield* Store.recover().pipe(
+        Effect.mapError(persistenceFailure),
+      );
       return yield* readHistoryPage({
         page,
         recovery,
         bootstrap: input.bootstrap,
+        agentCard: localAgentCard,
       });
-    });
-
-/**
- * Builds management operations with one captured Registry service. Status
- * and the registered check read the daemon's registration state, never the
- * store.
- *
- * @param input The daemon's exclusively owned store, its fixed identity and
- *   service configuration, and its registration port.
- * @returns Closed operations ready for the loopback MCP presentation.
- */
-export const makeDaemonManagementOperations = (
-  input: ManagementInput,
-): Effect.Effect<DaemonManagementOperations, never, Registry> =>
-  Effect.gen(function* () {
-    const registry = yield* Registry;
-    const operations: DaemonManagementOperations = {
-      readStatus: readStatusOperation(input.registration),
-      register: registerOperation(input, registry),
-      searchAgents: searchAgentsOperation(input, registry),
-      searchConversations: searchConversationsOperation(input),
-      readConversation: readConversationOperation(input, registry),
-    };
-    return Object.freeze(operations);
-  }).pipe(Effect.withSpan("makeDaemonManagementOperations"));
+    }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+}

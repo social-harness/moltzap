@@ -7,7 +7,7 @@ import { isAbsolute } from "node:path";
 import { MuseWakeError } from "./errors.js";
 import { acceptMuseWork, detectMuseWork, makeMuseWakeup } from "./index.js";
 
-const runtimeCredential = Config.redacted("SHARNESS_RUNTIME_TOKEN");
+const mcpCredential = Config.redacted("SHARNESS_MCP_TOKEN");
 
 const program = Effect.gen(function* () {
   const operation = yield* Config.literal(
@@ -50,7 +50,7 @@ function receive(directory: string) {
   return Effect.gen(function* () {
     const config = yield* Config.all({
       endpoint: Config.url("SHARNESS_MCP_URL"),
-      credential: runtimeCredential,
+      credential: mcpCredential,
     });
     const wake = yield* makeMuseWakeup(directory);
     const endpoint = yield* acquireHarnessEndpoint(config.endpoint, {

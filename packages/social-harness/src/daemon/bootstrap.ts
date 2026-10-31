@@ -6,10 +6,7 @@ import type {
   AgentSigningAuthority,
   Ed25519PublicKey as Ed25519PublicKeyValue,
 } from "../identity/keys.js";
-import type {
-  HarnessMcpCredentials,
-  ManagementRegisterRequest,
-} from "./mcp/index.js";
+import type { ManagementRegisterRequest } from "./mcp/index.js";
 
 /** Closed reason that daemon configuration cannot become startup authority. */
 export type DaemonConfigurationFailure =
@@ -18,8 +15,7 @@ export type DaemonConfigurationFailure =
   | "agent-private-key"
   | "admission-credential-file"
   | "admission-credential"
-  | "mcp-runtime-credential-file"
-  | "mcp-owner-credential-file"
+  | "mcp-credential-file"
   | "mcp-credential"
   | MessagePolicyConfigurationFailure;
 
@@ -51,8 +47,7 @@ export interface DaemonProcessConfiguration {
    * line each, when the operator asks for that record.
    */
   readonly historyExport?: string;
-  readonly mcpRuntimeCredentialFile?: Redacted.Redacted;
-  readonly mcpOwnerCredentialFile?: Redacted.Redacted;
+  readonly mcpCredentialFile: Redacted.Redacted;
   /** The message-policy document the daemon installs as its firewall; unset, it installs none. */
   readonly messagePolicyFile?: string;
   /** The key of the decision provider a message policy names. */
@@ -76,5 +71,5 @@ export interface DaemonBootstrap {
     Redacted.Redacted,
     DaemonConfigurationError
   >;
-  readonly mcpCredentials?: HarnessMcpCredentials;
+  readonly mcpCredential: Redacted.Redacted;
 }

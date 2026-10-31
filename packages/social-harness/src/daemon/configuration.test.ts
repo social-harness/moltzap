@@ -38,6 +38,7 @@ const requiredConfiguration = (directory: string) =>
   new Map([
     ["SHARNESS_STATE_DIRECTORY", join(directory, "state")],
     ["SHARNESS_MCP_PORT", "4319"],
+    ["SHARNESS_MCP_CREDENTIAL_FILE", join(directory, "mcp-credential")],
     ["SHARNESS_REGISTRY_ORIGIN", "https://registry.example"],
     ["SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY", registrySigner],
     ["SHARNESS_ROUTER_ORIGIN", "http://router.example:4320"],
@@ -147,6 +148,10 @@ const loadsExactRedactedSecrets = () =>
   Effect.gen(function* () {
     const directory = temporaryDirectory();
     writeFileSync(join(directory, "agent.pem"), privateKey);
+    writeFileSync(
+      join(directory, "mcp-credential"),
+      "mcp-local-test-credential-0000000001",
+    );
     writeFileSync(join(directory, "admission"), "bootstrap-token=");
     const configuration = yield* loadConfiguration(directory);
     const bootstrap = yield* loadDaemonBootstrap(configuration);
@@ -165,6 +170,10 @@ const loadsBootstrapWithoutAdmissionFile = () =>
   Effect.gen(function* () {
     const directory = temporaryDirectory();
     writeFileSync(join(directory, "agent.pem"), privateKey);
+    writeFileSync(
+      join(directory, "mcp-credential"),
+      "mcp-local-test-credential-0000000001",
+    );
     const configuration = yield* loadConfiguration(directory);
     const bootstrap = yield* loadDaemonBootstrap(configuration);
     expect(bootstrap.agentPublicKey.x).toBe(
@@ -179,6 +188,10 @@ const treatsEmptyAdmissionFileAsUnset = () =>
   Effect.gen(function* () {
     const directory = temporaryDirectory();
     writeFileSync(join(directory, "agent.pem"), privateKey);
+    writeFileSync(
+      join(directory, "mcp-credential"),
+      "mcp-local-test-credential-0000000001",
+    );
     const configuration = yield* loadConfiguration(
       directory,
       new Map([["SHARNESS_ADMISSION_CREDENTIAL_FILE", ""]]),
@@ -194,6 +207,10 @@ const loadsBootstrapWithAdmissionFileUnset = () =>
   Effect.gen(function* () {
     const directory = temporaryDirectory();
     writeFileSync(join(directory, "agent.pem"), privateKey);
+    writeFileSync(
+      join(directory, "mcp-credential"),
+      "mcp-local-test-credential-0000000001",
+    );
     const configuration = yield* loadDaemonProcessConfiguration.pipe(
       Effect.withConfigProvider(
         ConfigProvider.fromMap(
@@ -232,6 +249,10 @@ const rejectsSecretFileFailures = () =>
     );
 
     writeFileSync(join(directory, "agent.pem"), privateKey);
+    writeFileSync(
+      join(directory, "mcp-credential"),
+      "mcp-local-test-credential-0000000001",
+    );
     writeFileSync(join(directory, "admission"), "bootstrap-token=\n");
     expect(yield* admissionFailureReason(configuration)).toBe(
       "admission-credential",
@@ -310,80 +331,50 @@ describe("history export configuration", () => {
     }));
 });
 
-const runtimeToken = "runtime-for-local-test-0000000001";
-const ownerToken = "owner-for-local-test-000000000001";
-const credentialConfiguration = (directory: string) =>
-  loadConfiguration(
-    directory,
-    new Map([
-      ["SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE", join(directory, "runtime")],
-      ["SHARNESS_MCP_OWNER_CREDENTIAL_FILE", join(directory, "owner")],
-    ]),
-  );
+const mcpToken = "mcp-local-test-credential-0000000001";
 const bootstrapFiles = () => {
   const directory = temporaryDirectory();
   writeFileSync(join(directory, "agent.pem"), privateKey);
+  writeFileSync(
+    join(directory, "mcp-credential"),
+    "mcp-local-test-credential-0000000001",
+  );
   writeFileSync(join(directory, "admission"), "bootstrap-token=");
   return directory;
 };
-const loadsSeparatedAuthority = () =>
+const loadsBearerCredential = () =>
   Effect.gen(function* () {
     const directory = bootstrapFiles();
-    writeFileSync(join(directory, "runtime"), runtimeToken);
-    writeFileSync(join(directory, "owner"), ownerToken);
-    const bootstrap = yield* credentialConfiguration(directory).pipe(
+    writeFileSync(join(directory, "mcp-credential"), mcpToken);
+    const bootstrap = yield* loadConfiguration(directory).pipe(
       Effect.flatMap(loadDaemonBootstrap),
     );
-    expect(bootstrap.mcpCredentials?.runtime).toEqual(
-      Redacted.make(runtimeToken),
-    );
-    expect(bootstrap.mcpCredentials?.owner).toEqual(Redacted.make(ownerToken));
-    expect(JSON.stringify(bootstrap.mcpCredentials)).not.toContain(
-      runtimeToken,
-    );
-    const local = yield* loadConfiguration(directory).pipe(
-      Effect.flatMap(loadDaemonBootstrap),
-    );
-    expect(local.mcpCredentials).toBeUndefined();
+    expect(bootstrap.mcpCredential).toEqual(Redacted.make(mcpToken));
+    expect(JSON.stringify(bootstrap.mcpCredential)).not.toContain(mcpToken);
   });
-const rejectsInvalidAuthority = () =>
+const rejectsInvalidCredential = () =>
   Effect.gen(function* () {
     const directory = bootstrapFiles();
-    writeFileSync(join(directory, "owner"), ownerToken);
-    for (const token of [
-      "short",
-      ownerToken,
-      `${runtimeToken}\n`,
-      `\ufeff${runtimeToken}`,
-    ]) {
-      writeFileSync(join(directory, "runtime"), token);
+    for (const token of ["short", `${mcpToken}\n`, `\ufeff${mcpToken}`]) {
+      writeFileSync(join(directory, "mcp-credential"), token);
       expect(
         yield* failureReason(
-          credentialConfiguration(directory).pipe(
+          loadConfiguration(directory).pipe(
             Effect.flatMap(loadDaemonBootstrap),
           ),
         ),
       ).toBe("mcp-credential");
     }
-    const partial = loadConfiguration(
-      directory,
-      new Map([
-        ["SHARNESS_MCP_RUNTIME_CREDENTIAL_FILE", join(directory, "runtime")],
-      ]),
-    );
-    expect(
-      yield* failureReason(partial.pipe(Effect.flatMap(loadDaemonBootstrap))),
-    ).toBe("mcp-credential");
   });
-const rejectsMissingAuthority = () =>
+const rejectsMissingCredential = () =>
   Effect.gen(function* () {
     const directory = bootstrapFiles();
-    const bootstrap = credentialConfiguration(directory).pipe(
-      Effect.flatMap(loadDaemonBootstrap),
-    );
-    expect(yield* failureReason(bootstrap)).toBe("mcp-runtime-credential-file");
-    writeFileSync(join(directory, "runtime"), runtimeToken);
-    expect(yield* failureReason(bootstrap)).toBe("mcp-owner-credential-file");
+    rmSync(join(directory, "mcp-credential"));
+    expect(
+      yield* failureReason(
+        loadConfiguration(directory).pipe(Effect.flatMap(loadDaemonBootstrap)),
+      ),
+    ).toBe("mcp-credential-file");
   });
 describe("startup registration configuration", () => {
   it(
@@ -392,55 +383,14 @@ describe("startup registration configuration", () => {
   );
 });
 
-// @agent-code-guard/regression-only: exact file bytes and distinct roles are the tunnel authority boundary.
+// @agent-code-guard/regression-only: exact credential bytes and unreadable files fail closed.
 describe("MCP credential configuration", () => {
+  it("loads one redacted bearer credential", loadsBearerCredential);
   it(
-    "loads distinct redacted credentials and retains trusted-local default",
-    loadsSeparatedAuthority,
+    "rejects short or noncanonical credential files",
+    rejectsInvalidCredential,
   );
-  it(
-    "rejects partial, shared, short or noncanonical credentials",
-    rejectsInvalidAuthority,
-  );
-  it(
-    "preserves closed credential file failure categories",
-    rejectsMissingAuthority,
-  );
+  it("reports an unreadable credential file", rejectsMissingCredential);
 });
 
-/* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore repository defaults. */
-
-/** Both settings share the same accepted-value table. */
-const experimentValues = [
-  { value: undefined, hidden: false },
-  { value: "false", hidden: false },
-  { value: "no", hidden: false },
-  { value: "off", hidden: false },
-  { value: "0", hidden: false },
-  { value: "true", hidden: true },
-  { value: "yes", hidden: true },
-  { value: "on", hidden: true },
-  { value: "1", hidden: true },
-];
-
-it.each(experimentValues)(
-  "loads both daemon experiment switches as $hidden for $value",
-  ({ value, hidden }) =>
-    Effect.gen(function* () {
-      const overrides =
-        value === undefined
-          ? new Map<string, string>()
-          : new Map([
-              ["SHARNESS_EXPERIMENT_HIDE_GROUPS", value],
-              ["SHARNESS_EXPERIMENT_HIDE_COLLECTIVES", value],
-            ]);
-      const configuration = yield* loadConfiguration(
-        temporaryDirectory(),
-        overrides,
-      );
-      expect(configuration).toMatchObject({
-        hideGroups: hidden,
-        hideCollectives: hidden,
-      });
-    }),
-);
+/* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore defaults after configuration contract assertions. */

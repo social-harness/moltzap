@@ -10,6 +10,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { Deferred, Effect, Fiber, Redacted, Schema } from "effect";
 import { describe, expect } from "vitest";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
@@ -24,19 +25,14 @@ import {
   INBOX_ITEM_EVENT,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { makeHostDelivery } from "../inbox/host-delivery.js";
 import { noHistoryExport } from "../inbox/host-traffic-log.js";
-import { openDaemonStore } from "../store.js";
 import { makeHarnessMcpHttpHandler } from "./tools.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- HTTP/JSON-RPC refusal codes and receipt counts are external behavior. */
 
 const info = { name: "native-polling-conformance", version: "1" };
-const credentials = {
-  runtime: Redacted.make("poll-runtime-credential-for-local-test"),
-  owner: Redacted.make("poll-owner-credential-for-local-test"),
-};
+const credential = Redacted.make("poll-credential-for-local-test-0001");
 const pollInput = { name: INBOX_ITEM_EVENT, arguments: {}, cursor: null };
 const unreachable = () =>
   Effect.dieMessage("poll scenario reached an unrelated operation");
@@ -54,18 +50,15 @@ const beforeReceive = <A, E>(
     : operation;
 const acquireFixture = (block?: BlockedOperation) =>
   Effect.gen(function* () {
-    const store = yield* openDaemonStore(stateDirectory(), {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
+    const store = yield* openInboxFixture(stateDirectory());
     const delivery = yield* makeHostDelivery({
-      store,
       scope: yield* Effect.scope,
       collectives: () => ({ prepare: unreachable, accept: unreachable }),
       historyExport: noHistoryExport,
-    });
+    }).pipe(store.run);
     const handler = yield* makeHarnessMcpHttpHandler({
       implementation: info,
-      credentials,
+      credential,
       eventStore: {
         ...delivery.eventStore,
         readInbox: (bounds) =>
@@ -84,7 +77,6 @@ const acquireFixture = (block?: BlockedOperation) =>
         protocolActive: () => true,
         readStatus: unreachable,
         register: unreachable,
-        searchAgents: unreachable,
         searchConversations: unreachable,
         readConversation: unreachable,
       },
@@ -109,7 +101,7 @@ const request = (
         accept: "application/json, text/event-stream",
         "mcp-method": method,
         ...(typeof params.name === "string" ? { "mcp-name": params.name } : {}),
-        authorization: `Bearer ${Redacted.value(options.credential ?? credentials.runtime)}`,
+        authorization: `Bearer ${Redacted.value(options.credential ?? credential)}`,
       }),
       HttpClientRequest.bodyUnsafeJson({
         jsonrpc: "2.0",
@@ -220,7 +212,7 @@ const refusesCompetingConsumers = () =>
           name: INBOX_PENDING_EVENT,
           arguments: {},
         },
-        { credential: credentials.owner },
+        { credential: credential },
       ),
     ).toMatchObject({
       error: { data: { reason: "already-listening" } },
@@ -230,7 +222,7 @@ const refusesCompetingConsumers = () =>
         endpoint,
         "event_subscription_status",
         {},
-        { credential: credentials.owner },
+        { credential: credential },
       ),
     ).toMatchObject({
       result: { structuredContent: { mode: "poll" } },
@@ -246,7 +238,7 @@ const fencesReplacedConsumers = () =>
       endpoint,
       "revoke_event_subscription",
       {},
-      { credential: credentials.owner },
+      { credential: credential },
     );
     const replacement = yield* poll(endpoint);
     expect(replacement._meta).not.toEqual(old._meta);
@@ -284,7 +276,7 @@ const requiresAuthenticatedBinding = () =>
     expect(denied.status).toBe(401);
     const started = yield* poll(endpoint);
     expect(yield* call(endpoint, "read_inbox", {})).toMatchObject({
-      error: { code: -32602 },
+      result: { structuredContent: { items: [] } },
     });
     expect(
       yield* call(
@@ -299,11 +291,6 @@ const requiresAuthenticatedBinding = () =>
       ),
     ).toMatchObject({ error: { code: -32602 } });
     expect(
-      yield* call(endpoint, "status", {}, { metadata: started._meta }),
-    ).toMatchObject({
-      error: { code: -32602 },
-    });
-    expect(
       yield* rpc(
         endpoint,
         "events/poll",
@@ -314,29 +301,6 @@ const requiresAuthenticatedBinding = () =>
         { metadata: started._meta },
       ),
     ).toMatchObject({ error: { code: -32602 } });
-  });
-
-const keepsNativeReceiptsOutsideTheCatalog = () =>
-  Effect.gen(function* () {
-    const { endpoint } = yield* acquireFixture();
-    const before = yield* rpc(endpoint, "tools/list", {});
-    yield* poll(endpoint);
-    const after = yield* rpc(endpoint, "tools/list", {});
-    expect(after).toEqual(before);
-    const listed = yield* Effect.succeed(after).pipe(
-      Effect.flatMap(
-        Schema.decodeUnknown(
-          Schema.Struct({
-            result: Schema.Struct({
-              tools: Schema.Array(Schema.Struct({ name: Schema.String })),
-            }),
-          }),
-        ),
-      ),
-    );
-    expect(listed.result.tools.map((tool) => tool.name)).not.toContain(
-      "acknowledge_delivery",
-    );
   });
 
 const receiveRequest = (
@@ -381,10 +345,6 @@ const closesBlockedReceive = (kind: BlockedOperation["kind"]) =>
 
 // @agent-code-guard/regression-only: finite protocol transcripts cover MCP interoperability, authentication and durable handoff.
 describe("authenticated polling over loopback HTTP", () => {
-  it(
-    "keeps native receipts outside the model catalog",
-    keepsNativeReceiptsOutsideTheCatalog,
-  );
   it.each(["poll", "read", "ack"] as const)(
     "closes a handler with a blocked %s without committing a receipt",
     closesBlockedReceive,
@@ -399,7 +359,7 @@ describe("authenticated polling over loopback HTTP", () => {
     fencesReplacedConsumers,
   );
   it(
-    "requires both an authenticated request and the active consumer binding",
+    "authenticates requests and validates supplied consumer bindings",
     requiresAuthenticatedBinding,
   );
 });

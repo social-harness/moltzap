@@ -1,234 +1,230 @@
-/** @file Composes protocol, policy and host persistence over one scoped database. */
+/** @file Shares one SQLite lifetime and commits changes spanning communication, policy and delivery. */
 
-import { Effect, type Scope } from "effect";
-
-import type { OutboxTooOldError } from "../communication/store/database/values.js";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import * as FileSystem from "@effect/platform/FileSystem";
+import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Cause, Effect, Layer, Option } from "effect";
+import { join } from "node:path";
+import type { DeliveryToken } from "../communication/store/types.js";
 import type {
-  DeliveryToken,
-  EndpointStore,
-} from "../communication/store/types.js";
-import type { HostDeliveryStore } from "./inbox/host-delivery.js";
+  FirewallCompletion,
+  FirewallInboxEntry,
+  FirewallLocalAdmission,
+  ItemProjection,
+} from "../firewall/store/types.js";
 import { completeCollectiveDelivery } from "../communication/store/collectives.js";
 import {
-  closeStoreState,
   createCommunicationTables,
-  type EndpointStoreError,
-  openStoreState,
-  requireSameBytes,
-  runStoreOperation,
-  StoreSignal,
-  type StoreState,
+  inspectStoreState,
+  type StoreOpening,
+  storeOperation,
   transaction,
 } from "../communication/store/database/index.js";
-import { retirePendingDelivery } from "../communication/store/queues/peer-deliveries.js";
-import { makeEndpointStore } from "../communication/store/store.js";
 import {
-  completeFirewallAttempt,
-  queueFirewallItem,
+  EndpointStoreError,
+  mapStoreFailure,
+  OutboxTooOldError,
+  readText,
+  requireSameBytes,
+} from "../communication/store/database/values.js";
+import { retirePendingDelivery } from "../communication/store/queues/peer-deliveries.js";
+import {
   requireQueueFrontier,
+  queueFirewallItem as retainQueuedItem,
   retireQueuedItem,
+  saveCheckDecision,
   settleLocalItem,
   settleQueuedItem,
 } from "../firewall/store/firewall.js";
-import {
-  type FirewallStore,
-  type ItemProjection,
-  makeFirewallStore,
-} from "../firewall/store/index.js";
-import {
-  createFirewallTables,
-  interruptFirewallAttempts,
-} from "../firewall/store/schema.js";
-import {
-  readFirewallEvidence,
-  readFirewallEvidenceSlices,
-  readFirewallRequestAdmission,
-} from "./inbox/evidence.js";
+import { createFirewallTables } from "../firewall/store/schema.js";
 import {
   type CollectiveDelivery,
   createInboxTables,
-  makeInboxStore,
   putInboxItem,
   readInboxItem,
-  retireItem,
 } from "./inbox/store.js";
-
-/** Only daemon composition combines these owners and their cross-owner transactions. */
-export interface DaemonStore extends EndpointStore, HostDeliveryStore {
-  readonly replaceInboxItem: (
-    token: DeliveryToken,
-    replacement: ItemProjection,
-    pendingConversation?: string,
-  ) => Effect.Effect<void, EndpointStoreError>;
-}
-
-/** Acquisition registers the existing SQLite finalizer before initializing any owner. */
-export const openDaemonStore = (
-  stateDirectory: string,
-  options: { readonly liveWireVersions: readonly string[] },
-): Effect.Effect<
-  DaemonStore,
-  EndpointStoreError | OutboxTooOldError,
-  Scope.Scope
-> =>
-  // eslint-disable-next-line agent-code-guard/acquire-release-requires-scope -- The daemon store retains the shared connection for its caller's scope.
-  Effect.acquireRelease(
-    openStoreState(stateDirectory, options),
-    closeStoreState,
+const DATABASE_NAME = "sharnessd.sqlite3";
+/** Startup rejects incompatible state and expired pending bytes before accepting requests. */
+export function layer(options: {
+  readonly stateDirectory: string;
+  readonly liveWireVersions: readonly string[];
+}): Layer.Layer<SqlClient.SqlClient, EndpointStoreError | OutboxTooOldError> {
+  const connection = SqliteClient.layer({
+    filename: join(options.stateDirectory, DATABASE_NAME),
+    disableWAL: true,
+  });
+  const initialized = Layer.effectDiscard(initializeDatabase(options));
+  return Layer.unwrapEffect(
+    Effect.gen(function* () {
+      const filesystem = yield* FileSystem.FileSystem;
+      yield* filesystem.makeDirectory(options.stateDirectory, {
+        recursive: true,
+        mode: 0o700,
+      });
+      yield* filesystem.chmod(options.stateDirectory, 0o700);
+      return initialized.pipe(Layer.provideMerge(connection));
+    }).pipe(Effect.withSpan("prepareDaemonStorage")),
   ).pipe(
-    Effect.flatMap((state) =>
-      runStoreOperation(state, () => {
-        if (state.opening === "create") {
-          transaction(
-            state.database,
-            () => {
-              createCommunicationTables(state.database);
-              createInboxTables(state.database);
-              createFirewallTables(state.database);
-            },
-            "EXCLUSIVE",
-          );
+    Layer.provide(NodeFileSystem.layer),
+    Layer.catchAllCause(
+      (cause): Layer.Layer<unknown, EndpointStoreError | OutboxTooOldError> => {
+        if (Cause.isInterruptedOnly(cause)) {
+          return Layer.failCause(Cause.stripFailures(cause));
         }
-        interruptFirewallAttempts(state.database);
-        return makeDaemonStore(state);
-      }),
+        const failure = Option.getOrUndefined(Cause.failureOption(cause));
+        return failure instanceof OutboxTooOldError
+          ? Layer.fail(failure)
+          : Layer.fail(
+              mapStoreFailure(
+                failure ?? Option.getOrUndefined(Cause.dieOption(cause)),
+                "persistence",
+              ),
+            );
+      },
     ),
-    Effect.withSpan("openDaemonStore"),
   );
-
-/** The capability literal checks that every declared owner operation has one implementation. */
-function makeDaemonStore(state: StoreState): DaemonStore {
-  const run = <A>(operation: () => A) => runStoreOperation(state, operation);
-  const firewall = makeFirewallStore(state, {
-    queueFirewallItem: (item) =>
-      run(() => {
-        queueItem(state, item);
-      }),
-    readFirewallEvidence: (input) =>
-      run(() => readFirewallEvidence(state.database, input)),
-    readFirewallEvidenceSlices: (input) =>
-      run(() => readFirewallEvidenceSlices(state.database, input)),
-    readFirewallRequestAdmission: (record) =>
-      run(() => readFirewallRequestAdmission(state.database, record)),
-    admitFirewallItem: (item, completion) =>
-      run(() => admitItem(state, item, completion)),
-    admitFirewallLocalItem: (admission) =>
-      run(() =>
-        transaction(state.database, () => {
-          settleLocalItem(state.database, admission);
-          putInboxItem(state.database, admission.item);
-          return "admitted" as const;
-        }),
+}
+/** Registration can distinguish a fresh directory without changing its saved state. */
+export function inspectEndpointStore(
+  stateDirectory: string,
+): Effect.Effect<StoreOpening, EndpointStoreError> {
+  return Effect.gen(function* () {
+    const filesystem = yield* FileSystem.FileSystem;
+    const filename = join(stateDirectory, DATABASE_NAME);
+    if (!(yield* filesystem.exists(filename))) {
+      return "create" as const;
+    }
+    return yield* inspectStoreState().pipe(
+      Effect.provide(
+        SqliteClient.layer({ filename, readonly: true, disableWAL: true }),
       ),
-    retireFirewallItem: (token) =>
-      run(() => {
-        retireFirewallItem(state, token);
-      }),
-  });
-  return Object.freeze({
-    ...makeEndpointStore(state),
-    ...makeInboxStore(state),
-    ...firewall,
-    publishCollectiveItem: (delivery) =>
-      run(() => {
-        publishCollectiveItem(state, delivery);
-      }),
-    replaceInboxItem: (token, replacement, conversation) =>
-      run(() => {
-        replaceInboxItem(state, token, replacement, conversation);
-      }),
-  } satisfies DaemonStore);
-}
-
-/** Terminal ownership and host publication share a transaction without changing C2's authority. */
-function publishCollectiveItem(
-  state: StoreState,
-  delivery: CollectiveDelivery,
-): void {
-  transaction(state.database, () => {
-    completeCollectiveDelivery(
-      state.database,
-      delivery.operationId,
-      delivery.deliveryToken,
     );
-    if (delivery.firewall) {
-      queueItem(state, delivery);
-    } else {
-      putInboxItem(state.database, delivery);
-    }
-  });
+  }).pipe(
+    Effect.provide(NodeFileSystem.layer),
+    storeOperation,
+    Effect.withSpan("inspectEndpointStore"),
+  );
 }
-
-/** One incoming decision and its immutable host projection become visible together. */
-function admitItem(
-  state: StoreState,
+/** Completed operation ownership and its host view commit before notification. */
+export function publishCollectiveItem(delivery: CollectiveDelivery) {
+  return transaction(
+    Effect.gen(function* () {
+      yield* completeCollectiveDelivery(
+        delivery.operationId,
+        delivery.deliveryToken,
+      );
+      if (delivery.firewall) {
+        yield* queueFirewallItem(delivery);
+      } else {
+        yield* putInboxItem(delivery);
+      }
+    }),
+  ).pipe(Effect.withSpan("publishCollectiveItem"));
+}
+/** A completed decision and the host's immutable message become durable together. */
+export function saveMessageDecision(
   item: ItemProjection,
-  completion: Parameters<FirewallStore["admitFirewallItem"]>[1],
+  completion: FirewallCompletion,
 ) {
-  return transaction(state.database, () => {
-    requireQueueFrontier(
-      state.database,
-      item.deliveryToken,
-      item.canonicalItem,
-    );
-    const disposition = completeFirewallAttempt(
-      state.database,
-      completion,
-      "incoming",
-      item.canonicalItem,
-    );
-    if (disposition === "admitted") {
-      putInboxItem(state.database, item);
-    } else {
-      retirePendingDelivery(state.database, item.deliveryToken);
+  return transaction(
+    Effect.gen(function* () {
+      yield* requireQueueFrontier(item.deliveryToken, item.canonicalItem);
+      if (completion.direction !== "incoming") {
+        return yield* new EndpointStoreError({ reason: "conflict" });
+      }
+      requireSameBytes(completion.canonicalCandidate, item.canonicalItem);
+      const disposition = yield* saveCheckDecision(completion);
+      if (disposition === "admitted") {
+        yield* putInboxItem(item);
+      } else {
+        yield* retirePendingDelivery(item.deliveryToken);
+      }
+      yield* settleQueuedItem(
+        item.deliveryToken,
+        disposition,
+        completion.checkId,
+      );
+      return disposition;
+    }),
+  ).pipe(Effect.withSpan("saveMessageDecision"));
+}
+/** Result text, answer visibility and saved evidence share the same publication. */
+export function saveResultDecision(admission: FirewallLocalAdmission) {
+  return transaction(
+    Effect.gen(function* () {
+      yield* settleLocalItem(admission);
+      yield* putInboxItem(admission.item);
+      return "admitted" as const;
+    }),
+  ).pipe(Effect.withSpan("saveResultDecision"));
+}
+/** An expired request remains protocol context while leaving the pending host queue. */
+export function retireFirewallItem(token: DeliveryToken) {
+  return transaction(
+    Effect.gen(function* () {
+      yield* retireQueuedItem(token);
+      yield* retirePendingDelivery(token);
+    }),
+  ).pipe(Effect.withSpan("retireFirewallItem"));
+}
+/** A saved host view wins over later attempts to queue the same item. */
+export function queueFirewallItem(item: Omit<FirewallInboxEntry, "sequence">) {
+  return Effect.gen(function* () {
+    const presented = yield* readInboxItem(item.deliveryToken);
+    if (presented !== undefined) {
+      requireSameBytes(presented.canonicalItem, item.canonicalItem);
+      return;
     }
-    settleQueuedItem(
-      state.database,
-      item.deliveryToken,
-      disposition,
-      completion.checkId,
+    yield* retainQueuedItem(item);
+  }).pipe(storeOperation, Effect.withSpan("queueFirewallItem"));
+}
+
+function initializeDatabase(options: Parameters<typeof layer>[0]) {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const opening = yield* inspectStoreState();
+    if (opening === "reopen") {
+      yield* requireLiveOutbox(options.liveWireVersions);
+    }
+    yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      "PRAGMA locking_mode = EXCLUSIVE",
     );
-    return disposition;
-  });
+    yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      "PRAGMA foreign_keys = ON",
+    );
+    yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      "PRAGMA busy_timeout = 0",
+    );
+    yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      "PRAGMA journal_mode = WAL",
+    );
+    yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      "PRAGMA synchronous = FULL",
+    );
+    yield* transaction(
+      Effect.gen(function* () {
+        if (opening === "create") {
+          yield* createCommunicationTables();
+          yield* createInboxTables();
+          yield* createFirewallTables();
+        }
+      }),
+    );
+    const filesystem = yield* FileSystem.FileSystem;
+    yield* filesystem.chmod(join(options.stateDirectory, DATABASE_NAME), 0o600);
+  }).pipe(Effect.withSpan("initializeDaemonDatabase"));
 }
-
-/** An expired request cannot re-enter host delivery, while its protocol context remains. */
-function retireFirewallItem(state: StoreState, token: DeliveryToken): void {
-  transaction(state.database, () => {
-    retireQueuedItem(state.database, token);
-    retirePendingDelivery(state.database, token);
-  });
-}
-
-/** Replacement retains the original immutable binding and stages only the new identity. */
-function replaceInboxItem(
-  state: StoreState,
-  token: DeliveryToken,
-  replacement: ItemProjection,
-  pendingConversation?: string,
-): void {
-  if (token === replacement.deliveryToken) {
-    throw new StoreSignal("conflict");
-  }
-  transaction(state.database, () => {
-    retireItem(state.database, token);
-    if (pendingConversation === undefined) {
-      putInboxItem(state.database, replacement);
-    } else {
-      queueItem(state, { ...replacement, conversation: pendingConversation });
+function requireLiveOutbox(liveWireVersions: readonly string[]) {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const pending = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      "SELECT wire_version FROM outbound_messages WHERE disposition='pending'",
+    );
+    for (const row of pending) {
+      if (!liveWireVersions.includes(readText(row, "wire_version"))) {
+        return yield* new OutboxTooOldError();
+      }
     }
   });
-}
-
-/** A retained host view wins over any later attempt to queue the same item. */
-function queueItem(
-  state: StoreState,
-  item: Parameters<FirewallStore["queueFirewallItem"]>[0],
-): void {
-  const presented = readInboxItem(state.database, item.deliveryToken);
-  if (presented !== undefined) {
-    requireSameBytes(presented.canonicalItem, item.canonicalItem);
-    return;
-  }
-  queueFirewallItem(state.database, item);
 }

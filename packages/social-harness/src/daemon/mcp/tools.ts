@@ -19,10 +19,12 @@ import {
   Layer,
   Option,
   type ParseResult,
+  Redacted,
   type Runtime,
   Schema,
   Scope,
 } from "effect";
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { CollectiveError } from "../../communication/collectives/contracts.js";
 import type { FirewallSendError } from "../../host-protocol/advice.js";
 import type { EventStore } from "../inbox/store.js";
@@ -34,7 +36,6 @@ import {
   firewallDecisionsRequestSchema,
   firewallDecisionsSchema,
   FirewallPolicyError,
-  type FirewallPolicyOperations,
   policyReadSchema,
   policyUpdateResultSchema,
   policyUpdateSchema,
@@ -57,10 +58,6 @@ import {
   managementRegisterRequestSchema,
   type ManagementRegisterResult,
   managementRegisterResultSchema,
-  type ManagementSearchAgentsRequest,
-  managementSearchAgentsRequestSchema,
-  type ManagementSearchAgentsResult,
-  managementSearchAgentsResultSchema,
   type ManagementSearchConversationsRequest,
   managementSearchConversationsRequestSchema,
   type ManagementSearchConversationsResult,
@@ -73,7 +70,6 @@ import {
 } from "../../host-protocol/index.js";
 import {
   HARNESS_ACKNOWLEDGE_DELIVERY_TOOL,
-  HARNESS_CONSUMER_META_KEY,
   HARNESS_READ_EVENT_TOOL,
   HARNESS_READ_INBOX_TOOL,
   HARNESS_SEND_TOOL,
@@ -93,11 +89,6 @@ import {
 } from "../../host-protocol/operations.js";
 import { SendResultSchema } from "../../host-protocol/send-result.js";
 import {
-  authenticateHarnessRequest,
-  type HarnessMcpCredentials,
-  type HarnessMcpRole,
-} from "./auth.js";
-import {
   type HarnessEvents,
   makeHarnessEvents,
   makeHarnessPollEvents,
@@ -109,9 +100,27 @@ import {
 
 /* eslint-disable agent-code-guard/async-keyword -- Official MCP factories and callbacks are Promise-native. */
 
+const credentialDigest = (value: string): Uint8Array =>
+  createHash("sha256").update(value).digest();
+
+/** Every HTTP request authenticates before discovery, SDK parsing or event dispatch. */
+const authenticateHarnessRequest = (
+  request: Request,
+  credential: Redacted.Redacted,
+): boolean => {
+  const authorization = request.headers.get("authorization");
+  return (
+    authorization !== null &&
+    authorization.startsWith("Bearer ") &&
+    timingSafeEqual(
+      credentialDigest(authorization.slice("Bearer ".length)),
+      credentialDigest(Redacted.value(credential)),
+    )
+  );
+};
+
 const REGISTER_TOOL = "register";
 const STATUS_TOOL = "status";
-const SEARCH_AGENTS_TOOL = "search_agents";
 const SEARCH_CONVERSATIONS_TOOL = "search_conversations";
 const READ_CONVERSATION_TOOL = "read_conversation";
 
@@ -119,7 +128,16 @@ type ClosedOperationError = Readonly<{ readonly reason: string }>;
 
 /** Structural daemon operations projected onto the loopback MCP boundary. */
 export interface HarnessMcpOperations extends DeliveryOperations {
-  readonly policy?: FirewallPolicyOperations;
+  readonly readPolicy?: () => Effect.Effect<
+    typeof policyReadSchema.Type,
+    FirewallPolicyError
+  >;
+  readonly updatePolicy?: (
+    request: typeof policyUpdateSchema.Type,
+  ) => Effect.Effect<typeof policyUpdateResultSchema.Type, FirewallPolicyError>;
+  readonly readDecisions?: (
+    request: typeof firewallDecisionsRequestSchema.Type,
+  ) => Effect.Effect<typeof firewallDecisionsSchema.Type, FirewallPolicyError>;
   /**
    * Whether the daemon's protocol is up. The catalog lists the
    * post-registration tools, and admits their calls and the inbox
@@ -133,9 +151,6 @@ export interface HarnessMcpOperations extends DeliveryOperations {
   readonly register: (
     input: ManagementRegisterRequest,
   ) => Effect.Effect<ManagementRegisterResult, ClosedOperationError>;
-  readonly searchAgents: (
-    input: ManagementSearchAgentsRequest,
-  ) => Effect.Effect<ManagementSearchAgentsResult, ClosedOperationError>;
   readonly searchConversations: (
     input: ManagementSearchConversationsRequest,
   ) => Effect.Effect<ManagementSearchConversationsResult, ClosedOperationError>;
@@ -152,7 +167,7 @@ export interface HarnessMcpEventHandler extends McpHttpHandler {
 
 interface HarnessMcpHandlerOptions {
   readonly eventStore?: EventStore;
-  readonly credentials?: HarnessMcpCredentials;
+  readonly credential: Redacted.Redacted;
   readonly implementation: Implementation;
   readonly operations: HarnessMcpOperations;
   readonly onSubscriptionActiveChange?: (active: boolean) => void;
@@ -191,8 +206,6 @@ const policyUpdateInput = requestSchema(policyUpdateSchema);
 const policyUpdateOutput = resultSchema(policyUpdateResultSchema);
 const decisionsInput = requestSchema(firewallDecisionsRequestSchema);
 const decisionsOutput = resultSchema(firewallDecisionsSchema);
-const searchAgentsInput = requestSchema(managementSearchAgentsRequestSchema);
-const searchAgentsOutput = resultSchema(managementSearchAgentsResultSchema);
 const searchConversationsInput = requestSchema(
   managementSearchConversationsRequestSchema,
 );
@@ -219,7 +232,6 @@ const {
   RUNTIME_READ_REASONS,
   REGISTER_REASONS,
   STATUS_REASONS,
-  SEARCH_AGENTS_REASONS,
   SEARCH_CONVERSATIONS_REASONS,
   READ_CONVERSATION_REASONS,
   ACKNOWLEDGE_DELIVERY_REASONS,
@@ -413,14 +425,14 @@ const localRead: ToolHints = { readOnlyHint: true, openWorldHint: false };
 const toolListings = {
   policy_read: {
     description:
-      "Read editable natural-language rules, their ownership, and fixed rules. Available to the owner and trusted local caller. The runtime can adopt norms through policy_update but cannot read this catalog.",
+      "Read editable natural-language rules and fixed rules with the active revision.",
     inputSchema: emptyInput,
     outputSchema: policyReadOutput,
     annotations: localRead,
   },
   policy_update: {
     description:
-      "Add, remove or replace natural-language rules. The runtime may add norms and change only runtime-owned norms. The owner may change any editable rule. Add a whole rule or a shared norm's BEHAVIOR.md text; remove and add the same id to replace it. Returns activeRevision after the complete edit is active. Existing admissions remain unchanged. An invalid-rule error identifies invalid text, conflicting or missing ids, or a rule limit. Fixed rules reject edits with fixed-rule, and owner rules reject runtime edits with owner-rule. A not-configured error means the owner must install a text policy first.",
+      "Add, remove or replace natural-language rules. Add a whole rule or a shared norm's BEHAVIOR.md text; remove and add the same id to replace it. Returns activeRevision after the complete edit is active. Existing admissions remain unchanged. An invalid-rule error identifies invalid text, conflicting or missing ids, or a rule limit. Fixed rules reject edits with fixed-rule. A not-configured error means the owner must install a text policy first.",
     inputSchema: policyUpdateInput,
     outputSchema: policyUpdateOutput,
     annotations: { readOnlyHint: false, openWorldHint: false },
@@ -453,14 +465,14 @@ const toolListings = {
   },
   event_subscription_status: {
     description:
-      "Inspect the runtime consumer and stalled delivery without exposing callback credentials.",
+      "Inspect the inbox consumer and stalled delivery without exposing callback credentials.",
     inputSchema: emptyInput,
     outputSchema: webhookStatusResult,
     annotations: localRead,
   },
   revoke_event_subscription: {
     description:
-      "Release the active runtime consumer while leaving pending inbox items unread.",
+      "Release the active inbox consumer while leaving pending inbox items unread.",
     inputSchema: emptyInput,
     outputSchema: emptyOutput,
     annotations: { readOnlyHint: false, openWorldHint: false },
@@ -476,13 +488,6 @@ const toolListings = {
       openWorldHint: true,
     },
   },
-  [SEARCH_AGENTS_TOOL]: {
-    description:
-      "Look up an agent by its exact AgentId or agentName. Returns found with its encoded agentCard and agent (agentId, agentName, principalId) from the verified card; use agent.agentId for identity-based firewall rules. A display name or partial name returns not_found.",
-    inputSchema: searchAgentsInput,
-    outputSchema: searchAgentsOutput,
-    annotations: { readOnlyHint: true, openWorldHint: true },
-  },
   [SEARCH_CONVERSATIONS_TOOL]: {
     description:
       "List canonical addresses of local conversations in order, optionally after an exclusive address cursor.",
@@ -492,7 +497,7 @@ const toolListings = {
   },
   [READ_CONVERSATION_TOOL]: {
     description:
-      "Read a frozen page of verified local conversation history by address or single-use continuation; each record names its author as author (agentId, agentName, principalId), and its message text is at recordCore.action.messageIntent.content, beside the signatures that verify it. For new messages not yet handled, use read_inbox.",
+      "Read a frozen page of retained conversation messages with their recorded visibility and guidance. For pending deliveries, use read_inbox.",
     inputSchema: readConversationInput,
     outputSchema: readConversationOutput,
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -538,23 +543,20 @@ const toolListings = {
 
 type ToolName = keyof typeof toolListings;
 
-interface RoleCatalog {
-  readonly inactive: readonly ToolName[];
-  readonly active: readonly ToolName[];
-}
-
-const ownerEventTools = [
+/** Recovery operations remain available before identity registration. */
+const eventTools = [
   "event_subscription_status",
   "revoke_event_subscription",
   "resume_event_subscription",
 ] as const;
 
-/** The local and owner tools that follow registration, after `status`. */
+const inactiveTools = [STATUS_TOOL, ...eventTools, REGISTER_TOOL] as const;
 const activeTools = [
+  STATUS_TOOL,
+  ...eventTools,
   "policy_read",
   "policy_update",
   "firewall_decisions",
-  SEARCH_AGENTS_TOOL,
   SEARCH_CONVERSATIONS_TOOL,
   READ_CONVERSATION_TOOL,
   HARNESS_READ_INBOX_TOOL,
@@ -563,32 +565,7 @@ const activeTools = [
   HARNESS_ACKNOWLEDGE_DELIVERY_TOOL,
 ] as const;
 
-/**
- * The tools each role lists before the daemon's protocol is up and once it
- * is. The runtime role lists nothing until then.
- */
-const roleCatalogs = {
-  local: {
-    inactive: [STATUS_TOOL, REGISTER_TOOL],
-    active: [STATUS_TOOL, ...activeTools],
-  },
-  owner: {
-    inactive: [STATUS_TOOL, ...ownerEventTools, REGISTER_TOOL],
-    active: [STATUS_TOOL, ...ownerEventTools, ...activeTools],
-  },
-  runtime: {
-    inactive: [],
-    active: [
-      SEARCH_AGENTS_TOOL,
-      HARNESS_SEND_TOOL,
-      HARNESS_READ_EVENT_TOOL,
-      "policy_update",
-    ],
-  },
-} as const satisfies Readonly<Record<HarnessMcpRole, RoleCatalog>>;
-
 interface ToolCallInput {
-  readonly role: HarnessMcpRole;
   readonly name: string;
   readonly toolArguments: unknown;
   readonly metadata: unknown;
@@ -675,7 +652,6 @@ const POLICY_REASONS = new Set([
   "not-configured",
   "invalid-rule",
   "fixed-rule",
-  "owner-rule",
   "build-failed",
   "persistence-failed",
 ]);
@@ -687,7 +663,7 @@ interface ToolOperations extends HarnessMcpOperations {
   readonly services: Runtime.Runtime<never>;
 }
 
-const handleOwnerOperation = async <
+const handleEventOperation = async <
   Value extends Readonly<Record<string, unknown>>,
 >(
   operation: Effect.Effect<Value, ProtocolError>,
@@ -740,7 +716,6 @@ const makeToolHandler =
       readonly execute: (
         operations: HarnessMcpOperations,
         request: Request,
-        role: HarnessMcpRole,
       ) => Effect.Effect<Value, ClosedOperationError>;
     },
   ): ToolHandler =>
@@ -756,10 +731,9 @@ const makeToolHandler =
       operation: options.consumesInbox
         ? operations.events.nativeOperation(
             input.metadata,
-            options.execute(operations, request, input.role),
-            input.role === "runtime",
+            options.execute(operations, request),
           )
-        : options.execute(operations, request, input.role),
+        : options.execute(operations, request),
       ...requestRuntime(input),
     });
   };
@@ -775,7 +749,7 @@ const toolHandlers = {
     policyReadOutput,
     {
       execute: (operations) =>
-        operations.policy?.read() ?? Effect.fail({ reason: "not-configured" }),
+        operations.readPolicy?.() ?? Effect.fail({ reason: "not-configured" }),
       label: "Policy read",
       allowedReasons: POLICY_REASONS,
       fallbackReason: "persistence-failed",
@@ -786,11 +760,9 @@ const toolHandlers = {
     policyUpdateSchema,
     policyUpdateOutput,
     {
-      execute: (operations, request, role) =>
-        operations.policy?.update(
-          request,
-          role === "runtime" ? "runtime" : "owner",
-        ) ?? Effect.fail({ reason: "not-configured" }),
+      execute: (operations, request) =>
+        operations.updatePolicy?.(request) ??
+        Effect.fail({ reason: "not-configured" }),
       label: "Policy update",
       allowedReasons: POLICY_REASONS,
       fallbackReason: "build-failed",
@@ -806,7 +778,7 @@ const toolHandlers = {
     decisionsOutput,
     {
       execute: (operations, request) =>
-        operations.policy?.decisions(request) ??
+        operations.readDecisions?.(request) ??
         Effect.fail({ reason: "not-configured" }),
       label: "Firewall decisions",
       allowedReasons: POLICY_REASONS,
@@ -839,30 +811,19 @@ const toolHandlers = {
     },
   ),
   event_subscription_status: (input, operations) =>
-    handleOwnerOperation(operations.events.status, webhookStatusResult, input),
+    handleEventOperation(operations.events.status, webhookStatusResult, input),
   revoke_event_subscription: (input, operations) =>
-    handleOwnerOperation(
+    handleEventOperation(
       operations.events.revoke.pipe(Effect.as({})),
       emptyOutput,
       input,
     ),
   resume_event_subscription: (input, operations) =>
-    handleOwnerOperation(
+    handleEventOperation(
       operations.events.resume.pipe(Effect.as({})),
       emptyOutput,
       input,
     ),
-  [SEARCH_AGENTS_TOOL]: makeToolHandler(
-    searchAgentsInput,
-    managementSearchAgentsRequestSchema,
-    searchAgentsOutput,
-    {
-      execute: (operations, request) => operations.searchAgents(request),
-      label: "Agent search",
-      allowedReasons: SEARCH_AGENTS_REASONS,
-      fallbackReason: "dependency-unavailable",
-    },
-  ),
   [SEARCH_CONVERSATIONS_TOOL]: makeToolHandler(
     searchConversationsInput,
     managementSearchConversationsRequestSchema,
@@ -926,51 +887,26 @@ const toolHandlers = {
   ),
 } satisfies Readonly<Record<ToolName, ToolHandler>>;
 
-/**
- * The advertised tools and ordinary call admission for the current protocol
- * state. Generation-bound native inbox calls have a separate admission path.
- * @param role The request's authority.
- * @param operations The daemon operations that report the protocol state.
- * @returns The tool names, in catalog order.
- */
-const currentTools = (
-  role: HarnessMcpRole,
-  operations: HarnessMcpOperations,
-): readonly ToolName[] => {
-  const catalog = roleCatalogs[role];
-  const tools = operations.protocolActive() ? catalog.active : catalog.inactive;
-  return operations.policy === undefined
-    ? tools.filter(
-        (name) =>
-          name !== "policy_read" &&
-          name !== "policy_update" &&
-          name !== "firewall_decisions",
-      )
-    : tools;
-};
-
-/** Transport metadata admits native receive calls without advertising them as model tools. */
-const hasConsumerBinding = (metadata: unknown) =>
-  typeof metadata === "object" &&
-  metadata !== null &&
-  HARNESS_CONSUMER_META_KEY in metadata;
-const nativeInboxTool = (name: string) =>
-  name === HARNESS_READ_INBOX_TOOL || name === HARNESS_ACKNOWLEDGE_DELIVERY_TOOL
-    ? name
-    : undefined;
+/** Registration and installed operations determine one catalog for every client. */
+const currentTools = (operations: HarnessMcpOperations): readonly ToolName[] =>
+  (operations.protocolActive() ? activeTools : inactiveTools).filter((name) => {
+    if (name === "policy_read") {
+      return operations.readPolicy !== undefined;
+    }
+    if (name === "policy_update") {
+      return operations.updatePolicy !== undefined;
+    }
+    if (name === "firewall_decisions") {
+      return operations.readDecisions !== undefined;
+    }
+    return true;
+  });
 
 const handleToolCall = async (
   input: ToolCallInput,
   operations: ToolOperations,
-  role: HarnessMcpRole,
 ) => {
-  const nativeName =
-    operations.protocolActive() && hasConsumerBinding(input.metadata)
-      ? nativeInboxTool(input.name)
-      : undefined;
-  const name =
-    nativeName ??
-    currentTools(role, operations).find((tool) => tool === input.name);
+  const name = currentTools(operations).find((tool) => tool === input.name);
   if (name === undefined) {
     return toolNotFound(input.name);
   }
@@ -981,11 +917,9 @@ const handleToolCall = async (
 const installToolCallHandler = (
   server: McpServer,
   operations: ToolOperations,
-  role: HarnessMcpRole,
 ): void => {
   server.server.setRequestHandler("tools/call", (request, context) => {
     const input = {
-      role,
       name: request.params.name,
       toolArguments: request.params.arguments ?? {},
       metadata: context.mcpReq._meta,
@@ -993,7 +927,7 @@ const installToolCallHandler = (
       requestScope: operations.requestScope,
       services: operations.services,
     };
-    return handleToolCall(input, operations, role);
+    return handleToolCall(input, operations);
   });
 };
 const runtimeOperations = (
@@ -1011,23 +945,19 @@ const runtimeOperations = (
       .acknowledgeDelivery(token)
       .pipe(Effect.tap(() => Effect.sync(() => events.notifyPending()))),
 });
-/**
- * One request's server. Its catalog is the role's, read from the daemon's
- * protocol state when the request arrives.
- */
+/** Each request receives the catalog for the daemon's current registration state. */
 const makeServer = (
   options: HarnessMcpHandlerOptions,
   operations: ToolOperations,
-  role: HarnessMcpRole,
 ): McpServer => {
   const capabilities = { tools: {}, events: {} };
   const server = new McpServer(options.implementation, { capabilities });
-  for (const name of currentTools(role, options.operations)) {
+  for (const name of currentTools(options.operations)) {
     const listing: ToolListing = toolListings[name];
     server.registerTool(name, listing, () => toolResult({}));
   }
-  installToolCallHandler(server, operations, role);
-  operations.events.install(server.server, role === "local" ? undefined : role);
+  installToolCallHandler(server, operations);
+  operations.events.install(server.server);
   return server;
 };
 const officialHandler = (
@@ -1037,23 +967,14 @@ const officialHandler = (
   services: Runtime.Runtime<never>,
 ) =>
   createMcpHandler(
-    (context) => {
-      const request = context.requestInfo;
-      if (request === undefined) {
-        throw new ProtocolError(-32012, "Authentication required");
-      }
-      const role = authenticateHarnessRequest(request, options.credentials);
-      if (role === undefined) {
-        throw new ProtocolError(-32012, "Authentication required");
-      }
-      return makeServer(
+    () =>
+      makeServer(
         options,
         runtimeOperations(options.operations, events, requestScope, services),
-        role,
-      );
-    },
+      ),
     { responseMode: "auto", onerror: options.onerror },
   );
+
 const guardedHandler = (
   options: HarnessMcpHandlerOptions,
   delegate: McpHttpHandler,
@@ -1064,8 +985,7 @@ const guardedHandler = (
   hasActiveSubscription: events.hasActiveSubscription,
   notifyPending: events.notifyPending,
   fetch: (request, requestOptions) => {
-    const role = authenticateHarnessRequest(request, options.credentials);
-    if (role === undefined) {
+    if (!authenticateHarnessRequest(request, options.credential)) {
       return Promise.resolve(
         new Response("Unauthorized", {
           status: 401,
@@ -1093,7 +1013,7 @@ const acquireWebhook = (
   gate: Effect.Semaphore,
 ) =>
   Effect.gen(function* () {
-    if (options.credentials === undefined || options.eventStore === undefined) {
+    if (options.eventStore === undefined) {
       return undefined;
     }
     const context = yield* Layer.buildWithScope(webhookHttpClientLayer, scope);
@@ -1112,7 +1032,7 @@ const acquireHandler = (
     const gate = yield* Effect.makeSemaphore(1);
     const webhook = yield* acquireWebhook(options, scope, gate);
     const poll =
-      options.credentials === undefined || options.eventStore === undefined
+      options.eventStore === undefined
         ? undefined
         : yield* makeHarnessPollEvents(options.eventStore, gate);
     const events = yield* makeHarnessEvents({
@@ -1134,7 +1054,7 @@ const acquireHandler = (
 
 /**
  * Create one official MCP handler with explicit event resource ownership.
- * @param options Daemon operations, optional credentials and callback persistence.
+ * @param options Daemon operations, the bearer credential and callback persistence.
  * @returns Handler whose catalog follows the daemon's protocol state.
  */
 export const makeHarnessMcpHttpHandler = (

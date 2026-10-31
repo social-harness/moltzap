@@ -6,7 +6,7 @@ import {
   HttpClientResponse,
 } from "@effect/platform";
 import { Effect, Match, Schema } from "effect";
-import type { DaemonStore } from "../daemon/store.js";
+import type { openInboxFixture } from "./inbox-fixture.js";
 import {
   DeliveryToken,
   encodeRuntimeValue,
@@ -17,6 +17,7 @@ import { InboundItem } from "../host-protocol/items.js";
 import { INBOX_ITEM_EVENT } from "../host-protocol/names.js";
 import { digest, testAgentView } from "./agent-card-fixtures.js";
 import { collectiveOperationId } from "./collective-id-fixtures.js";
+type InboxFixture = Effect.Effect.Success<ReturnType<typeof openInboxFixture>>;
 
 /** The signing secret of the scripted subscription. */
 export const secret = `whsec_${Buffer.alloc(32, 1).toString("base64")}`;
@@ -125,7 +126,7 @@ export const item = (text = "failed request") =>
  * @param text The failure the item reports.
  * @returns The store's mutation.
  */
-export const enqueue = (store: DaemonStore, byte: number, text?: string) =>
+export const enqueue = (store: InboxFixture, byte: number, text?: string) =>
   encodeRuntimeValue(item(text ?? "failed request")).pipe(
     Effect.flatMap((canonicalItem) =>
       store.putInboxItem({ deliveryToken: token(byte), canonicalItem }),
@@ -139,7 +140,7 @@ export const enqueue = (store: DaemonStore, byte: number, text?: string) =>
  * @param store The store the webhook reads.
  * @returns The scripted callback's controls and the events to acquire.
  */
-export const scriptedWebhook = (store: DaemonStore) => {
+export const scriptedWebhook = (store: InboxFixture) => {
   const gate = Effect.unsafeMakeSemaphore(1);
   let status = 200;
   let challengeValid = true;

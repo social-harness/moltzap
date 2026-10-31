@@ -136,9 +136,9 @@ export function operationTimes(deadlineSeconds: number): Effect.Effect<{
 /**
  * A request message, failing as uncertified when the send's wait ends first.
  */
-export function withinRequestWait(
+export function withinRequestWait<R>(
   waitUntil: number,
-  certified: Effect.Effect<EngineSentMessage, SendError>,
+  certified: Effect.Effect<EngineSentMessage, SendError, R>,
 ) {
   return requestWait(waitUntil).pipe(
     Effect.flatMap((duration) =>
@@ -224,16 +224,16 @@ export function sleepUntil(at: number): Effect.Effect<void> {
 }
 
 /** Each destination transfers to the endpoint scope before the caller waits on its outcome. */
-export function fanOutRequests(
+export function fanOutRequests<R>(
   prepared: PreparedGather,
   acceptRequest: CollectivePorts["acceptMessage"],
   scope: Scope.Scope,
-  refuse: (refusal: RequestRefusal) => Effect.Effect<void>,
+  refuse: (refusal: RequestRefusal) => Effect.Effect<void, never, R>,
 ) {
   const { operationId } = prepared;
   return Effect.forEach(
     prepared.requests,
-    ({ to, message }): Effect.Effect<RequestSend> =>
+    ({ to, message }): Effect.Effect<RequestSend, never, R> =>
       acceptRequest(
         {
           ...message,

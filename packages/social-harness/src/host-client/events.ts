@@ -7,7 +7,15 @@ import {
   StreamableHTTPClientTransport,
   SUBSCRIPTION_ID_META_KEY,
 } from "@modelcontextprotocol/client";
-import { Deferred, Effect, Queue, Schema, Stream, Take } from "effect";
+import {
+  Deferred,
+  Effect,
+  Queue,
+  Redacted,
+  Schema,
+  Stream,
+  Take,
+} from "effect";
 import { randomUUID } from "node:crypto";
 import { ListenError } from "../communication/conversations/errors.js";
 import { INBOX_PENDING_EVENT } from "../host-protocol/names.js";
@@ -241,10 +249,14 @@ const watchSilence = (state: Reception) =>
  * The official transport supplies framing and cancellation without a request
  * timeout on the retained stream. Notifications contain no message content.
  * @param endpoint Explicit daemon MCP URL.
+ * @param credential Bearer shared with the daemon's operation connection.
+ * @param onReady Runs once the stream has acquired consumer ownership.
  * @returns Coalesced inbox wakeups until the owning host subscription ends.
  */
 export const inboxWakeups = (
   endpoint: URL,
+  credential: Redacted.Redacted,
+  onReady?: Effect.Effect<void>,
 ): Stream.Stream<boolean, ListenError> =>
   Stream.unwrapScoped(
     Effect.gen(function* () {
@@ -253,7 +265,12 @@ export const inboxWakeups = (
       const state: Reception = {
         queue,
         active,
-        transport: new StreamableHTTPClientTransport(endpoint),
+        transport: new StreamableHTTPClientTransport(endpoint, {
+          requestInit: {
+            headers: { Authorization: `Bearer ${Redacted.value(credential)}` },
+            redirect: "error",
+          },
+        }),
         abort: new AbortController(),
         id: randomUUID(),
         phase: "opening",
@@ -263,6 +280,7 @@ export const inboxWakeups = (
       yield* Effect.addFinalizer(() => close(state));
       yield* open(state);
       yield* watchSilence(state);
+      yield* onReady ?? Effect.void;
       return Stream.fromQueue(queue).pipe(
         Stream.flattenTake,
         Stream.tap(() =>

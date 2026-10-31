@@ -11,7 +11,10 @@ import {
 } from "@modelcontextprotocol/server";
 import { Deferred, Duration, Effect, Fiber, Stream, TestClock } from "effect";
 import { describe, expect } from "vitest";
-import { loopbackMcpEndpoint } from "../__tests__/mcp-http-fixtures.js";
+import {
+  loopbackMcpEndpoint,
+  mcpTestCredential,
+} from "../__tests__/mcp-http-fixtures.js";
 import { INBOX_PENDING_EVENT } from "../host-protocol/names.js";
 import { inboxWakeups } from "./events.js";
 import { acquireHarnessEndpoint } from "./index.js";
@@ -86,7 +89,7 @@ const boundsInitialHeaders = () =>
       Deferred.succeed(entered, undefined).pipe(Effect.zipRight(Effect.never)),
     );
     const endpoint = yield* loopbackMcpEndpoint(handler);
-    const reader = yield* inboxWakeups(endpoint).pipe(
+    const reader = yield* inboxWakeups(endpoint, mcpTestCredential).pipe(
       Stream.runDrain,
       Effect.flip,
       Effect.forkScoped,
@@ -126,7 +129,10 @@ const classifiesCatalogFailure = (code: number, reason: string) =>
   Effect.gen(function* () {
     const endpoint = yield* loopbackMcpEndpoint(failingCatalogServer(code));
 
-    const error = yield* acquireHarnessEndpoint(endpoint).pipe(Effect.flip);
+    const error = yield* acquireHarnessEndpoint(endpoint, {
+      credential: mcpTestCredential,
+      receiveMode: "push",
+    }).pipe(Effect.flip);
 
     expect(error.reason).toBe(reason);
   });
@@ -174,7 +180,7 @@ const continuesAfterRecoverableErrors = () =>
       sendFrames(context, receipts),
     );
     const endpoint = yield* loopbackMcpEndpoint(handler);
-    const failure = yield* inboxWakeups(endpoint).pipe(
+    const failure = yield* inboxWakeups(endpoint, mcpTestCredential).pipe(
       Stream.tap(() => {
         const receipt = receipts[received++];
         return receipt === undefined
@@ -217,7 +223,7 @@ const rejectsFrame = ({
       ).pipe(Effect.zipRight(Effect.never)),
     );
     const endpoint = yield* loopbackMcpEndpoint(handler);
-    const failure = yield* inboxWakeups(endpoint).pipe(
+    const failure = yield* inboxWakeups(endpoint, mcpTestCredential).pipe(
       Stream.runDrain,
       Effect.flip,
     );

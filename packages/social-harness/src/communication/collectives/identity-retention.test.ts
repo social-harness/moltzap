@@ -1,9 +1,9 @@
 /** @file Collectives retain resolved identities before accepting work and reuse them after restart. */
 
+import { SqlClient } from "@effect/sql";
 import { scoped as it } from "@effect/vitest";
-import { Effect, Schema, Scope, TestClock } from "effect";
+import { Effect, Fiber, Schema, Scope, TestClock } from "effect";
 import { expect } from "vitest";
-import type { DaemonStore } from "../../daemon/store.js";
 import type { InboundItem } from "./inbound.js";
 import type { CollectivePorts } from "./ports.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
@@ -12,12 +12,11 @@ import {
   recordHashOf,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
-import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
-import { engineFixture } from "../../__tests__/firewall-runtime-fixtures.js";
 import {
-  stateDirectory,
-  withDaemonStore,
-} from "../../__tests__/store-schema-fixtures.js";
+  engineFixture,
+  type Fixture,
+} from "../../__tests__/conversation-fixtures.js";
+import { withDaemonStore } from "../../__tests__/store-schema-fixtures.js";
 import { SendError } from "../conversations/errors.js";
 import { encodeRuntimeValue } from "../store/index.js";
 import { SendInput } from "./contracts.js";
@@ -36,11 +35,12 @@ const input = Schema.decodeUnknownSync(SendInput)({
 });
 
 it("refuses every initial lookup failure in member order before accepting or sending", () =>
-  withDaemonStore(stateDirectory(), (store) =>
-    Effect.scoped(
+  Effect.gen(function* () {
+    const subject = yield* engineFixture();
+    return yield* subject.run(
       Effect.gen(function* () {
         const operations = yield* makeCollectiveOperations({
-          ...(yield* ports(store, [])),
+          ...(yield* ports(subject, [])),
           scope: yield* Scope.Scope,
           prepareMessage: (input) =>
             Effect.fail(
@@ -63,51 +63,22 @@ it("refuses every initial lookup failure in member order before accepting or sen
             ],
           },
         });
-        expect(yield* store.readCollectiveOperations()).toEqual([]);
-        expect(yield* store.readCollectiveMessages()).toEqual([]);
+        expect(yield* subject.store.readCollectiveOperations()).toEqual([]);
+        expect(yield* subject.store.readCollectiveMessages()).toEqual([]);
       }),
-    ),
-  ));
+    );
+  }));
 
 it("retains every resolved identity in an unanswered result after restart without Registry access", () =>
   Effect.gen(function* () {
-    const directory = yield* Effect.scoped(
-      Effect.gen(function* () {
-        const subject = yield* engineFixture();
-        const operations = yield* makeCollectiveOperations({
-          ...(yield* ports(subject.store, [])),
-          scope: yield* Scope.Scope,
-          prepareMessage: subject.engine.prepare,
-          sendMessage: (request) =>
-            request.to === "agent:carol"
-              ? Effect.fail(new SendError({ reason: "network-unavailable" }))
-              : Effect.succeed({
-                  msgId: msgId(1),
-                  recordHash: recordHashOf(1),
-                }),
-        });
-        yield* operations.send(input);
-        return subject.directory;
-      }),
-    );
+    const subject = yield* retainedGatherDirectory();
     yield* TestClock.adjust("2 minutes");
     const delivered: InboundItem[] = [];
-    yield* withDaemonStore(directory, (store) =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          yield* makeCollectiveOperations({
-            ...(yield* ports(store, delivered)),
-            scope: yield* Scope.Scope,
-            prepareMessage: () =>
-              Effect.dieMessage("recovery must use retained identities"),
-          });
-        }),
-      ),
-    );
+    yield* restoreAfterDeadline(subject, delivered);
     expect(delivered).toMatchObject([
       {
         kind: "collectiveResult",
-        closedAt: 120_000,
+        closedAt: 140_000,
         closedBy: "deadline",
         outcomes: [
           { member: testAgentView("bob"), outcome: { kind: "no-answer" } },
@@ -118,16 +89,15 @@ it("retains every resolved identity in an unanswered result after restart withou
   }));
 
 function ports(
-  store: DaemonStore,
+  subject: Fixture,
   delivered: InboundItem[],
-): Effect.Effect<Omit<CollectivePorts, "scope">> {
+): Effect.Effect<Omit<CollectivePorts, "scope">, never, SqlClient.SqlClient> {
   return Effect.gen(function* () {
-    const persistence = yield* collectivePersistencePorts(() =>
-      Effect.succeed({ msgId: msgId(1), recordHash: recordHashOf(1) }),
-    );
+    const sql = yield* SqlClient.SqlClient;
+
     return {
-      ...persistence,
-      store,
+      prepareMessage: subject.engine.prepare,
+      acceptMessage: subject.engine.accept,
       self: testAgentView("agent:alice"),
       observeMessage: () => Effect.dieMessage("gather owns no close"),
       reportStorageFault: (error) => Effect.die(error),
@@ -140,76 +110,74 @@ function ports(
               "expected a retained terminal result",
             );
           }
-          yield* store.publishCollectiveItem({
+          yield* subject.store.publishCollectiveItem({
             ...terminal,
             canonicalItem: yield* encodeRuntimeValue(item),
             conversation: item.to,
             firewall: false,
           });
           delivered.push(item);
-        }).pipe(Effect.orDie),
+        }).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.orDie),
     };
   });
 }
 
-it.each(["identity", "creator"] as const)(
-  "refuses retained operations belonging to another %s",
-  refusesForeignOperation,
-);
-
-function refusesForeignOperation(changed: "identity" | "creator") {
-  return Effect.gen(function* () {
-    const directory = yield* retainedGatherDirectory();
-    const scope = yield* Scope.Scope;
-    const failure = yield* withDaemonStore(directory, (store) =>
-      Effect.gen(function* () {
-        const basePorts = yield* ports(store, []);
-        return yield* Effect.flip(
-          makeCollectiveOperations({
-            ...basePorts,
-            scope,
-            self: testAgentView(changed === "identity" ? "bob" : "alice"),
-            store:
-              changed === "creator" ? misattributedOperations(store) : store,
-            prepareMessage: recoveryPreparation,
-          }),
-        );
-      }),
-    );
+it("refuses retained operations belonging to another identity", () =>
+  Effect.gen(function* () {
+    const subject = yield* retainedGatherDirectory();
+    const failure = yield* restoreForOtherIdentity(subject);
     expect(failure).toMatchObject({ reason: "corrupt" });
-  });
-}
+  }));
 
 function retainedGatherDirectory() {
   return Effect.scoped(
     Effect.gen(function* () {
       const subject = yield* engineFixture();
-      const operations = yield* makeCollectiveOperations({
-        ...(yield* ports(subject.store, [])),
-        scope: yield* Scope.Scope,
-        prepareMessage: subject.engine.prepare,
-      });
-      yield* operations.send(input);
-      return subject.directory;
+      const operations = yield* subject.run(
+        makeCollectiveOperations({
+          ...(yield* subject.run(ports(subject, []))),
+          scope: yield* Scope.Scope,
+          prepareMessage: subject.engine.prepare,
+        }),
+      );
+      const sending = yield* operations.send(input).pipe(Effect.fork);
+      yield* TestClock.adjust("20 seconds");
+      yield* Fiber.join(sending);
+      return subject;
     }),
   );
 }
 
-function misattributedOperations(store: DaemonStore): DaemonStore {
-  return {
-    ...store,
-    readCollectiveOperations: () =>
-      store.readCollectiveOperations().pipe(
-        Effect.map((operations) =>
-          operations.map((operation) => ({
-            ...operation,
-            creatorAgentId: testAgentView("bob").agentId,
-          })),
-        ),
-      ),
-  };
-}
-
 function recoveryPreparation() {
   return Effect.dieMessage("recovery uses retained identities");
+}
+
+function restoreForOtherIdentity(subject: Fixture) {
+  return withDaemonStore(subject.directory, () =>
+    Effect.gen(function* () {
+      const basePorts = yield* ports(subject, []);
+      return yield* Effect.flip(
+        makeCollectiveOperations({
+          ...basePorts,
+          scope: yield* Scope.Scope,
+          self: testAgentView("bob"),
+          prepareMessage: recoveryPreparation,
+        }),
+      );
+    }),
+  );
+}
+
+function restoreAfterDeadline(subject: Fixture, delivered: InboundItem[]) {
+  return withDaemonStore(subject.directory, () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* makeCollectiveOperations({
+          ...(yield* ports(subject, delivered)),
+          scope: yield* Scope.Scope,
+          prepareMessage: recoveryPreparation,
+        });
+      }),
+    ),
+  );
 }

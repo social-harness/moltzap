@@ -13,7 +13,8 @@ import {
   type TextRule,
 } from "./config.js";
 
-const textCheckId = "org.social-harness/text";
+/** Identifies retained assessments produced by the configured text rules. */
+export const textCheckId = "org.social-harness/text";
 
 /** Captured policy data is independent of provider acquisition and durable retention. */
 export interface CheckConfiguration {
@@ -30,7 +31,6 @@ export interface CheckMessageInput extends CheckConfiguration {
   readonly code: readonly MessageMiddleware[];
   readonly provider?: DecisionProvider;
   readonly fixedRuleIds?: readonly string[];
-  readonly runtimeRuleIds?: readonly string[];
 }
 
 /** Operational holds remain distinct from a settled rule violation. */
@@ -190,7 +190,7 @@ const policyFinding = Schema.Union(
 );
 
 /** Rule findings accumulate independently of their text or code representation. */
-export type PolicyFinding = typeof policyFinding.Type;
+type PolicyFinding = typeof policyFinding.Type;
 
 /** Local response conduct under a rule, with subjects restricted to admitted visible messages or the incoming event. */
 export class ResponseExpectation extends Schema.Class<ResponseExpectation>(
@@ -265,6 +265,57 @@ export interface MessageMiddleware {
 export class CheckInputError extends Data.TaggedError("CheckInputError")<{
   readonly reason: "settings" | "registration" | "message" | "context";
 }> {}
+
+/** Offline callers capture the same owned evidence used by managed checks. */
+export const checkMessage = Effect.fn("Firewall.checkMessage")(function* (
+  input: CheckMessageInput,
+): Effect.fn.Return<FirewallCheck, CheckInputError> {
+  if (input.rules.length > 0 && input.textSettings === undefined) {
+    return yield* new CheckInputError({ reason: "settings" });
+  }
+  const captured = yield* captureInput(input.event, input.context);
+  return yield* checkCapturedMessage(input, captured);
+});
+
+/** Assessment and retained decisions share one validated, detached input. */
+export function checkCapturedMessage(
+  input: Omit<CheckMessageInput, "event" | "context">,
+  captured: MiddlewareInput,
+): Effect.Effect<FirewallCheck, CheckInputError> {
+  return Effect.gen(function* () {
+    yield* validateEvidence(captured);
+    const deadline =
+      (yield* Clock.currentTimeMillis) + input.settings.timeoutMilliseconds;
+    const checks: MiddlewareCheck[] = [];
+    for (const entry of input.code) {
+      checks.push(
+        yield* runMiddleware(entry, captured, input.settings, deadline),
+      );
+    }
+    const middleware: MessageMiddleware[] = [...input.code];
+    if (input.rules.length > 0 && input.textSettings !== undefined) {
+      const settings = input.textSettings;
+      const text: MessageMiddleware = {
+        ...textMetadata(input),
+        check: (evidence) =>
+          checkText(
+            evidence,
+            {
+              ...forDirection(input.rules, captured.event.direction),
+              revision: input.revision,
+            },
+            settings,
+            input.provider,
+          ),
+      };
+      middleware.push(text);
+      checks.push(
+        yield* runMiddleware(text, captured, input.settings, deadline),
+      );
+    }
+    return composeDecision(captured.context, middleware, checks);
+  }).pipe(Effect.withSpan("Firewall.checkCapturedMessage"));
+}
 
 /** Every installed entry is attributed, including a skipped or failed check. */
 export interface MiddlewareCheck extends MiddlewareObservation {
@@ -589,48 +640,6 @@ const stageCatalog = {
   }
 >;
 
-/**
- * Checks one immutable input through the ordered code checks and the complete text assessment.
- * A refusal never skips another rule. Interruption propagates without granting permission.
- * The caller owns provider capacity, active-rule lifetime and durable publication.
- */
-export const checkMessage = Effect.fn("Firewall.checkMessage")(function* (
-  input: CheckMessageInput,
-): Effect.fn.Return<FirewallCheck, CheckInputError> {
-  if (input.rules.length > 0 && input.textSettings === undefined) {
-    return yield* new CheckInputError({ reason: "settings" });
-  }
-  const captured = yield* captureInput(input.event, input.context);
-  const deadline =
-    (yield* Clock.currentTimeMillis) + input.settings.timeoutMilliseconds;
-  const checks: MiddlewareCheck[] = [];
-  for (const entry of input.code) {
-    checks.push(
-      yield* runMiddleware(entry, captured, input.settings, deadline),
-    );
-  }
-  const middleware: MessageMiddleware[] = [...input.code];
-  if (input.rules.length > 0 && input.textSettings !== undefined) {
-    const settings = input.textSettings;
-    const text: MessageMiddleware = {
-      ...textMetadata(input),
-      check: (evidence) =>
-        checkText(
-          evidence,
-          {
-            ...forDirection(input.rules, captured.event.direction),
-            revision: input.revision,
-          },
-          settings,
-          input.provider,
-        ),
-    };
-    middleware.push(text);
-    checks.push(yield* runMiddleware(text, captured, input.settings, deadline));
-  }
-  return composeDecision(captured.context, middleware, checks);
-});
-
 /** Startup and edits reject a whole rule set before it can become active or be persisted. */
 export const validateChecks = Effect.fn("Firewall.validateChecks")(function* (
   input: CheckConfiguration & {
@@ -652,12 +661,7 @@ export const validateChecks = Effect.fn("Firewall.validateChecks")(function* (
 export function textMetadata(
   input: Pick<
     CheckMessageInput,
-    | "rules"
-    | "revision"
-    | "textSettings"
-    | "provider"
-    | "fixedRuleIds"
-    | "runtimeRuleIds"
+    "rules" | "revision" | "textSettings" | "provider" | "fixedRuleIds"
   >,
 ) {
   return {
@@ -672,7 +676,6 @@ export function textMetadata(
         settings: input.textSettings,
         provider: input.provider?.provenance ?? null,
         fixedRuleIds: input.fixedRuleIds ?? [],
-        runtimeRuleIds: input.runtimeRuleIds ?? [],
       }),
     },
   };
@@ -787,6 +790,26 @@ export function decidingRules(
   return [...unique.values()];
 }
 
+/** Detaches and freezes message evidence before assessment or retention can observe it. */
+export function captureInput(event: MessageEvent, context: MessageContext) {
+  return Effect.gen(function* () {
+    const capturedEvent = yield* decodeFrozen(
+      MiddlewareInput.fields.event,
+      event,
+    ).pipe(
+      Effect.catchTag("ParseError", () =>
+        Effect.fail(new CheckInputError({ reason: "message" })),
+      ),
+    );
+    const capturedContext = yield* decodeFrozen(MessageContext, context).pipe(
+      Effect.catchTag("ParseError", () =>
+        Effect.fail(new CheckInputError({ reason: "context" })),
+      ),
+    );
+    return Object.freeze({ event: capturedEvent, context: capturedContext });
+  }).pipe(Effect.withSpan("Firewall.captureInput"));
+}
+
 /**
  * Inspect the full cause before capturing failures so cleanup cannot erase cancellation.
  * @param check One bounded check whose interruption must propagate.
@@ -824,47 +847,32 @@ function freezeData(value: unknown): void {
   Object.freeze(value);
 }
 
-function captureInput(event: MessageEvent, context: MessageContext) {
-  return Effect.gen(function* () {
-    const capturedEvent = yield* decodeFrozen(
-      MiddlewareInput.fields.event,
-      event,
-    ).pipe(
-      Effect.catchTag("ParseError", () =>
-        Effect.fail(new CheckInputError({ reason: "message" })),
-      ),
-    );
-    const capturedContext = yield* decodeFrozen(MessageContext, context).pipe(
-      Effect.catchTag("ParseError", () =>
-        Effect.fail(new CheckInputError({ reason: "context" })),
-      ),
-    );
-    const message = capturedEvent.message;
-    const references = [
-      message.id,
-      ...capturedContext.history.map((entry) => entry.id),
-      ...capturedContext.facts.map((entry) => entry.id),
-    ];
-    const attribution =
-      event.direction === "outgoing"
-        ? message.sender === capturedContext.agentId
-        : message.recipients.includes(capturedContext.agentId);
-    if (
-      !attribution ||
-      new Set(message.recipients).size !== message.recipients.length
-    ) {
-      return yield* new CheckInputError({ reason: "message" });
-    }
-    if (
-      new Set(references).size !== references.length ||
-      new Set(
-        capturedContext.participants.map((participant) => participant.agentId),
-      ).size !== capturedContext.participants.length
-    ) {
-      return yield* new CheckInputError({ reason: "context" });
-    }
-    return Object.freeze({ event: capturedEvent, context: capturedContext });
-  }).pipe(Effect.withSpan("Firewall.captureInput"));
+/** Attribution and reference identity are checked once against the captured evidence. */
+function validateEvidence({ event, context }: MiddlewareInput) {
+  const { message } = event;
+  const references = [
+    message.id,
+    ...context.history.map((entry) => entry.id),
+    ...context.facts.map((entry) => entry.id),
+  ];
+  const attributed =
+    event.direction === "outgoing"
+      ? message.sender === context.agentId
+      : message.recipients.includes(context.agentId);
+  if (
+    !attributed ||
+    new Set(message.recipients).size !== message.recipients.length
+  ) {
+    return Effect.fail(new CheckInputError({ reason: "message" }));
+  }
+  if (
+    new Set(references).size !== references.length ||
+    new Set(context.participants.map((participant) => participant.agentId))
+      .size !== context.participants.length
+  ) {
+    return Effect.fail(new CheckInputError({ reason: "context" }));
+  }
+  return Effect.void;
 }
 
 /** Code policies receive exactly the same reference and advice validation as text. */
@@ -1414,46 +1422,6 @@ function unsettled(
 }
 
 /**
- * Compliance assesses outgoing drafts against independently settled expectations;
- * incoming peer candidates are assessed without local recipient expectations.
- * The unsettled ones reach the agent as guidance instead. Only a failed
- * expectations stage leaves outgoing compliance unavailable.
- */
-function evaluateCompliance(
-  snapshot: TextCheck,
-  expectations: PolicyStageTrace,
-  settings: TextPolicySettings,
-  provider?: DecisionProvider,
-) {
-  return Effect.gen(function* (): Effect.fn.Return<PolicyStageTrace> {
-    if (
-      snapshot.event.direction === "outgoing" &&
-      expectations.status !== "empty" &&
-      expectations.status !== "answered"
-    ) {
-      return {
-        stage: "compliance",
-        status: "unavailable",
-        dependency: "expectations",
-        elapsedMilliseconds: 0,
-      };
-    }
-    return yield* assessQuestions(
-      makeTextRequest(
-        "compliance",
-        snapshot,
-        settings.maximumRequestBytes,
-        snapshot.event.direction === "outgoing"
-          ? readResponseExpectations(expectations)
-          : [],
-      ),
-      settings,
-      provider,
-    );
-  }).pipe(Effect.withSpan("TextPolicy.compliance"));
-}
-
-/**
  * Outgoing expectations use authorized history and facts before compliance
  * assesses the draft against those independently established expectations.
  */
@@ -1483,9 +1451,9 @@ function checkText(
       provider,
     );
     const responseExpectations = readResponseExpectations(expectations);
-    const compliance = yield* evaluateCompliance(
+    const compliance = yield* assessCompliance(
       check,
-      expectations,
+      { trace: expectations, responses: responseExpectations },
       settings,
       provider,
     );
@@ -1502,6 +1470,43 @@ function checkText(
       },
     };
   }).pipe(Effect.withSpan("TextPolicy.check"));
+}
+
+function assessCompliance(
+  check: TextCheck,
+  expectations: {
+    readonly trace: PolicyStageTrace;
+    readonly responses: readonly ResponseExpectation[];
+  },
+  settings: TextPolicySettings,
+  provider?: DecisionProvider,
+) {
+  return Effect.suspend(() => {
+    if (
+      check.event.direction === "outgoing" &&
+      expectations.trace.status !== "empty" &&
+      expectations.trace.status !== "answered"
+    ) {
+      return Effect.succeed<PolicyStageTrace>({
+        stage: "compliance",
+        status: "unavailable",
+        dependency: "expectations",
+        elapsedMilliseconds: 0,
+      });
+    }
+    const expected =
+      check.event.direction === "outgoing" ? expectations.responses : [];
+    return assessQuestions(
+      makeTextRequest(
+        "compliance",
+        check,
+        settings.maximumRequestBytes,
+        expected,
+      ),
+      settings,
+      provider,
+    );
+  }).pipe(Effect.withSpan("TextPolicy.compliance"));
 }
 
 function forDirection(

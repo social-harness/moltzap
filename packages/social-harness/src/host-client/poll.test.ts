@@ -14,7 +14,7 @@ import {
 } from "effect";
 import { describe, expect } from "vitest";
 import type { InboundDelivery } from "./capability.js";
-import { makeToolCallRequest } from "../__tests__/daemon-runtime-harness.js";
+import { makeToolCallRequest } from "../__tests__/mcp-http-fixtures.js";
 import { localGuidance } from "../__tests__/message-policy-fixtures.js";
 import {
   nativeCredential,

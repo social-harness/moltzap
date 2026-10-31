@@ -7,14 +7,19 @@ import type { CollectivePorts } from "../../communication/collectives/ports.js";
 import type { EndpointEngine } from "../../communication/conversations/index.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import { collectivePersistencePorts } from "../../__tests__/collective-message-fixtures.js";
 import { requestId } from "../../__tests__/collective-operation-fixtures.js";
 import {
   type TestCollectiveOperations as CollectiveOperations,
   makeCollectiveOperations,
 } from "../../__tests__/collective-send.js";
-import { collectivePersistencePorts } from "../../__tests__/collective-storage-stub.js";
-import { makeToolCallRequest } from "../../__tests__/daemon-runtime-harness.js";
-import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
+import {
+  loopbackMcpEndpoint,
+  makeToolCallRequest,
+  mcpTestCredential,
+  mcpTestHeaders,
+} from "../../__tests__/mcp-http-fixtures.js";
 import { pendingMessage } from "../../__tests__/pending-delivery-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import {
@@ -26,9 +31,7 @@ import { DeliveryAcknowledgeError } from "../../communication/conversations/erro
 import { AgentAddress } from "../../communication/records/index.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
 import { decodeHarnessReadInboxResult } from "../../host-protocol/operations.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { type HostDelivery, makeHostDelivery } from "../inbox/host-delivery.js";
-import { openDaemonStore } from "../store.js";
 import { makeHarnessMcpHttpHandler } from "./tools.js";
 
 const unreachable = () =>
@@ -53,6 +56,7 @@ const deliveryHandler = (
   operations: Parameters<typeof makeHarnessMcpHttpHandler>[0]["operations"],
 ) =>
   makeHarnessMcpHttpHandler({
+    credential: mcpTestCredential,
     implementation: { name: "delivery-contract", version: "1" },
     operations,
   });
@@ -60,11 +64,15 @@ const deliveryHandler = (
 const callTool =
   (handler: Parameters<typeof loopbackMcpEndpoint>[0]) =>
   (name: string, args: Readonly<Record<string, unknown>> = {}) =>
-    Effect.tryPromise(() =>
-      handler.fetch(
-        makeToolCallRequest({ id: "delivery", name, toolArguments: args }),
-      ),
-    ).pipe(
+    Effect.tryPromise(() => {
+      const request = makeToolCallRequest({
+        id: "delivery",
+        name,
+        toolArguments: args,
+      });
+      request.headers.set("Authorization", mcpTestHeaders.Authorization);
+      return handler.fetch(request);
+    }).pipe(
       Effect.flatMap((response) => Effect.tryPromise(() => response.json())),
       Effect.flatMap(
         Schema.decodeUnknown(
@@ -81,25 +89,22 @@ const deliveryFixture = (
   sendMessage: CollectivePorts["sendMessage"] = unreachable,
 ) =>
   Effect.gen(function* () {
-    const store = yield* openDaemonStore(stateDirectory(), {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
+    const store = yield* openInboxFixture(stateDirectory());
     const scope = yield* Scope.Scope;
     const slot: { active?: CollectiveOperations } = {};
     const delivery = yield* makeHostDelivery({
-      store,
       scope,
       historyExport: { record: () => Effect.void },
       collectives: () => slot.active,
-    });
+    }).pipe(store.run);
     const persistence = yield* collectivePersistencePorts(
       sendMessage,
       "agent:alice",
       1,
-    );
+      store.sql,
+    ).pipe(store.run);
     const collectives = yield* makeCollectiveOperations({
       ...persistence,
-      store,
       self: testAgentView("agent:alice"),
       emit: (item, provenance, terminal) =>
         delivery
@@ -110,14 +115,13 @@ const deliveryFixture = (
             ),
           ),
       scope,
-    });
+    }).pipe(store.run);
     slot.active = collectives;
     const handler = yield* deliveryHandler({
       ...delivery.operations,
       protocolActive: () => true,
       readStatus: unreachable,
       register: unreachable,
-      searchAgents: unreachable,
       searchConversations: unreachable,
       readConversation: unreachable,
     });
@@ -221,7 +225,10 @@ const replaysUntilAcknowledged = () =>
 const returnsACollectiveRefusal = () =>
   Effect.gen(function* () {
     const test = yield* fixture;
-    const endpoint = yield* acquireHarnessEndpoint(test.url);
+    const endpoint = yield* acquireHarnessEndpoint(test.url, {
+      credential: mcpTestCredential,
+      receiveMode: "push",
+    });
     const failure = yield* Effect.flip(
       endpoint.send({
         to: Schema.decodeUnknownSync(AgentAddress)("agent:bob"),
@@ -239,7 +246,10 @@ const retainsEventReference = () =>
   Effect.gen(function* () {
     const test = yield* fixture;
     yield* test.deliver();
-    const endpoint = yield* acquireHarnessEndpoint(test.url);
+    const endpoint = yield* acquireHarnessEndpoint(test.url, {
+      credential: mcpTestCredential,
+      receiveMode: "push",
+    });
     const first = yield* endpoint.messages.pipe(
       Stream.take(1),
       Stream.runCollect,
@@ -266,7 +276,10 @@ const retainsFailedHandoff = () =>
     const test = yield* fixture;
     const later = pendingMessage(2);
     yield* test.deliver([pending, later]);
-    const endpoint = yield* acquireHarnessEndpoint(test.url);
+    const endpoint = yield* acquireHarnessEndpoint(test.url, {
+      credential: mcpTestCredential,
+      receiveMode: "push",
+    });
     const failure = new Error("host refused handoff");
     const outcome = yield* endpoint.messages.pipe(
       Stream.mapEffect((entry) => Effect.fail({ failure, item: entry.item })),

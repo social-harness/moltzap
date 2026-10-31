@@ -9,6 +9,7 @@ import {
 import { Clock, Context, Deferred, Duration, Effect, Fiber } from "effect";
 import { createHmac } from "node:crypto";
 import { describe, expect } from "vitest";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import {
@@ -23,9 +24,7 @@ import {
 } from "../../__tests__/webhook-fixtures.js";
 import { encodeRuntimeValue } from "../../communication/store/index.js";
 import { maximumEventBytes } from "../../host-protocol/index.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
 import { readRuntimeEvent } from "../inbox/inbox.js";
-import { openDaemonStore } from "../store.js";
 import {
   isPublicWebhookAddress,
   sendWebhook,
@@ -90,15 +89,20 @@ const verificationPosts = (
     post.headers["webhook-id"]?.startsWith("msg_verification_"),
   );
 
+const rotatedSubscription = {
+  ...input,
+  delivery: {
+    ...input.delivery,
+    secret: `whsec_${Buffer.alloc(32, 2).toString("base64")}`,
+  },
+};
 const signsVerifiesAndRotates = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openInboxFixture(stateDirectory());
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
-      const grant = yield* events.subscribe(input, "runtime");
+      const grant = yield* events.subscribe(input);
       const control = test.posts[0];
       expect(control?.headers["webhook-id"]).toMatch(/^msg_verification_/u);
       const expected = createHmac("sha256", Buffer.alloc(32, 1))
@@ -116,26 +120,25 @@ const signsVerifiesAndRotates = () =>
         },
       );
       expect((yield* events.status).pendingCount).toBe(0);
-      const rotated = {
-        ...input,
-        delivery: {
-          ...input.delivery,
-          secret: `whsec_${Buffer.alloc(32, 2).toString("base64")}`,
-        },
-      };
-      expect((yield* events.subscribe(rotated, "runtime")).id).toBe(grant.id);
+      const rotated = rotatedSubscription;
+      expect((yield* events.subscribe(rotated)).id).toBe(grant.id);
       test.challenge(false);
       yield* stepClock("11 minutes");
-      expect(
-        (yield* events.subscribe(input, "runtime").pipe(Effect.flip)).code,
-      ).toBe(-32015);
+      expect((yield* events.subscribe(input).pipe(Effect.flip)).code).toBe(
+        -32015,
+      );
       expect(
         (yield* events
-          .unsubscribe({ ...input, delivery: { url } }, "owner")
+          .unsubscribe({
+            ...input,
+            delivery: { url: "https://other.example/events" },
+          })
           .pipe(Effect.flip)).code,
       ).toBe(-32011);
-      yield* events.unsubscribe({ ...input, delivery: { url } }, "runtime");
-      expect((yield* readRuntimeEvent(store, token(1))).item).toEqual(item());
+      yield* events.unsubscribe({ ...input, delivery: { url } });
+      expect((yield* readRuntimeEvent(token(1)).pipe(store.run)).item).toEqual(
+        item(),
+      );
     }),
   ).pipe(onSteppedClock);
 
@@ -143,27 +146,25 @@ const retainsTerminalRejections = () =>
   Effect.scoped(
     Effect.gen(function* () {
       for (const status of [410, 413]) {
-        const store = yield* openDaemonStore(stateDirectory(), {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
+        const store = yield* openInboxFixture(stateDirectory());
         const test = scriptedWebhook(store);
         const events = yield* test.acquire;
         yield* enqueue(store, 1);
-        yield* events.subscribe(input, "runtime");
+        yield* events.subscribe(input);
         test.status(status);
         yield* events.observe();
         expect((yield* events.status).stalled).toBe("terminal");
         const restarted = yield* test.acquire;
         test.status(200);
-        yield* restarted.subscribe(input, "runtime");
+        yield* restarted.subscribe(input);
         expect((yield* restarted.resume.pipe(Effect.flip)).code).toBe(-32014);
         yield* stepClock("1 day");
-        yield* restarted.subscribe(input, "runtime");
+        yield* restarted.subscribe(input);
         yield* restarted.observe();
         expect(eventPosts(test.posts, 1)).toHaveLength(1);
         expect((yield* store.readInboxSummary()).pendingCount).toBe(1);
         yield* restarted.revoke;
-        yield* restarted.subscribe(input, "runtime");
+        yield* restarted.subscribe(input);
         yield* restarted.observe();
         expect((yield* store.readInboxSummary()).pendingCount).toBe(0);
       }
@@ -173,9 +174,7 @@ const retainsTerminalRejections = () =>
 it("delivers local guidance and its subject map through a signed webhook", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openInboxFixture(stateDirectory());
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       const guidance = localGuidance(1);
@@ -184,7 +183,7 @@ it("delivers local guidance and its subject map through a signed webhook", () =>
         canonicalItem: yield* encodeRuntimeValue(item()),
         canonicalGuidance: yield* encodeRuntimeValue(guidance),
       });
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       yield* events.observe();
       expect(decodeOccurrence(eventPosts(test.posts, 1)[0]?.body).data).toEqual(
         {
@@ -193,21 +192,19 @@ it("delivers local guidance and its subject map through a signed webhook", () =>
           guidance,
         },
       );
-      expect((yield* readRuntimeEvent(store, token(1))).guidance).toEqual(
-        guidance,
-      );
+      expect(
+        (yield* readRuntimeEvent(token(1)).pipe(store.run)).guidance,
+      ).toEqual(guidance);
     }),
   ).pipe(onSteppedClock));
 
 const verifiesRotatedSecret = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openInboxFixture(stateDirectory());
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
-      const grant = yield* events.subscribe(input, "runtime");
+      const grant = yield* events.subscribe(input);
       const rotated = {
         ...input,
         delivery: {
@@ -216,14 +213,14 @@ const verifiesRotatedSecret = () =>
         },
       };
       test.challenge(false);
-      expect(
-        (yield* events.subscribe(rotated, "runtime").pipe(Effect.flip)).code,
-      ).toBe(-32015);
+      expect((yield* events.subscribe(rotated).pipe(Effect.flip)).code).toBe(
+        -32015,
+      );
       expect(verificationPosts(test.posts)).toHaveLength(2);
       test.challenge(true);
-      expect((yield* events.subscribe(rotated, "runtime")).id).toBe(grant.id);
+      expect((yield* events.subscribe(rotated)).id).toBe(grant.id);
       expect(verificationPosts(test.posts)).toHaveLength(3);
-      yield* events.subscribe(rotated, "runtime");
+      yield* events.subscribe(rotated);
       expect(verificationPosts(test.posts)).toHaveLength(3);
     }),
   ).pipe(onSteppedClock);
@@ -231,13 +228,11 @@ const verifiesRotatedSecret = () =>
 const permitsReadAndRevokeDuringDelivery = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openInboxFixture(stateDirectory());
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       const entered = yield* Deferred.make<undefined>();
       const release = yield* Deferred.make<undefined>();
       test.onEvent(
@@ -248,7 +243,9 @@ const permitsReadAndRevokeDuringDelivery = () =>
       );
       const delivery = yield* events.observe().pipe(Effect.fork);
       yield* Deferred.await(entered);
-      expect((yield* readRuntimeEvent(store, token(1))).item).toEqual(item());
+      expect((yield* readRuntimeEvent(token(1)).pipe(store.run)).item).toEqual(
+        item(),
+      );
       yield* events.revoke;
       yield* Deferred.succeed(release, undefined);
       yield* Fiber.join(delivery);
@@ -261,13 +258,11 @@ const permitsReadAndRevokeDuringDelivery = () =>
 const refusesExpiredReceipt = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openInboxFixture(stateDirectory());
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe({ ...input, ttlMs: 60_000 }, "runtime");
+      yield* events.subscribe({ ...input, ttlMs: 60_000 });
       const entered = yield* Deferred.make<undefined>();
       const release = yield* Deferred.make<undefined>();
       test.onEvent(
@@ -301,13 +296,11 @@ it(
 const refreshPreservesTerminalReceipt = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openInboxFixture(stateDirectory());
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       const entered = yield* Deferred.make<undefined>();
       const release = yield* Deferred.make<undefined>();
       test.status(413);
@@ -319,7 +312,7 @@ const refreshPreservesTerminalReceipt = () =>
       );
       const delivery = yield* events.observe().pipe(Effect.fork);
       yield* Deferred.await(entered);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       yield* events.resume;
       yield* Deferred.succeed(release, undefined);
       yield* Fiber.join(delivery);
@@ -334,13 +327,11 @@ const retriesAcrossRestart = () => {
   return Effect.gen(function* () {
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openDaemonStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
+        const store = yield* openInboxFixture(path);
         const test = scriptedWebhook(store);
         const events = yield* test.acquire;
         yield* enqueue(store, 1);
-        yield* events.subscribe(input, "runtime");
+        yield* events.subscribe(input);
         test.status(503);
         yield* events.observe();
         original = eventPosts(test.posts, 1)[0]?.body;
@@ -350,9 +341,7 @@ const retriesAcrossRestart = () => {
     yield* stepClock("3 seconds");
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openDaemonStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
+        const store = yield* openInboxFixture(path);
         const test = scriptedWebhook(store);
         const events = yield* test.acquire;
         yield* events.observe();
@@ -368,10 +357,10 @@ const retriesAcrossRestart = () => {
     );
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openDaemonStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
-        expect((yield* readRuntimeEvent(store, token(1))).item).toEqual(item());
+        const store = yield* openInboxFixture(path);
+        expect(
+          (yield* readRuntimeEvent(token(1)).pipe(store.run)).item,
+        ).toEqual(item());
       }),
     );
   }).pipe(onSteppedClock);
@@ -424,13 +413,11 @@ const marksADeliveryBusyUntilItsReceipt = () => {
   return Effect.gen(function* () {
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openDaemonStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
+        const store = yield* openInboxFixture(path);
         const test = scriptedWebhook(store);
         const events = yield* test.acquire;
         yield* enqueue(store, 1);
-        yield* events.subscribe(input, "runtime");
+        yield* events.subscribe(input);
         test.status(503);
         yield* events.observe();
       }),
@@ -439,9 +426,7 @@ const marksADeliveryBusyUntilItsReceipt = () => {
     yield* stepClock("3 seconds");
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const store = yield* openDaemonStore(path, {
-          liveWireVersions: LIVE_WIRE_VERSIONS,
-        });
+        const store = yield* openInboxFixture(path);
         const events = yield* scriptedWebhook(store).acquire;
         yield* events.observe();
       }),
@@ -465,13 +450,11 @@ const settlesALapsedDeliveryAsGivenUp = () => {
   const id = token(1);
   return Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openInboxFixture(stateDirectory());
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       test.status(503);
       yield* events.observe();
       yield* stepClock("25 hours");
@@ -494,13 +477,11 @@ const settlesARevokedDeliveryAsInterrupted = () => {
   const id = token(1);
   return Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openInboxFixture(stateDirectory());
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       test.status(503);
       yield* events.observe();
       yield* events.revoke;
@@ -516,13 +497,11 @@ const settlesARevokedDeliveryAsInterrupted = () => {
 const resumesExhaustedCallbacks = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openInboxFixture(stateDirectory());
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       test.status(503);
       yield* Effect.replicateEffect(
         events.observe().pipe(Effect.zipRight(stepClock("5 minutes"))),
@@ -552,9 +531,7 @@ const resumesExhaustedCallbacks = () =>
 const boundsPayloadAndDrains = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openInboxFixture(stateDirectory());
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       const large = "世界".repeat(100_000);
@@ -562,7 +539,7 @@ const boundsPayloadAndDrains = () =>
       for (let index = 2; index < 55; index += 1) {
         yield* enqueue(store, index);
       }
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       yield* events.observe();
       expect(
         test.posts.filter((post) =>
@@ -572,7 +549,7 @@ const boundsPayloadAndDrains = () =>
       const body = eventPosts(test.posts, 1)[0]?.body ?? "";
       expect(Buffer.byteLength(body)).toBeLessThanOrEqual(maximumEventBytes);
       expect(decodeOccurrence(body).data.kind).toBe("reference");
-      expect((yield* readRuntimeEvent(store, token(1))).item).toEqual(
+      expect((yield* readRuntimeEvent(token(1)).pipe(store.run)).item).toEqual(
         item(large),
       );
       expect((yield* store.readInboxSummary()).pendingCount).toBe(0);
@@ -588,32 +565,32 @@ const boundsPayloadAndDrains = () =>
 const removesRetiredOccurrence = () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const store = yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      });
+      const store = yield* openInboxFixture(stateDirectory());
       const test = scriptedWebhook(store);
       const events = yield* test.acquire;
       yield* enqueue(store, 1);
-      yield* events.subscribe(input, "runtime");
+      yield* events.subscribe(input);
       test.status(503);
       yield* events.observe();
       const canonicalItem = yield* encodeRuntimeValue(item("replacement"));
-      yield* store.replaceInboxItem(token(1), {
-        deliveryToken: token(2),
-        canonicalItem,
-      });
+      yield* store.acknowledgeInboxItem(token(1));
+      yield* store.putInboxItem({ deliveryToken: token(2), canonicalItem });
       const restarted = yield* test.acquire;
       test.status(200);
       yield* restarted.observe();
       expect(eventPosts(test.posts, 1)).toHaveLength(1);
       expect(eventPosts(test.posts, 2)).toHaveLength(1);
-      expect((yield* readRuntimeEvent(store, token(1))).item).toEqual(item());
+      expect((yield* readRuntimeEvent(token(1)).pipe(store.run)).item).toEqual(
+        item(),
+      );
       expect(
-        (yield* readRuntimeEvent(store, "dlv_invalid").pipe(Effect.flip))
-          .reason,
+        (yield* readRuntimeEvent("dlv_invalid")
+          .pipe(store.run)
+          .pipe(Effect.flip)).reason,
       ).toBe("invalid-event");
       expect(
-        (yield* readRuntimeEvent(store, token(3)).pipe(Effect.flip)).reason,
+        (yield* readRuntimeEvent(token(3)).pipe(store.run).pipe(Effect.flip))
+          .reason,
       ).toBe("unknown-event");
     }),
   ).pipe(onSteppedClock);
@@ -651,16 +628,12 @@ const rejectsUnsafeCallbacks = () =>
       url: "https://localhost/private",
     }).pipe(Effect.provide(webhookHttpClientLayer), Effect.flip);
     expect(dnsBlocked.reason).toBe("connection_refused");
-    const test = scriptedWebhook(
-      yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      }),
-    );
+    const test = scriptedWebhook(yield* openInboxFixture(stateDirectory()));
     test.status(302);
     const events = yield* test.acquire;
-    expect(
-      (yield* events.subscribe(input, "runtime").pipe(Effect.flip)).code,
-    ).toBe(-32015);
+    expect((yield* events.subscribe(input).pipe(Effect.flip)).code).toBe(
+      -32015,
+    );
     expect(verificationPosts(test.posts)).toHaveLength(1);
     expect(events.hasActiveSubscription()).toBe(false);
   }).pipe(Effect.scoped);
@@ -688,11 +661,11 @@ describe("local Dot webhook conformance", () => {
     retainsTerminalRejections,
   );
   it(
-    "allows callback inbox reads and ignores a receipt after owner revocation",
+    "allows callback inbox reads and ignores a receipt after consumer revocation",
     permitsReadAndRevokeDuringDelivery,
   );
   it(
-    "verifies signed callbacks, rotates secrets and enforces the subscription principal",
+    "verifies signed callbacks, rotates secrets and binds subscriptions to the verified callback",
     signsVerifiesAndRotates,
   );
   it(

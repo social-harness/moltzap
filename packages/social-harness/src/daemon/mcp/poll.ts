@@ -54,7 +54,6 @@ export interface HarnessPollEvents {
   readonly nativeOperation: <A, E>(
     metadata: unknown,
     operation: Effect.Effect<A, E>,
-    required?: boolean,
   ) => Effect.Effect<A, E | ProtocolError>;
   readonly status: Effect.Effect<{
     readonly mode: "none" | "poll";
@@ -337,16 +336,15 @@ const poll = (
     }),
   );
 
-/** Validation and receipt commit are serialized with revocation; unbound owner diagnostics remain independent. */
+/** Validation and receipt commit are serialized with revocation; unbound inbox inspection remain independent. */
 const nativeOperation = <A, E>(
   runtime: PollRuntime,
   metadata: unknown,
   operation: Effect.Effect<A, E>,
-  required: boolean,
 ) =>
   readMetadata(metadata).pipe(
     Effect.flatMap((binding) => {
-      if (binding === undefined && !required) {
+      if (binding === undefined) {
         return operation;
       }
       if (binding?.release === true) {
@@ -372,8 +370,8 @@ export const makeHarnessPollEvents = (
       hasActiveSubscription: () => active(runtime) !== undefined,
       poll: (input, metadata, authorize) =>
         poll(runtime, input, metadata, authorize),
-      nativeOperation: (metadata, operation, required = true) =>
-        nativeOperation(runtime, metadata, operation, required),
+      nativeOperation: (metadata, operation) =>
+        nativeOperation(runtime, metadata, operation),
       status: Effect.sync(() => {
         const current = active(runtime);
         return current === undefined

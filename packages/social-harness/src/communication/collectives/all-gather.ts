@@ -1,4 +1,6 @@
 /** @file Shared group results wait for one certified close and its exact answer records. */
+
+import type * as SqlClient from "@effect/sql/SqlClient";
 import { Effect, Exit, Option, Schema } from "effect";
 import type { InboundMessage } from "../conversations/message.js";
 import type { CollectiveResultItem } from "./inbound.js";
@@ -8,6 +10,7 @@ import type { CollectiveState, GatherRequest, OpenGather } from "./state.js";
 import { SendError } from "../conversations/errors.js";
 import { MsgId } from "../records/index.js";
 import { agentAddressOf } from "../records/values.js";
+import * as Store from "../store/index.js";
 import {
   encodeRuntimeValue,
   type StoredCollectiveMessage,
@@ -46,8 +49,10 @@ export function closeAllGather(
   state: CollectiveState,
   open: OpenGather,
   result: CollectiveResultItem,
-  close: (outcome: ClosedOutcome) => Effect.Effect<void>,
-): Effect.Effect<void, CollectiveEmitError> {
+  close: (
+    outcome: ClosedOutcome,
+  ) => Effect.Effect<void, never, SqlClient.SqlClient>,
+): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   return certifyClose(state, open, result).pipe(
     Effect.matchEffect({
       onFailure: (error) =>
@@ -106,7 +111,7 @@ export function receiveClose(
   state: CollectiveState,
   message: InboundMessage,
   value: CloseValue,
-): Effect.Effect<void, CollectiveEmitError> {
+): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     const request = state.requests.get(value.operationId);
     if (
@@ -154,7 +159,7 @@ export function applyClose(
   state: CollectiveState,
   asked: OpenRequest<Extract<ReceivedRequest, { readonly kind: "all_gather" }>>,
   close: HeldClose,
-): Effect.Effect<void, CollectiveEmitError> {
+): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   const { operationId, request } = asked;
   if (state.recovering) {
     request.shared.heldClose ??= close;
@@ -164,7 +169,7 @@ export function applyClose(
     state,
     closeSelection(close).pipe(
       Effect.flatMap((selection) =>
-        state.ports.store.finalizeCollectiveOperation(operationId, selection),
+        Store.finalizeCollectiveOperation(operationId, selection),
       ),
     ),
   ).pipe(Effect.zipRight(finishPeerClose(state, asked, close)));
@@ -179,7 +184,7 @@ function certifyClose(
   return Effect.gen(function* () {
     const messages = yield* durableEmit(
       state,
-      state.ports.store.readCollectiveMessages({ operationId }),
+      Store.readCollectiveMessages({ operationId }),
     );
     const request = messages.find((message) => message.role === "request");
     if (request !== undefined) {
@@ -229,11 +234,11 @@ function continueBoundClose(
   state: CollectiveState,
   operationId: CollectiveId,
   error: SendError,
-): Effect.Effect<void, SendError | CollectiveEmitError> {
+): Effect.Effect<void, SendError | CollectiveEmitError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const messages = yield* durableEmit(
       state,
-      state.ports.store.readCollectiveMessages({
+      Store.readCollectiveMessages({
         operationId,
         role: "close",
       }),
@@ -271,7 +276,7 @@ function finishPeerClose(
   state: CollectiveState,
   asked: GroupRequest,
   close: HeldClose,
-): Effect.Effect<void, CollectiveEmitError> {
+): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     const { operationId, request } = asked;
     const { answers, missing, repeated } = listedAnswers(
@@ -289,7 +294,7 @@ function finishPeerClose(
         state,
         closeSelection(close).pipe(
           Effect.flatMap((selection) =>
-            state.ports.store.retireCollectiveOperation(operationId, selection),
+            Store.retireCollectiveOperation(operationId, selection),
           ),
         ),
       ).pipe(

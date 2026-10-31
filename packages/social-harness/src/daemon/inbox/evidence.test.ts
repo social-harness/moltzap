@@ -1,4 +1,4 @@
-/** @file Conversation windows through real delivery admission and prepared sends. */
+/** @file The daemon supplies conversation history to incoming and outgoing checks. */
 
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Queue } from "effect";
@@ -8,28 +8,30 @@ import type { MiddlewareInput } from "../index.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import {
   addConversation,
-  auditChecks,
-  destination,
   fixture,
   type Fixture,
+  seedIncoming,
+} from "../../__tests__/conversation-fixtures.js";
+import {
+  auditChecks,
+  destination,
   incomingFixture,
   outgoingFixture,
   pass,
   policy,
-  seedIncoming,
   settings,
-} from "../../__tests__/firewall-runtime-fixtures.js";
+} from "../../__tests__/daemon-delivery-fixtures.js";
 import { bytes } from "../../__tests__/store-schema-fixtures.js";
 
 // @agent-code-guard/regression-only: Exercises conversation-window and byte-bound failures through real certified history.
 
 function extendHistory(
-  subject: Pick<Fixture, "store" | "local" | "remote" | "membership">,
+  subject: Pick<Fixture, "store" | "local" | "remote" | "membership" | "run">,
   previous: CertifiedRecord,
   texts: readonly string[],
 ) {
   return Effect.reduce(texts, previous, (record, text) =>
-    appendCertifiedMessage(subject, record, text, true),
+    subject.run(appendCertifiedMessage(subject, record, text, true)),
   );
 }
 
@@ -55,16 +57,18 @@ function unrelatedHistory(subject: Fixture) {
 const windowOptions = { maximumHistoryRecords: 2 };
 
 function bindUnresolvedSend(subject: Fixture) {
-  return subject.store.bindMessageIntent({
-    kind: "existing-conversation",
-    intent: {
-      conversationId: subject.membership.descriptor.conversationId,
-      membershipHash: subject.membership.hash,
-      authorAgentId: subject.local.card.agentId,
-      msgId: "msg_unresolved",
-      canonicalIntent: bytes("pending send"),
-    },
-  });
+  return subject.run(
+    subject.store.bindMessageIntent({
+      kind: "existing-conversation",
+      intent: {
+        conversationId: subject.membership.descriptor.conversationId,
+        membershipHash: subject.membership.hash,
+        authorAgentId: subject.local.card.agentId,
+        msgId: "msg_unresolved",
+        canonicalIntent: bytes("pending send"),
+      },
+    }),
+  );
 }
 
 it("admits an incoming check despite an unresolved send in another conversation", () =>
@@ -207,10 +211,8 @@ it("assesses incoming messages with the recent conversation window strictly befo
       yield* seedIncoming(subject, true),
       ["Older than the window", "Recent first", "Recent second"],
     );
-    const candidate = yield* appendCertifiedMessage(
-      subject,
-      previous,
-      "Incoming candidate",
+    const candidate = yield* subject.run(
+      appendCertifiedMessage(subject, previous, "Incoming candidate"),
     );
     yield* extendHistory(subject, candidate, ["Certified after the candidate"]);
     const seen: MiddlewareInput[] = [];
@@ -282,8 +284,8 @@ it(
         maximumHistoryRecords: 100,
         settings: { ...settings, maximumInputBytes: 4 * 1024 * 1024 },
       });
-      const intentCount = (yield* subject.store.recover()).messageIntents
-        .length;
+      const intentCount = (yield* subject.run(subject.store.recover()))
+        .messageIntents.length;
       const refusal = yield* Effect.flip(
         runtime.operations.send({
           input: { to: destination, text: "Candidate after large history" },
@@ -292,9 +294,9 @@ it(
 
       expect(refusal).toMatchObject({ refusal: "unresolved-evidence" });
       expect(seen[0]?.context.gaps).not.toEqual([]);
-      expect((yield* subject.store.recover()).messageIntents).toHaveLength(
-        intentCount,
-      );
+      expect(
+        (yield* subject.run(subject.store.recover())).messageIntents,
+      ).toHaveLength(intentCount);
     }),
   { timeout: 30_000 },
 );

@@ -5,8 +5,8 @@
  */
 
 import type { Effect, Layer, Option, Types } from "effect";
+import type { checkMessage } from "../test.js";
 import type {
-  checkMessage,
   Daemon,
   loadMessagePolicy,
   makeFirewall,

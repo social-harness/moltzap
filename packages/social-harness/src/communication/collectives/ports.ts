@@ -12,11 +12,7 @@ import type {
   EngineSentMessage,
 } from "../conversations/index.js";
 import type { InboundMessage } from "../conversations/message.js";
-import type {
-  DeliveryToken,
-  EndpointStore,
-  EndpointStoreError,
-} from "../store/index.js";
+import type { DeliveryToken, EndpointStoreError } from "../store/index.js";
 import type { CollectiveEmitError, CollectiveError } from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
 import { exactStruct } from "../../encoding/exact.js";
@@ -55,20 +51,6 @@ export interface CollectivePorts {
   /** Preparation captures canonical bytes before the caller decides whether to accept them. */
   readonly prepareMessage: EndpointEngine["prepare"];
   readonly acceptMessage: EndpointEngine["accept"];
-  readonly store: Pick<
-    EndpointStore,
-    | "putCollectiveOperation"
-    | "readCollectiveOperation"
-    | "readCollectiveOperations"
-    | "readCollectiveMessages"
-    | "recordCollectiveAnswer"
-    | "readCollectiveAnswers"
-    | "recordCollectiveRefusal"
-    | "readCollectiveRefusals"
-    | "finalizeCollectiveOperation"
-    | "retireCollectiveOperation"
-    | "readRetainedDeliveries"
-  >;
   readonly observeMessage: (
     msgId: MsgId,
   ) => Effect.Effect<EngineSentMessage, SendError>;

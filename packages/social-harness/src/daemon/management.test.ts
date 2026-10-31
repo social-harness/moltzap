@@ -1,8 +1,6 @@
-/** @file Canonical addressed management projection, closed failures, and the register tool's cancellation and Registry deadlines. */
+/** @file Registration cancellation and retained conversation visibility through real SQLite. */
 
-import { FileSystem, HttpClient } from "@effect/platform";
-import { NodeFileSystem } from "@effect/platform-node";
-import { scopedLive as it, scoped as itOnTestClock } from "@effect/vitest";
+import { scopedLive as it } from "@effect/vitest";
 import {
   type Context,
   Deferred,
@@ -13,28 +11,32 @@ import {
   Layer,
   Redacted,
   Schema,
-  Struct,
 } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect } from "vitest";
+import type { RegistryLookupResult } from "../identity/registry/contract.js";
 import type { DaemonBootstrap } from "./bootstrap.js";
 import type { DaemonRegistrationState } from "./registration/index.js";
-import { advanceClock } from "../__tests__/advance-clock.js";
 import {
-  digest,
   issueTestCard,
   makeTestAuthority,
   type RegistryKeyPair,
 } from "../__tests__/agent-card-fixtures.js";
 import {
+  appendCertifiedMessage,
   buildCertifiedFirstMessage,
   storeCertifiedFirstMessage,
-  withMisattributedActionEvidence,
 } from "../__tests__/certified-history-fixtures.js";
-import { connectInProcessClient } from "../__tests__/mcp-http-fixtures.js";
+import { mcpTestCredential } from "../__tests__/mcp-http-fixtures.js";
+import { localGuidance } from "../__tests__/message-policy-fixtures.js";
 import { routerInstanceId } from "../__tests__/router-worker-fixtures.js";
-import { unusedEndpointStore } from "../__tests__/unused-endpoint-store.js";
+import {
+  stateDirectory,
+  testStore,
+  withDaemonStore,
+} from "../__tests__/store-schema-fixtures.js";
 import { verifyStoredMembership } from "../communication/conversations/index.js";
+import { InboundMessage } from "../communication/conversations/message.js";
 import {
   deriveConversationId,
   hashMembershipDescriptor,
@@ -42,33 +44,19 @@ import {
 } from "../communication/records/index.js";
 import { compareAgentIds } from "../communication/records/values.js";
 import {
-  type EndpointRecovery,
-  EndpointStoreError,
+  decodeRuntimeValue,
+  encodeRuntimeValue,
 } from "../communication/store/index.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
 import {
   managementReadConversationRequestSchema,
-  managementReadConversationResultSchema,
   managementRegisterRequestSchema,
-  managementRegisterResultSchema,
-  managementSearchAgentsRequestSchema,
-  managementStatusResultSchema,
 } from "../host-protocol/index.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
-import {
-  RegistryConnectionError,
-  type RegistryLookupResult,
-} from "../identity/registry/contract.js";
 import { Registry } from "../identity/registry/index.js";
-import { AuthenticationFailedError } from "../identity/signing/http-errors.js";
-import { LIVE_WIRE_VERSIONS, WIRE_VERSION } from "../identity/wire-version.js";
-import {
-  type DaemonManagementOperations,
-  makeDaemonManagementOperations,
-} from "./management/index.js";
-import { makeHarnessMcpHttpHandler } from "./mcp/tools.js";
-import { type DaemonStore, openDaemonStore } from "./store.js";
+import { WIRE_VERSION } from "../identity/wire-version.js";
+import { makeDaemonManagementOperations } from "./management/index.js";
 
 interface IdentityFixture {
   readonly bootstrap: DaemonBootstrap;
@@ -101,6 +89,7 @@ const makeIdentityFixture = Effect.gen(function* () {
     configuration: {
       stateDirectory: "/var/lib/social-harness",
       mcpPort: 4319,
+      mcpCredentialFile: Redacted.make("/run/secrets/mcp-credential"),
       registryOrigin: new URL("https://registry.example"),
       registrySignerPublicKey,
       routerOrigin: new URL("https://router.example"),
@@ -110,6 +99,7 @@ const makeIdentityFixture = Effect.gen(function* () {
       hideCollectives: false,
     },
     signingAuthority: localAuthority,
+    mcpCredential: mcpTestCredential,
     agentPublicKey: AgentSigningAuthority.publicKey(localAuthority),
     admissionCredential: Effect.succeed(Redacted.make("bootstrap-token=")),
   });
@@ -121,10 +111,6 @@ const makeIdentityFixture = Effect.gen(function* () {
   } satisfies IdentityFixture;
 }).pipe(Effect.orDie);
 
-/**
- * The stored membership row of a conversation among `members`, which the
- * descriptor lists in AgentId order.
- */
 const makeMembershipRow = (members: readonly VerifiedAgentCard[]) =>
   Effect.gen(function* () {
     const cards = members.slice();
@@ -159,75 +145,6 @@ const makeMembershipRow = (members: readonly VerifiedAgentCard[]) =>
     };
   }).pipe(Effect.orDie);
 
-/**
- * The recovery of the fixture's local agent holding one certified
- * conversation among `members`.
- */
-const makeRecovery = (
-  fixture: IdentityFixture,
-  members: readonly VerifiedAgentCard[],
-) =>
-  Effect.gen(function* () {
-    const membership = yield* makeMembershipRow(members);
-    const canonicalAgentCard = yield* encodeCanonical(
-      AgentCard,
-      fixture.cards[0],
-    );
-    const recovery: EndpointRecovery = {
-      identity: {
-        agentId: fixture.cards[0].agentId,
-        canonicalAgentCard,
-      },
-      messageIntents: [],
-      memberships: [
-        {
-          conversationId: membership.conversationId,
-          membershipHash: membership.membershipHash,
-          canonicalMembership: membership.canonicalMembership,
-        },
-      ],
-      anchors: [],
-      positions: [
-        {
-          conversationId: membership.conversationId,
-          membershipHash: membership.membershipHash,
-          currentAnchorHash: digest("anc_", 3),
-          headRecordHash: digest("rch_", 4),
-        },
-      ],
-      proposalLocks: [],
-      stagedRecords: [],
-      evidence: [],
-      certifiedRecords: [],
-      stagedReanchors: [],
-      pendingDeliveries: [],
-      disseminationObligations: [],
-      outboundMessages: [],
-    };
-    return recovery;
-  }).pipe(Effect.orDie);
-
-function outsideManagementTest<Value>(): Effect.Effect<Value> {
-  return Effect.dieMessage("outside management test");
-}
-
-interface StoreInput {
-  readonly recovery: EndpointRecovery;
-  readonly historyFailure?: EndpointStoreError;
-}
-
-function makeStore(input: StoreInput): DaemonStore {
-  return {
-    ...unusedEndpointStore("management test"),
-    readConversation: () =>
-      input.historyFailure === undefined
-        ? Effect.succeed({ records: [], continuation: null })
-        : Effect.fail(input.historyFailure),
-    recover: () => Effect.succeed(input.recovery),
-  };
-}
-
-/** The daemon's registration port, active with `card` and never activating. */
 function activeRegistration(card: VerifiedAgentCard) {
   return {
     readRegistration: () => ({ kind: "active", agentCard: card }) as const,
@@ -249,638 +166,152 @@ function makeRegistryLayer(cards: readonly VerifiedAgentCard[]) {
       : { kind: "found", agentCard: card };
   };
   const service: Context.Tag.Service<typeof Registry> = {
-    register: () => outsideManagementTest(),
+    register: () => Effect.dieMessage("Unexpected registration"),
     lookup: (request) => Effect.succeed(lookup(request)),
   };
   return Layer.succeed(Registry, service);
 }
 
-/**
- * A real endpoint store holding one certified record bob authored in his
- * direct conversation with alice, with the management view of alice.
- */
-const makeCertifiedHistory = Effect.gen(function* () {
-  const fixture = yield* makeIdentityFixture;
-  const membership = yield* makeMembershipRow(fixture.cards).pipe(
-    Effect.flatMap((row) =>
-      verifyStoredMembership(
-        row,
-        fixture.bootstrap.configuration.registrySignerPublicKey,
-      ),
-    ),
-    Effect.orDie,
-  );
-  const record = yield* buildCertifiedFirstMessage(
-    { card: fixture.cards[0], authority: fixture.bootstrap.signingAuthority },
-    { card: fixture.cards[1], authority: fixture.remoteAuthority },
-    membership,
-    routerInstanceId(8),
-  );
-  const fileSystem = yield* FileSystem.FileSystem;
-  const store = yield* openDaemonStore(
-    yield* fileSystem.makeTempDirectoryScoped({
-      prefix: "sharness-management-",
-    }),
-    { liveWireVersions: LIVE_WIRE_VERSIONS },
-  ).pipe(Effect.orDie);
-  yield* storeCertifiedFirstMessage(
-    store,
-    fixture.cards[0],
-    membership,
-    record,
-  );
-  return { fixture, store, record };
-}).pipe(Effect.provide(NodeFileSystem.layer));
-
-/** Alice's first history page of her conversation with bob over `store`. */
-const readBobHistory = (fixture: IdentityFixture, store: DaemonStore) =>
-  makeDaemonManagementOperations({
-    store,
-    bootstrap: fixture.bootstrap,
-    registration: activeRegistration(fixture.cards[0]),
-  }).pipe(
-    Effect.provide(makeRegistryLayer(fixture.cards)),
-    Effect.flatMap((operations) =>
-      operations.readConversation(
-        Schema.decodeUnknownSync(managementReadConversationRequestSchema)({
-          address: "agent:bob",
-        }),
-      ),
-    ),
-  );
-
-/** The record hashes of alice's read of her conversation with bob over `store`. */
-const readBobRecordHashes = (fixture: IdentityFixture, store: DaemonStore) =>
-  readBobHistory(fixture, store).pipe(
-    Effect.map((page) => page.records.map((record) => record.recordHash)),
-    Effect.exit,
-  );
-
-/** A signer message's JWS representation, read as far as its one signature. */
-const jwsSignature = Schema.Struct({
-  signatures: Schema.Tuple(Schema.Struct({ signature: Schema.String })),
-});
-
-/**
- * The audit entry the owner tools return for one certificate signature:
- * `signer`'s AgentId and the signature its JWS `representation` carries.
- */
-const signerEvidence = (
-  signer: VerifiedAgentCard,
-  representation: unknown,
-) => ({
-  signerAgentId: signer.agentId,
-  signature:
-    Schema.decodeUnknownSync(jwsSignature)(representation).signatures[0]
-      .signature,
-});
-
-/**
- * `store` as it reads once its membership rows name `membershipHash`, so the
- * rows' columns no longer match the descriptors they hold.
- */
-function withMembershipRowsNaming(
-  store: DaemonStore,
-  membershipHash: string,
-): DaemonStore {
-  return {
-    ...store,
-    recover: () =>
-      store.recover().pipe(
-        Effect.map((recovery) => ({
-          ...recovery,
-          memberships: recovery.memberships.map((row) => ({
-            ...row,
-            membershipHash,
-          })),
-        })),
-      ),
-  };
-}
-
-/**
- * The owner read returns the record with its author's view, the anchor it
- * commits to and, for each certificate, every signer's AgentId with the
- * signature its JWS representation carries, in AgentId order.
- */
-const returnsCertificateSignersForAudit = () =>
+const guidance = localGuidance(9);
+const historyRequest = Schema.decodeUnknownSync(
+  managementReadConversationRequestSchema,
+)({ address: "agent:bob" });
+const seedHistory = (fixture: IdentityFixture) =>
   Effect.gen(function* () {
-    const { fixture, store, record } = yield* makeCertifiedHistory;
-    const [alice, bob] = fixture.cards;
-    const certified = record.actionCertifiedRecord;
-    const signatures = certified.actionCertificate.signatures;
-    const votes = record.durabilityCertificate.votes;
-
-    const page = yield* readBobHistory(fixture, store);
-    const historyResult = page;
-    expect(
-      Schema.is(managementReadConversationResultSchema)(historyResult),
-    ).toBe(true);
-    expect(
-      Schema.is(managementReadConversationResultSchema)({
-        ...historyResult,
-        records: page.records.map((entry) => Struct.omit(entry, "author")),
-      }),
-    ).toBe(false);
-
-    expect(
-      compareAgentIds(alice.agentId, bob.agentId),
-      "alice precedes bob in AgentId order",
-    ).toBeLessThan(0);
-    expect(
-      certified.recordCore.action.messageIntent.authorAgentId,
-      "bob authored the first message",
-    ).toBe(bob.agentId);
-    expect(page.records, "alice's history with bob").toEqual([
-      {
-        author: {
-          agentId: bob.agentId,
-          agentName: bob.agentName,
-          principalId: bob.principalId,
-        },
-        recordHash: certified.recordHash,
-        recordCore: certified.recordCore,
-        routerAnchor: certified.routerAnchor,
-        actionSignatures: [
-          signerEvidence(alice, signatures[0]),
-          signerEvidence(bob, signatures[1]),
-        ],
-        durabilityVotes: [
-          signerEvidence(alice, votes[0]),
-          signerEvidence(bob, votes[1]),
-        ],
-      },
-    ]);
-  });
-
-/**
- * The owner read checks each evidence row's signer against the member it is
- * filed under. A store whose action evidence row is filed under a member
- * other than its signer is corrupt, so the read reports persistence-failed,
- * while the unaltered store reads the record.
- */
-const failsReadOverMisattributedEvidence = () =>
-  Effect.gen(function* () {
-    const { fixture, store, record } = yield* makeCertifiedHistory;
-    const misattributed = withMisattributedActionEvidence(
-      store,
-      fixture.cards[0].agentId,
-      fixture.cards[1].agentId,
-    );
-
-    const unaltered = yield* readBobRecordHashes(fixture, store);
-    const corrupt = yield* readBobRecordHashes(fixture, misattributed);
-
-    expect(unaltered, "history read over the unaltered store").toEqual(
-      Exit.succeed([record.actionCertifiedRecord.recordHash]),
-    );
-    expect(corrupt, "history read over the misattributed evidence").toEqual(
-      Exit.fail(expect.objectContaining({ reason: "persistence-failed" })),
-    );
-  });
-
-/**
- * A store whose membership row names a membership hash other than the one
- * its descriptor hashes to is corrupt, so the read reports
- * persistence-failed, while the unaltered store reads the record.
- */
-const failsReadOverMembershipRowNamingAnotherHash = () =>
-  Effect.gen(function* () {
-    const { fixture, store, record } = yield* makeCertifiedHistory;
-    const inconsistent = withMembershipRowsNaming(store, digest("mbr_", 9));
-
-    const unaltered = yield* readBobRecordHashes(fixture, store);
-    const corrupt = yield* readBobRecordHashes(fixture, inconsistent);
-
-    expect(unaltered, "history read over the unaltered store").toEqual(
-      Exit.succeed([record.actionCertifiedRecord.recordHash]),
-    );
-    expect(
-      corrupt,
-      "history read over the inconsistent membership row",
-    ).toEqual(
-      Exit.fail(expect.objectContaining({ reason: "persistence-failed" })),
-    );
-  });
-
-/** A `search_agents` tool result with its one text block parsed as JSON. */
-const lookupReply = Schema.Struct({
-  structuredContent: Schema.Unknown,
-  content: Schema.Tuple(
-    Schema.Struct({ type: Schema.Literal("text"), text: Schema.parseJson() }),
-  ),
-});
-
-/**
- * Serve `operations` through the daemon's MCP handler and return a call of
- * its `search_agents` tool from a connected client. The handler's delivery
- * operations die if a lookup reaches them.
- */
-const serveAgentLookup = (operations: DaemonManagementOperations) =>
-  Effect.gen(function* () {
-    const unused = () => Effect.dieMessage("lookup reached another operation");
-    const handler = yield* makeHarnessMcpHttpHandler({
-      implementation: { name: "agent-lookup-test", version: "1" },
-      operations: {
-        ...operations,
-        protocolActive: () => true,
-        readInboxSummary: () =>
-          Effect.succeed({ pendingCount: 0, newestSequence: 0 }),
-        readEvent: unused,
-        readInbox: unused,
-        send: unused,
-        acknowledgeDelivery: unused,
-      },
-    });
-    yield* Effect.addFinalizer(() =>
-      Effect.tryPromise(() => handler.close()).pipe(Effect.orDie),
-    );
-    const client = yield* connectInProcessClient(handler, {
-      versionNegotiation: { mode: { pin: "2026-07-28" } },
-    });
-    return (selector: Readonly<Record<string, string>>) =>
-      Effect.tryPromise(() =>
-        client.callTool({ name: "search_agents", arguments: selector }),
-      ).pipe(Effect.flatMap(Schema.decodeUnknown(lookupReply)));
-  });
-
-const checksExactAgentLookups = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeIdentityFixture;
-    const operations = yield* makeDaemonManagementOperations({
-      store: unusedEndpointStore("management lookup test"),
-      bootstrap: fixture.bootstrap,
-      registration: activeRegistration(fixture.cards[0]),
-    }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
-    const lookup = yield* serveAgentLookup(operations);
-    const remote = fixture.cards[1];
-    const found = {
-      kind: "found",
-      agentCard: yield* Schema.encode(AgentCard)(remote),
-      agent: {
-        agentId: remote.agentId,
-        agentName: remote.agentName,
-        principalId: remote.principalId,
-      },
-    };
-
-    expect(yield* lookup({ agentName: remote.agentName })).toEqual({
-      structuredContent: found,
-      content: [{ type: "text", text: found }],
-    });
-    expect(yield* lookup({ agentId: remote.agentId })).toEqual({
-      structuredContent: found,
-      content: [{ type: "text", text: found }],
-    });
-    expect(yield* lookup({ agentName: "unknown-agent" })).toEqual({
-      structuredContent: { kind: "not_found" },
-      content: [{ type: "text", text: { kind: "not_found" } }],
-    });
-  });
-
-// @agent-code-guard/regression-only: these cases pin the addressed owner-management contract.
-describe("addressed daemon management", () => {
-  it(
-    "returns the agent's view and encoded card through MCP for exact names and ids and not_found for unknown names",
-    checksExactAgentLookups,
-  );
-
-  it("pages canonical addresses without exposing conversation identity", () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeIdentityFixture;
-      const recovery = yield* makeRecovery(fixture, fixture.cards);
-      const operations = yield* makeDaemonManagementOperations({
-        store: makeStore({ recovery }),
-        bootstrap: fixture.bootstrap,
-        registration: activeRegistration(fixture.cards[0]),
-      }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
-
-      expect(yield* operations.searchConversations({})).toEqual({
-        kind: "page",
-        addresses: ["agent:bob"],
-        hasMore: false,
-      });
-    }));
-
-  it("maps a missing certified history to history-gap", () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeIdentityFixture;
-      const recovery = yield* makeRecovery(fixture, fixture.cards);
-      const operations = yield* makeDaemonManagementOperations({
-        store: makeStore({
-          recovery,
-          historyFailure: new EndpointStoreError({ reason: "not-found" }),
-        }),
-        bootstrap: fixture.bootstrap,
-        registration: activeRegistration(fixture.cards[0]),
-      }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
-      const request = Schema.decodeUnknownSync(
-        managementReadConversationRequestSchema,
-      )({ address: "agent:bob" });
-
-      const error = yield* operations
-        .readConversation(request)
-        .pipe(Effect.flip);
-
-      expect(error).toMatchObject({ reason: "history-gap" });
-    }));
-});
-
-/** The daemon's registration port before registration. */
-const unregisteredPort = {
-  readRegistration: (): DaemonRegistrationState => ({ kind: "unregistered" }),
-  activateRegistered: () => Effect.dieMessage("outside management test"),
-};
-
-/** A Registry no call may reach. */
-const unusedRegistryLayer = Layer.succeed(Registry, {
-  register: () => outsideManagementTest(),
-  lookup: () => outsideManagementTest(),
-});
-
-/** One owner read, named by its tool. */
-interface OwnerRead {
-  readonly tool: string;
-  readonly read: (
-    operations: DaemonManagementOperations,
-  ) => Effect.Effect<unknown, Readonly<{ reason: string }>>;
-}
-
-/** The owner reads that need the local identity, each with one request. */
-const ownerReads: readonly OwnerRead[] = [
-  {
-    tool: "search_conversations",
-    read: (operations) => operations.searchConversations({}),
-  },
-  {
-    tool: "read_conversation",
-    read: (operations) =>
-      operations.readConversation(
-        Schema.decodeUnknownSync(managementReadConversationRequestSchema)({
-          address: "agent:bob",
-        }),
-      ),
-  },
-  {
-    tool: "search_agents",
-    read: (operations) =>
-      operations.searchAgents(
-        Schema.decodeUnknownSync(managementSearchAgentsRequestSchema)({
-          agentName: "bob",
-        }),
-      ),
-  },
-];
-
-/**
- * Before registration an owner read that needs the local identity reports
- * not-registered and reads nothing: the store and the Registry die on every
- * call. Fails when the read reaches either before the registration check.
- */
-const refusesAnOwnerReadBeforeRegistration = ({ read }: OwnerRead) =>
-  Effect.gen(function* () {
-    const fixture = yield* makeIdentityFixture;
-    const operations = yield* makeDaemonManagementOperations({
-      store: unusedEndpointStore("unregistered management test"),
-      bootstrap: fixture.bootstrap,
-      registration: unregisteredPort,
-    }).pipe(Effect.provide(unusedRegistryLayer));
-
-    const error = yield* read(operations).pipe(Effect.flip);
-
-    expect(error).toMatchObject({ reason: "not-registered" });
-  });
-
-/**
- * A group conversation lists as its group address, with the members' names
- * in unsigned ASCII order: `agent-10` before `agent-2`, both before the
- * local `alice`, although their AgentIds order them alice, agent-2,
- * agent-10. Fails when the address follows the membership's AgentId order.
- */
-const listsAGroupInAsciiNameOrder = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeIdentityFixture;
-    const agent2 = yield* issueTestCard({
-      byte: 3,
-      name: "agent-2",
-      authority: yield* makeTestAuthority(),
-      registryKeys: fixture.registryKeys,
-    });
-    const agent10 = yield* issueTestCard({
-      byte: 4,
-      name: "agent-10",
-      authority: yield* makeTestAuthority(),
-      registryKeys: fixture.registryKeys,
-    });
-    const recovery = yield* makeRecovery(fixture, [
-      fixture.cards[0],
-      agent2,
-      agent10,
-    ]);
-    const operations = yield* makeDaemonManagementOperations({
-      store: makeStore({ recovery }),
-      bootstrap: fixture.bootstrap,
-      registration: activeRegistration(fixture.cards[0]),
-    }).pipe(Effect.provide(unusedRegistryLayer));
-
-    const page = yield* Effect.exit(operations.searchConversations({}));
-
-    expect(page).toEqual(
-      Exit.succeed({
-        kind: "page",
-        addresses: ["group:agent-10,agent-2,alice"],
-        hasMore: false,
-      }),
-    );
-  });
-
-describe("owner reads by registration state", () => {
-  it.each(ownerReads)(
-    "refuses $tool as not-registered before registration without reading state",
-    refusesAnOwnerReadBeforeRegistration,
-  );
-  it(
-    "lists a group conversation with its names in unsigned ASCII order",
-    listsAGroupInAsciiNameOrder,
-  );
-});
-
-describe("owner history read over stored rows", () => {
-  it(
-    "returns each certificate's signers and signatures with the record's anchor",
-    returnsCertificateSignersForAudit,
-  );
-  it(
-    "fails a history read whose action evidence is filed under another signer",
-    failsReadOverMisattributedEvidence,
-  );
-  it(
-    "fails a history read whose membership row names another membership hash",
-    failsReadOverMembershipRowNamingAnotherHash,
-  );
-});
-
-/** A durable store and registration port whose status follows activation. */
-function makeRegisteringOperations(fixture: IdentityFixture) {
-  return Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const store = yield* openDaemonStore(
-      yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "sharness-registration-",
-      }),
-      { liveWireVersions: LIVE_WIRE_VERSIONS },
-    );
-    let registration: DaemonRegistrationState = { kind: "unregistered" };
-    const operations = yield* makeDaemonManagementOperations({
-      store,
-      bootstrap: fixture.bootstrap,
-      registration: {
-        readRegistration: () => registration,
-        activateRegistered: (agentCard) =>
-          Effect.sync(() => {
-            registration = { kind: "active", agentCard };
-          }),
-      },
-    });
-    return { store, operations };
-  }).pipe(Effect.provide(NodeFileSystem.layer));
-}
-
-/** The register tool request for the fixture's local card. */
-function localRegisterRequest(fixture: IdentityFixture) {
-  return Schema.decodeUnknownSync(managementRegisterRequestSchema)({
-    operationId: "opn_AAAAAAAAAAAAAAAAAAAAAA",
-    principalId: fixture.cards[0].principalId,
-    agentName: fixture.cards[0].agentName,
-  });
-}
-
-/**
- * The production Registry client with a 1 s request deadline over an HTTP
- * client that completes `requested` when a request arrives and never answers,
- * as a stalled Registry connection behaves.
- */
-function silentRegistryLayer(
-  fixture: IdentityFixture,
-  requested: Deferred.Deferred<undefined>,
-) {
-  return Registry.layer({
-    origin: fixture.bootstrap.configuration.registryOrigin,
-    registrySignerPublicKey:
-      fixture.bootstrap.configuration.registrySignerPublicKey,
-    requestTimeout: Duration.seconds(1),
-  }).pipe(
-    Layer.provide(
-      Layer.succeed(
-        HttpClient.HttpClient,
-        HttpClient.make(() =>
-          Deferred.succeed(requested, undefined).pipe(
-            Effect.zipRight(Effect.never),
-          ),
+    const membership = yield* makeMembershipRow(fixture.cards).pipe(
+      Effect.flatMap((row) =>
+        verifyStoredMembership(
+          row,
+          fixture.bootstrap.configuration.registrySignerPublicKey,
         ),
       ),
-    ),
-  );
-}
-
-/** Virtual time past the Registry deadline after which a call is hung. */
-const REGISTRY_WATCHDOG = Duration.seconds(3);
-
-/**
- * `operation`'s failure, on the TestClock, once virtual time has passed the
- * Registry deadline and `REGISTRY_WATCHDOG`. It waits in live time for the
- * request to reach the HTTP client, since signing settles on real promises,
- * or for the operation to end first, then moves the clock. An operation
- * still running then fails with `hung`. The operation runs detached, so a
- * masked call that never ends cannot hold the test fiber open.
- * @param input What to run and how to tell it is hung.
- * @param input.operation The Registry-backed operation.
- * @param input.requested Completes when the request reaches the HTTP client.
- * @param input.hung The failure the watchdog reports.
- * @returns The operation's failure, or `hung`.
- */
-const failureAtTheRegistryDeadline = <A, E>(input: {
-  readonly operation: Effect.Effect<A, E>;
-  readonly requested: Deferred.Deferred<undefined>;
-  readonly hung: string;
-}) =>
-  Effect.gen(function* () {
-    const running = yield* Effect.forkDaemon(input.operation);
-    const failure = yield* Fiber.join(running).pipe(
-      Effect.flip,
-      Effect.timeoutFail({
-        duration: REGISTRY_WATCHDOG,
-        onTimeout: () => input.hung,
-      }),
-      Effect.fork,
     );
-    yield* Effect.raceFirst(
-      Deferred.await(input.requested),
-      Fiber.await(running).pipe(Effect.asVoid),
+    const local = {
+      card: fixture.cards[0],
+      authority: fixture.bootstrap.signingAuthority,
+    };
+    const remote = {
+      card: fixture.cards[1],
+      authority: fixture.remoteAuthority,
+    };
+    const record = yield* buildCertifiedFirstMessage(
+      local,
+      remote,
+      membership,
+      routerInstanceId(8),
     );
-    yield* advanceClock(Duration.sum(REGISTRY_WATCHDOG, Duration.seconds(1)));
-    return yield* Fiber.join(failure);
+    return { local, remote, membership, record };
   });
+const activeOperations = (fixture: IdentityFixture) =>
+  makeDaemonManagementOperations({
+    bootstrap: fixture.bootstrap,
+    registration: activeRegistration(fixture.cards[0]),
+  }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
 
-/**
- * The register tool runs uninterruptibly so a cancelled request still binds.
- * That region must not also hold the Registry client's deadline off: a
- * Registry that never answers ends the call at the deadline, not never, and
- * binds and activates nothing.
- */
-const failsAtTheRegistryDeadline = () =>
+type HistoryFixture = Effect.Effect.Success<ReturnType<typeof seedHistory>>;
+const savePermittedHistory = (
+  fixture: IdentityFixture,
+  history: HistoryFixture,
+) =>
   Effect.gen(function* () {
-    const fixture = yield* makeIdentityFixture;
-    const requested = yield* Deferred.make<undefined>();
-    const { store, operations } = yield* makeRegisteringOperations(
-      fixture,
-    ).pipe(Effect.provide(silentRegistryLayer(fixture, requested)));
-
-    const error = yield* failureAtTheRegistryDeadline({
-      operation: operations.register(localRegisterRequest(fixture)),
-      requested,
-      hung: "register outlived the Registry deadline",
-    });
-
+    const store = testStore;
+    yield* storeCertifiedFirstMessage(
+      store,
+      fixture.cards[0],
+      history.membership,
+      history.record,
+    );
+    const operations = yield* activeOperations(fixture);
     expect(
-      yield* Deferred.isDone(requested),
-      "the register reached the Registry's HTTP client",
-    ).toBe(true);
-    expect(error).toMatchObject({ reason: "dependency-unavailable" });
-    expect((yield* store.recover()).identity).toBeUndefined();
-    expect(yield* operations.readStatus()).toEqual({ kind: "unregistered" });
+      (yield* operations.readConversation(historyRequest)).records,
+    ).toEqual([]);
+    const pending = yield* Effect.fromNullable(
+      (yield* store.readPendingDeliveries())[0],
+    );
+    const message = yield* decodeRuntimeValue(
+      InboundMessage,
+      pending.canonicalMessage,
+    );
+    const item = { kind: "multicast" as const, message };
+    yield* store.putInboxItem({
+      deliveryToken: pending.deliveryToken,
+      canonicalItem: yield* encodeRuntimeValue(item),
+      canonicalGuidance: yield* encodeRuntimeValue(guidance),
+    });
+    yield* store.acknowledgeInboxItem(pending.deliveryToken);
+    yield* appendCertifiedMessage(
+      { store, ...history },
+      history.record,
+      "Alice's reply",
+      true,
+    );
+    expect((yield* store.readInboxSummary()).pendingCount).toBe(0);
+    return item;
   });
-
-/**
- * `search_agents` gives its Registry call the same deadline: a Registry that
- * never answers ends the search as dependency-unavailable at the deadline.
- * Fails when the search outlives the deadline or the timeout maps to another
- * reason.
- */
-const failsSearchAtTheRegistryDeadline = () =>
+const retainsPermittedHistory = () =>
   Effect.gen(function* () {
     const fixture = yield* makeIdentityFixture;
-    const requested = yield* Deferred.make<undefined>();
-    const operations = yield* makeDaemonManagementOperations({
-      store: unusedEndpointStore("management search deadline test"),
-      bootstrap: fixture.bootstrap,
-      registration: activeRegistration(fixture.cards[0]),
-    }).pipe(Effect.provide(silentRegistryLayer(fixture, requested)));
-
-    const error = yield* failureAtTheRegistryDeadline({
-      operation: operations.searchAgents(
-        Schema.decodeUnknownSync(managementSearchAgentsRequestSchema)({
-          agentName: "bob",
-        }),
-      ),
-      requested,
-      hung: "search_agents outlived the Registry deadline",
-    });
-
-    expect(error).toMatchObject({ reason: "dependency-unavailable" });
+    const history = yield* seedHistory(fixture);
+    const directory = stateDirectory();
+    const expected = yield* withDaemonStore(directory, () =>
+      savePermittedHistory(fixture, history),
+    );
+    yield* withDaemonStore(directory, () =>
+      Effect.gen(function* () {
+        const operations = yield* activeOperations(fixture);
+        const page = yield* operations.readConversation(historyRequest);
+        expect(page.records[0]).toEqual({
+          kind: "received",
+          recordHash: history.record.actionCertifiedRecord.recordHash,
+          item: expected,
+          guidance,
+        });
+        expect(page.records[1]).toMatchObject({
+          kind: "sent",
+          author: { agentName: fixture.cards[0].agentName },
+          content: [{ type: "text", text: "Alice's reply" }],
+        });
+        expect(yield* operations.searchConversations({})).toEqual({
+          kind: "page",
+          addresses: ["agent:bob"],
+          hasMore: false,
+        });
+      }),
+    );
   });
+const refusesUnregisteredReads = () =>
+  withDaemonStore(stateDirectory(), () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeIdentityFixture;
+      const operations = yield* makeDaemonManagementOperations({
+        bootstrap: fixture.bootstrap,
+        registration: {
+          readRegistration: () => ({ kind: "unregistered" }),
+          activateRegistered: () => Effect.void,
+        },
+      }).pipe(Effect.provide(makeRegistryLayer(fixture.cards)));
+      expect(yield* operations.readStatus()).toEqual({ kind: "unregistered" });
+      expect(
+        yield* operations.readConversation(historyRequest).pipe(Effect.flip),
+      ).toMatchObject({ reason: "not-registered" });
+      expect(
+        yield* operations.searchConversations({}).pipe(Effect.flip),
+      ).toMatchObject({ reason: "not-registered" });
+    }),
+  );
 
-/** A Registry whose register waits for `release` after signalling `entered`. */
+// @agent-code-guard/regression-only: history replays the saved host view after acknowledgment and restart without disclosing unchecked peer text.
+describe("daemon conversation history", () => {
+  it(
+    "retains permitted messages after acknowledgment and excludes unchecked peer content",
+    retainsPermittedHistory,
+  );
+  it(
+    "refuses conversation reads before registration",
+    refusesUnregisteredReads,
+  );
+});
+
 function heldRegistry(
   fixture: IdentityFixture,
   entered: Deferred.Deferred<undefined>,
@@ -892,121 +323,57 @@ function heldRegistry(
         Effect.zipRight(Deferred.await(release)),
         Effect.as({ kind: "registered", agentCard: fixture.cards[0] } as const),
       ),
-    lookup: () => outsideManagementTest(),
+    lookup: () => Effect.dieMessage("Unexpected lookup"),
   };
   return Layer.succeed(Registry, service);
 }
 
-/**
- * Cancelling the MCP request interrupts the tool's operation. One that
- * arrives while the Registry call is in flight must still let the call
- * finish, bind the card and activate it, or the Registry would hold a
- * registration this daemon never recorded. The zero-length sleep lets the
- * interrupt reach the register fiber before the Registry call is released.
- */
-const bindsWhenCancelledDuringTheRegistryCall = () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeIdentityFixture;
-    const entered = yield* Deferred.make<undefined>();
-    const release = yield* Deferred.make<undefined>();
-    const { store, operations } = yield* makeRegisteringOperations(
-      fixture,
-    ).pipe(Effect.provide(heldRegistry(fixture, entered, release)));
-    const registration = yield* Effect.fork(
-      operations.register(localRegisterRequest(fixture)),
-    );
-    yield* Deferred.await(entered);
-    const interruption = yield* Effect.fork(Fiber.interrupt(registration));
-    yield* Effect.sleep(Duration.zero);
-    yield* Deferred.succeed(release, undefined);
-
-    expect(
-      Exit.isInterrupted(yield* Fiber.join(interruption)),
-      "the cancelled register reports an interrupt",
-    ).toBe(true);
-
-    const canonicalAgentCard = yield* encodeCanonical(
-      AgentCard,
-      fixture.cards[0],
-    );
-    expect((yield* store.recover()).identity).toEqual({
-      agentId: fixture.cards[0].agentId,
-      canonicalAgentCard,
-    });
-    expect(yield* operations.readStatus()).toEqual({
-      kind: "active",
-      agentCard: yield* Schema.encode(AgentCard)(fixture.cards[0]),
-      agent: {
-        agentId: fixture.cards[0].agentId,
-        agentName: fixture.cards[0].agentName,
-        principalId: fixture.cards[0].principalId,
-      },
-    });
-  });
-
-it("requires verified identity views on registration and active status while accepting additive result fields", () =>
-  Effect.gen(function* () {
-    const fixture = yield* makeIdentityFixture;
-    const agentCard = yield* Schema.encode(AgentCard)(fixture.cards[0]);
-    const agent = {
-      agentId: fixture.cards[0].agentId,
-      agentName: fixture.cards[0].agentName,
-      principalId: fixture.cards[0].principalId,
-    };
-    const registered = { kind: "registered", agentCard, agent };
-    const active = { kind: "active", agentCard, agent };
-    expect(
-      Schema.is(managementRegisterResultSchema)({
-        ...registered,
-        additional: true,
+function registrationPort() {
+  let registration: DaemonRegistrationState = { kind: "unregistered" };
+  return {
+    readRegistration: () => registration,
+    activateRegistered: (agentCard: VerifiedAgentCard) =>
+      Effect.sync(() => {
+        registration = { kind: "active", agentCard };
       }),
-    ).toBe(true);
-    expect(
-      Schema.is(managementStatusResultSchema)({ ...active, additional: true }),
-    ).toBe(true);
-    expect(
-      Schema.is(managementRegisterResultSchema)(
-        Struct.omit(registered, "agent"),
-      ),
-    ).toBe(false);
-    expect(
-      Schema.is(managementStatusResultSchema)(Struct.omit(active, "agent")),
-    ).toBe(false);
-  }));
+  };
+}
 
-// @agent-code-guard/regression-only: these cases pin the register tool's cancellation and Registry deadline contract.
-describe("daemon registration through the register tool", () => {
-  itOnTestClock(
-    "fails a register at the Registry deadline when the Registry never answers",
-    failsAtTheRegistryDeadline,
+// @agent-code-guard/regression-only: cancellation cannot strand a successful Registry registration outside durable local identity.
+const finishesCanceledRegistration = () =>
+  withDaemonStore(stateDirectory(), (store) =>
+    Effect.gen(function* () {
+      const fixture = yield* makeIdentityFixture;
+      const entered = yield* Deferred.make<undefined>();
+      const release = yield* Deferred.make<undefined>();
+      const operations = yield* makeDaemonManagementOperations({
+        bootstrap: fixture.bootstrap,
+        registration: registrationPort(),
+      }).pipe(Effect.provide(heldRegistry(fixture, entered, release)));
+      const request = Schema.decodeUnknownSync(managementRegisterRequestSchema)(
+        {
+          operationId: "opn_AAAAAAAAAAAAAAAAAAAAAA",
+          principalId: fixture.cards[0].principalId,
+          agentName: fixture.cards[0].agentName,
+        },
+      );
+      const registering = yield* Effect.fork(operations.register(request));
+      yield* Deferred.await(entered);
+      const interruption = yield* Effect.fork(Fiber.interrupt(registering));
+      yield* Effect.sleep(Duration.zero);
+      yield* Deferred.succeed(release, undefined);
+      expect(Exit.isInterrupted(yield* Fiber.join(interruption))).toBe(true);
+      expect((yield* store.readIdentity())?.agentId).toBe(
+        fixture.cards[0].agentId,
+      );
+      expect(yield* operations.readStatus()).toMatchObject({
+        kind: "active",
+        agent: { agentName: fixture.cards[0].agentName },
+      });
+    }),
   );
-  itOnTestClock(
-    "fails search_agents at the Registry deadline when the Registry never answers",
-    failsSearchAtTheRegistryDeadline,
-  );
-  it(
-    "binds and activates a register cancelled during the Registry call",
-    bindsWhenCancelledDuringTheRegistryCall,
-  );
-});
 
-/** Closed registration failures distinguish a final credential refusal from an outage. */
-it.each([
-  { failure: new AuthenticationFailedError(), reason: "admission-refused" },
-  { failure: new RegistryConnectionError(), reason: "dependency-unavailable" },
-])("reports $reason from registration", ({ failure, reason }) =>
-  Effect.gen(function* () {
-    const fixture = yield* makeIdentityFixture;
-    const registry = Layer.succeed(Registry, {
-      register: () => Effect.fail(failure),
-      lookup: () => Effect.succeed({ kind: "not_found" as const }),
-    });
-    const { operations } = yield* makeRegisteringOperations(fixture).pipe(
-      Effect.provide(registry),
-    );
-    const error = yield* operations
-      .register(localRegisterRequest(fixture))
-      .pipe(Effect.flip);
-    expect(error).toMatchObject({ reason });
-  }),
+it(
+  "finishes a registration canceled while the Registry is answering",
+  finishesCanceledRegistration,
 );

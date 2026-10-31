@@ -1,5 +1,6 @@
 /** @file Connects host sends, inbox reads and acknowledgments to the daemon. */
 
+import * as SqlClient from "@effect/sql/SqlClient";
 import {
   DateTime,
   Deferred,
@@ -15,15 +16,12 @@ import type {
   ResultProvenance,
 } from "../../communication/collectives/index.js";
 import type { EnginePendingMessage } from "../../communication/conversations/index.js";
-import type { EndpointStore } from "../../communication/store/types.js";
 import type { Firewall } from "../../firewall/index.js";
-import type { FirewallStore } from "../../firewall/store/types.js";
 import type { SendResult } from "../../host-protocol/send-result.js";
 import type {
   HistoryExportPort,
   HistoryExportRecord,
 } from "./host-traffic-log.js";
-import type { CollectiveDelivery, EventStore, InboxStore } from "./store.js";
 import {
   type CollectiveEmitError,
   CollectiveError,
@@ -38,8 +36,10 @@ import {
   decodeRuntimeValue,
   type DeliveryToken,
   encodeRuntimeValue,
-  type EndpointStoreError,
+  EndpointStoreError,
+  readCollectiveOperation,
 } from "../../communication/store/index.js";
+import { saveCheckDecision } from "../../firewall/store/index.js";
 import {
   FirewallSendError,
   refusalReason,
@@ -52,6 +52,7 @@ import {
   type HarnessReadInboxRequest,
   type HarnessSendRequest,
 } from "../../host-protocol/operations.js";
+import { publishCollectiveItem, queueFirewallItem } from "../store.js";
 import {
   type DeliveryState,
   exportOnce,
@@ -60,6 +61,12 @@ import {
   offerPendingMessages,
   type PendingOffer,
 } from "./deliver-pending.js";
+import { readFirewallRequestAdmission } from "./evidence.js";
+import {
+  type FirewallEnvironment,
+  type OutgoingCandidate,
+  prepareOutgoingCheck,
+} from "./firewall-context.js";
 import {
   decodeInboxEntry,
   mintLocalDeliveryToken,
@@ -69,27 +76,23 @@ import {
 } from "./inbox.js";
 import { type AdmissionContext, runAdmission } from "./incoming-worker.js";
 import {
-  type FirewallEnvironment,
-  type OutgoingCandidate,
-  prepareOutgoingCheck,
-} from "./message.js";
+  acknowledgeInboxItem,
+  type EventStore,
+  readEventState,
+  readInbox,
+  readInboxItem,
+  readInboxSummary,
+  completeWebhookDelivery as saveWebhookDelivery,
+  writeEventState,
+} from "./store.js";
+
+// safer-arch-ignore no-fat-orchestrator: One daemon handoff coordinates message checks, inbox publication and host acknowledgments.
 
 /** Ordinary collective preparation fixes identity before local assessment and protocol acceptance. */
 type ApplicationSender = Pick<CollectiveOperations, "prepare" | "accept">;
 
-/** Host delivery declares its persistence needs without acquiring a database. */
-export interface HostDeliveryStore
-  extends FirewallStore,
-    InboxStore,
-    Pick<EndpointStore, "readCollectiveOperation"> {
-  readonly publishCollectiveItem: (
-    delivery: CollectiveDelivery,
-  ) => Effect.Effect<void, EndpointStoreError>;
-}
-
 /** What one service's delivery reads and writes. */
 export interface HostDeliveryInput {
-  readonly store: HostDeliveryStore;
   readonly experiments?: {
     readonly hideGroups: boolean;
     readonly hideCollectives: boolean;
@@ -146,6 +149,7 @@ export interface HostDelivery {
 }
 
 type DeliveryContext = HostDeliveryInput & {
+  readonly sql: SqlClient.SqlClient;
   readonly state: DeliveryState;
   readonly admissionWake: Queue.Queue<undefined>;
   readonly admissionFailure: Deferred.Deferred<never, EndpointStoreError>;
@@ -218,11 +222,12 @@ function checkOutgoing(
 ) {
   return Effect.gen(function* () {
     const prepared = yield* prepareOutgoingCheck(environment, candidate);
-    const checked = yield* environment.firewall.check(prepared);
-    yield* environment.store.completeFirewallAttempt(
-      checked.completion,
-      "outgoing",
-      prepared.canonicalCandidate,
+    const [checked] = yield* environment.firewall.check([prepared]);
+    if (checked === undefined) {
+      return yield* new EndpointStoreError({ reason: "corrupt" });
+    }
+    yield* saveCheckDecision(checked.completion).pipe(
+      Effect.provideService(SqlClient.SqlClient, environment.sql),
     );
     if (!checked.completion.admit) {
       return yield* new FirewallSendError({
@@ -330,13 +335,13 @@ function requirePresentedResponse(input: DeliveryContext, send: SendInput) {
     return Effect.void;
   }
   return Effect.gen(function* () {
-    const operation = yield* input.store.readCollectiveOperation(
+    const operation = yield* readCollectiveOperation(
       send.collectiveResponse.operationId,
-    );
+    ).pipe(Effect.provideService(SqlClient.SqlClient, input.sql));
     const admission =
       operation?.origin.kind === "remote"
-        ? yield* input.store.readFirewallRequestAdmission(
-            operation.origin.recordHash,
+        ? yield* readFirewallRequestAdmission(operation.origin.recordHash).pipe(
+            Effect.provideService(SqlClient.SqlClient, input.sql),
           )
         : undefined;
     if (admission?.presented !== true) {
@@ -390,19 +395,21 @@ const acknowledgeDelivery =
           ? Effect.fail(
               new DeliveryAcknowledgeError({ reason: "unknown-delivery" }),
             )
-          : input.store.acknowledgeInboxItem(deliveryToken).pipe(
-              Effect.catchTag("EndpointStoreError", (error) =>
-                Effect.fail(
-                  new DeliveryAcknowledgeError({
-                    reason:
-                      error.reason === "not-found"
-                        ? "unknown-delivery"
-                        : "persistence-failed",
-                  }),
+          : acknowledgeInboxItem(deliveryToken)
+              .pipe(Effect.provideService(SqlClient.SqlClient, input.sql))
+              .pipe(
+                Effect.catchTag("EndpointStoreError", (error) =>
+                  Effect.fail(
+                    new DeliveryAcknowledgeError({
+                      reason:
+                        error.reason === "not-found"
+                          ? "unknown-delivery"
+                          : "persistence-failed",
+                    }),
+                  ),
                 ),
+                Effect.tap(() => forgetDelivery(input.state, deliveryToken)),
               ),
-              Effect.tap(() => forgetDelivery(input.state, deliveryToken)),
-            ),
       ),
     );
 
@@ -443,17 +450,25 @@ const readAndExportInbox = (
   input: DeliveryContext,
   request: HarnessReadInboxRequest,
 ) =>
-  readExported(input, readRuntimeInbox(input.store, request), (entry) =>
-    Effect.succeed(entry.item),
+  readExported(
+    input,
+    readRuntimeInbox(request).pipe(
+      Effect.provideService(SqlClient.SqlClient, input.sql),
+    ),
+    (entry) => Effect.succeed(entry.item),
   );
 
 /** The webhook's raw page, decoding each stored item only to export it. */
 const readWebhookInbox = (
   input: DeliveryContext,
-  bounds: Parameters<InboxStore["readInbox"]>[0],
+  bounds: Parameters<typeof readInbox>[0],
 ) =>
-  readExported(input, input.store.readInbox(bounds), (entry) =>
-    decodeRuntimeValue(InboundItem, entry.canonicalItem),
+  readExported(
+    input,
+    readInbox(bounds).pipe(
+      Effect.provideService(SqlClient.SqlClient, input.sql),
+    ),
+    (entry) => decodeRuntimeValue(InboundItem, entry.canonicalItem),
   );
 
 /** Waiters can stop during shutdown; an acquired receipt commits with its caller state intact. */
@@ -466,10 +481,12 @@ const completeWebhookDelivery = (
     input.state.gate.take(1).pipe(
       Effect.interruptible,
       Effect.flatMap((permits) =>
-        input.store.completeWebhookDelivery(token, bytes).pipe(
-          Effect.tap(() => forgetDelivery(input.state, token)),
-          Effect.ensuring(input.state.gate.release(permits)),
-        ),
+        saveWebhookDelivery(token, bytes)
+          .pipe(Effect.provideService(SqlClient.SqlClient, input.sql))
+          .pipe(
+            Effect.tap(() => forgetDelivery(input.state, token)),
+            Effect.ensuring(input.state.gate.release(permits)),
+          ),
       ),
     ),
   );
@@ -485,9 +502,11 @@ const persistItem = (
   provenance?: ResultProvenance,
 ) =>
   input.firewall === undefined
-    ? persistInboxItem(input.store, event)
+    ? persistInboxItem(event).pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+      )
     : Effect.gen(function* () {
-        yield* input.store.queueFirewallItem({
+        yield* queueFirewallItem({
           deliveryToken: event.deliveryToken,
           canonicalItem: yield* encodeRuntimeValue(event.item),
           ...(provenance === undefined
@@ -497,15 +516,15 @@ const persistItem = (
             event.item.kind === "multicast"
               ? event.item.message.address
               : event.item.to,
-        });
+        }).pipe(Effect.provideService(SqlClient.SqlClient, input.sql));
       });
 
 const readAdmitted = (
   input: DeliveryContext,
   event: HarnessMessageReadyEvent,
 ) =>
-  input.store
-    .readInboxItem(event.deliveryToken)
+  readInboxItem(event.deliveryToken)
+    .pipe(Effect.provideService(SqlClient.SqlClient, input.sql))
     .pipe(
       Effect.flatMap((retained) =>
         retained === undefined || retained.acknowledged
@@ -527,7 +546,7 @@ const queueLocalItem =
       if (terminal === undefined) {
         yield* persistItem(input, { deliveryToken, item }, provenance);
       } else {
-        yield* input.store.publishCollectiveItem({
+        yield* publishCollectiveItem({
           operationId: terminal.operationId,
           deliveryToken,
           canonicalItem: yield* encodeRuntimeValue(item),
@@ -537,7 +556,7 @@ const queueLocalItem =
             ? {}
             : { canonicalProvenance: yield* encodeRuntimeValue(provenance) }),
           firewall: input.firewall !== undefined,
-        });
+        }).pipe(Effect.provideService(SqlClient.SqlClient, input.sql));
       }
       input.state.localItems.set(deliveryToken, item);
     });
@@ -613,20 +632,15 @@ const runPass = <E>(
  */
 export const makeHostDelivery = (
   service: HostDeliveryInput,
-): Effect.Effect<HostDelivery, EndpointStoreError> =>
+): Effect.Effect<HostDelivery, EndpointStoreError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const input: DeliveryContext = {
       ...service,
+      sql: yield* SqlClient.SqlClient,
       state: yield* makeDeliveryState,
       admissionWake: yield* Queue.sliding<undefined>(1),
       admissionFailure: yield* Deferred.make<never, EndpointStoreError>(),
       activeConversations: new Set(),
-    };
-    const eventStore: EventStore = {
-      ...input.store,
-      readInbox: (bounds) => readWebhookInbox(input, bounds),
-      completeWebhookDelivery: (token, bytes) =>
-        completeWebhookDelivery(input, token, bytes),
     };
     return {
       detach: Effect.sync(() => {
@@ -637,19 +651,52 @@ export const makeHostDelivery = (
       queueLocalItem: queueLocalItem(input),
       runAdmission: (publish: Effect.Effect<void>) =>
         runAdmission(admissionContext(input), publish),
-      operations: Object.freeze({
-        send: sendOperation(input),
-        readInboxSummary: input.store.readInboxSummary,
-        readEvent: ({ eventId }: { readonly eventId: string }) =>
-          input.collectives() === undefined
-            ? notRegistered
-            : readRuntimeEvent(input.store, eventId),
-        readInbox: (request: HarnessReadInboxRequest) =>
-          input.collectives() === undefined
-            ? notRegistered
-            : readAndExportInbox(input, request),
-        acknowledgeDelivery: acknowledgeDelivery(input),
-      }),
-      eventStore,
+      operations: deliveryOperations(input),
+      eventStore: eventOperations(input),
     };
   }).pipe(Effect.withSpan("makeHostDelivery"));
+
+function eventOperations(input: DeliveryContext): EventStore {
+  return {
+    readEventState: () =>
+      readEventState().pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+      ),
+    writeEventState: (bytes) =>
+      writeEventState(bytes).pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+      ),
+    readInboxItem: (token) =>
+      readInboxItem(token).pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+      ),
+    readInboxSummary: () =>
+      readInboxSummary().pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+      ),
+    readInbox: (bounds) => readWebhookInbox(input, bounds),
+    completeWebhookDelivery: (token, bytes) =>
+      completeWebhookDelivery(input, token, bytes),
+  };
+}
+
+function deliveryOperations(input: DeliveryContext): DeliveryOperations {
+  return Object.freeze({
+    send: sendOperation(input),
+    readInboxSummary: () =>
+      readInboxSummary().pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+      ),
+    readEvent: ({ eventId }: { readonly eventId: string }) =>
+      input.collectives() === undefined
+        ? notRegistered
+        : readRuntimeEvent(eventId).pipe(
+            Effect.provideService(SqlClient.SqlClient, input.sql),
+          ),
+    readInbox: (request: HarnessReadInboxRequest) =>
+      input.collectives() === undefined
+        ? notRegistered
+        : readAndExportInbox(input, request),
+    acknowledgeDelivery: acknowledgeDelivery(input),
+  });
+}

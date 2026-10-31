@@ -49,12 +49,13 @@ async function deliverTurn(
   const target = await network.daemon(`openclaw-${runtime}`);
   const caller = await network.endpoint(`caller-${runtime}`);
   await caller.send({ to: target.address, text });
-  await startHost(
+  await startHost({
     container,
-    `sharness-daemon-${target.mcp.port}`,
+    daemon: `sharness-daemon-${target.mcp.port}`,
     directory,
-    target.mcp,
-  );
+    mcp: target.mcp,
+    mcpCredentialFile: target.mcpCredentialFile,
+  });
   const received = await receivedTurn(directory, runtime, provider.requests);
   const logs = await docker("docker", ["logs", container]);
   assert.ok(
@@ -63,13 +64,17 @@ async function deliverTurn(
   );
 }
 
+interface HostOptions {
+  readonly container: string;
+  readonly daemon: string;
+  readonly directory: string;
+  readonly mcp: URL;
+  readonly mcpCredentialFile: string;
+}
+
 /** The image user copies fixture state so OpenClaw owns the directories it secures. */
-async function startHost(
-  container: string,
-  daemon: string,
-  directory: string,
-  mcp: URL,
-): Promise<undefined> {
+async function startHost(options: HostOptions): Promise<undefined> {
+  const { container, daemon, directory, mcp, mcpCredentialFile } = options;
   const inspected = await docker("docker", [
     "inspect",
     "--format",
@@ -99,6 +104,10 @@ async function startHost(
     "OPENCLAW_CONFIG_PATH=/home/node/test-state/openclaw.json",
     "--env",
     `SHARNESS_MCP_URL=${mcp.href}`,
+    "--env",
+    "SHARNESS_MCP_CREDENTIAL_FILE=/run/sharness-mcp-credential",
+    "--mount",
+    `type=bind,src=${mcpCredentialFile},dst=/run/sharness-mcp-credential,readonly`,
     "--env",
     "OPENCLAW_DISABLE_BONJOUR=1",
     "--env",

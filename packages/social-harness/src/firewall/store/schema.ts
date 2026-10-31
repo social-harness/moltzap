@@ -1,7 +1,8 @@
 /** @file Policy-owned tables share the daemon database lifetime. */
 
-import type { DatabaseSync } from "node:sqlite";
-
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
+import { storeOperation } from "../../communication/store/database/index.js";
 const firewallSchemaSql = `
   CREATE TABLE firewall_incoming (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,10 +24,9 @@ const firewallSchemaSql = `
     direction TEXT NOT NULL CHECK (direction IN ('incoming', 'outgoing')),
     canonical_candidate BLOB NOT NULL,
     canonical_input BLOB NOT NULL,
-    canonical_result BLOB,
-    decided_at INTEGER,
-    disposition TEXT NOT NULL DEFAULT 'checking'
-      CHECK (disposition IN ('checking', 'interrupted', 'admitted', 'withheld'))
+    canonical_result BLOB NOT NULL,
+    decided_at INTEGER NOT NULL,
+    disposition TEXT NOT NULL CHECK(disposition IN ('admitted','withheld'))
   ) STRICT;
   CREATE TABLE firewall_local_evidence (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,6 +40,7 @@ const firewallSchemaSql = `
     conversation_id TEXT NOT NULL,
     record_hash TEXT NOT NULL,
     admitted INTEGER NOT NULL CHECK (admitted IN (0, 1)),
+    delivery_token TEXT NOT NULL,
     PRIMARY KEY (conversation_id, record_hash),
     FOREIGN KEY (conversation_id, record_hash)
       REFERENCES certified_records(conversation_id, record_hash)
@@ -60,15 +61,15 @@ const firewallSchemaSql = `
   CREATE INDEX firewall_decisions_time ON firewall_checks(decided_at)
     WHERE decided_at IS NOT NULL;
 `;
-
-/** Called only inside the daemon's initial schema transaction. */
-export function createFirewallTables(database: DatabaseSync): void {
-  database.exec(firewallSchemaSql);
-}
-
-/** Interrupted inference has no result or authority after restart. */
-export function interruptFirewallAttempts(database: DatabaseSync): void {
-  database.exec(
-    "UPDATE firewall_checks SET disposition = 'interrupted' WHERE disposition = 'checking'",
-  );
+/** Policy tables are created alongside protocol and inbox tables in one startup transaction. */
+export function createFirewallTables() {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    for (const statement of firewallSchemaSql
+      .split(";")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0)) {
+      yield* sql.unsafe<Readonly<Record<string, unknown>>>(statement);
+    }
+  }).pipe(storeOperation, Effect.withSpan("createFirewallTables"));
 }

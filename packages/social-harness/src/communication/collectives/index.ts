@@ -1,5 +1,6 @@
 /** @file Runs collective sends and classifies certified messages for one active identity. */
 
+import * as SqlClient from "@effect/sql/SqlClient";
 import {
   Clock,
   Effect,
@@ -28,6 +29,7 @@ import { SendError } from "../conversations/errors.js";
 import { preparedSendData, resolutionFailure } from "../conversations/index.js";
 import { InboundMessage } from "../conversations/message.js";
 import { agentAddressOf } from "../records/values.js";
+import * as Store from "../store/index.js";
 import { encodeRuntimeValue, EndpointStoreError } from "../store/index.js";
 import { applyClose, receiveClose, recordPeerAnswer } from "./all-gather.js";
 import {
@@ -131,8 +133,14 @@ const collectiveFailure = (
  */
 export const makeCollectiveOperations = (
   ports: CollectivePorts,
-): Effect.Effect<CollectiveOperations, EndpointStoreError> =>
+): Effect.Effect<
+  CollectiveOperations,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const provideSql = Effect.provideService(SqlClient.SqlClient, sql);
     const state: CollectiveState = {
       ports,
       transitions: yield* Effect.makeSemaphore(1),
@@ -153,16 +161,16 @@ export const makeCollectiveOperations = (
         recordRefusal(state, operationId, refusal),
     });
     return {
-      prepare: (input) => prepareOperation(state, input),
-      accept: (prepared) => acceptOperation(state, prepared),
-      classify: (message) => classify(state, message),
+      prepare: (input) => prepareOperation(state, input).pipe(provideSql),
+      accept: (prepared) => acceptOperation(state, prepared).pipe(provideSql),
+      classify: (message) => classify(state, message).pipe(provideSql),
     } satisfies CollectiveOperations;
   }).pipe(Effect.withSpan("makeCollectiveOperations"));
 
 function prepareOperation(
   state: CollectiveState,
   input: SendInput,
-): Effect.Effect<PreparedCollective, CollectiveSendError> {
+): Effect.Effect<PreparedCollective, CollectiveSendError, SqlClient.SqlClient> {
   return encodeCanonical(SendInput, input).pipe(
     Effect.flatMap((bytes) => decodeCanonical(SendInput, bytes)),
     Effect.mapError(contentInvalid),
@@ -173,7 +181,7 @@ function prepareOperation(
 function prepareCapturedOperation(
   state: CollectiveState,
   input: SendInput,
-): Effect.Effect<PreparedCollective, CollectiveSendError> {
+): Effect.Effect<PreparedCollective, CollectiveSendError, SqlClient.SqlClient> {
   if ("collectiveResponse" in input) {
     return prepareResponse(state, input.to, input.collectiveResponse).pipe(
       Effect.map((response) => ({ kind: "response", response })),
@@ -214,7 +222,11 @@ function prepareCapturedOperation(
 function acceptOperation(
   state: CollectiveState,
   prepared: PreparedCollective,
-): Effect.Effect<CollectiveSendOutcome, CollectiveSendError> {
+): Effect.Effect<
+  CollectiveSendOutcome,
+  CollectiveSendError,
+  SqlClient.SqlClient
+> {
   switch (prepared.kind) {
     case "response":
       return acceptResponse(state, prepared.response);
@@ -253,7 +265,11 @@ function prepareGather(
   requestedTo: MessageAddressInput,
   question: string,
   input: CollectingOperation,
-): Effect.Effect<PreparedGather, SendError | CollectiveError> {
+): Effect.Effect<
+  PreparedGather,
+  SendError | CollectiveError,
+  SqlClient.SqlClient
+> {
   return Effect.gen(function* () {
     const { self } = state.ports;
     const { op, deadline, requestedSchema: schema } = input;
@@ -277,18 +293,14 @@ function prepareGather(
       addresses,
       content,
     });
-    const ordered = yield* preparedMembers(state, requests, addresses);
-    const [head, ...tail] = ordered;
-    if (head === undefined) {
-      return yield* contentInvalid();
-    }
+    const members = yield* preparedMembers(state, requests, addresses);
     return yield* retainPreparedGather(
       operationId,
       {
         op,
         to,
         question,
-        members: [head, ...tail] as const,
+        members,
         requestedSchema,
         content,
         ...times,
@@ -426,7 +438,7 @@ function preparedMembers(
         (member) => agentAddressOf(member) === address,
       ),
     );
-  });
+  }).pipe(Effect.filterOrFail(EffectArray.isNonEmptyArray, contentInvalid));
 }
 
 /**
@@ -438,7 +450,7 @@ function preparedMembers(
 function formModeSchema(
   operationId: CollectiveId,
   requestedSchema: CollectingOperation["requestedSchema"],
-): Effect.Effect<FormModeSchema, CollectiveError> {
+): Effect.Effect<FormModeSchema, CollectiveError, SqlClient.SqlClient> {
   return Schema.decodeUnknown(FormModeSchema)(requestedSchema).pipe(
     Effect.mapError((error) =>
       collectiveFailure(operationId, {
@@ -456,7 +468,7 @@ function formModeSchema(
 function gatherRequests(
   state: CollectiveState,
   prepared: PreparedGather,
-): Effect.Effect<RequestSendOutcome, CollectiveSendError> {
+): Effect.Effect<RequestSendOutcome, CollectiveSendError, SqlClient.SqlClient> {
   return Effect.uninterruptibleMask((restore) =>
     Effect.gen(function* () {
       if ((yield* Clock.currentTimeMillis) >= prepared.deadlineAt) {
@@ -464,10 +476,7 @@ function gatherRequests(
           kind: "deadline-passed",
         });
       }
-      yield* durableSend(
-        state,
-        state.ports.store.putCollectiveOperation(prepared.durable),
-      );
+      yield* durableSend(state, Store.putCollectiveOperation(prepared.durable));
       yield* refreshRetainedSend(state, prepared.operationId);
       yield* openGather(state, prepared, false).pipe(
         Effect.catchTag("CollectiveError", (error) =>
@@ -498,7 +507,11 @@ function gatherRequests(
 function sendRequests(
   state: CollectiveState,
   prepared: PreparedGather,
-): Effect.Effect<RequestSendOutcome, CollectiveError | SendError> {
+): Effect.Effect<
+  RequestSendOutcome,
+  CollectiveError | SendError,
+  SqlClient.SqlClient
+> {
   return Effect.gen(function* () {
     const { operationId, open } = prepared;
     const sends = yield* fanOutRequests(
@@ -542,7 +555,7 @@ function sendRequests(
 function sendGroupRequest(
   state: CollectiveState,
   prepared: PreparedGather,
-): Effect.Effect<RequestSendOutcome, CollectiveSendError> {
+): Effect.Effect<RequestSendOutcome, CollectiveSendError, SqlClient.SqlClient> {
   const { operationId } = prepared;
   return acceptGroupRequest(state, prepared).pipe(
     Effect.onExit((exit) =>
@@ -552,7 +565,13 @@ function sendGroupRequest(
     ),
     Effect.catchTag(
       "SendError",
-      (error): Effect.Effect<never, SendError | CollectiveError> =>
+      (
+        error,
+      ): Effect.Effect<
+        never,
+        SendError | CollectiveError,
+        SqlClient.SqlClient
+      > =>
         error.reason === "delivery-pending" ||
         error.reason === "outcome-unknown"
           ? Effect.fail(error)
@@ -599,7 +618,11 @@ function acceptGroupRequest(state: CollectiveState, prepared: PreparedGather) {
 function classify(
   state: CollectiveState,
   certified: CertifiedMessage,
-): Effect.Effect<Option.Option<InboundItem>, CollectiveEmitError> {
+): Effect.Effect<
+  Option.Option<InboundItem>,
+  CollectiveEmitError,
+  SqlClient.SqlClient
+> {
   const { message } = certified;
   return readCollectiveValue(message.content).pipe(
     Effect.flatMap(
@@ -623,7 +646,11 @@ function collectiveItem(
   state: CollectiveState,
   message: CertifiedMessage,
   value: CollectiveValue,
-): Effect.Effect<Option.Option<InboundItem>, CollectiveEmitError> {
+): Effect.Effect<
+  Option.Option<InboundItem>,
+  CollectiveEmitError,
+  SqlClient.SqlClient
+> {
   switch (value.kind) {
     case "operation":
       return operationItem(state, message, value);
@@ -644,7 +671,11 @@ function operationItem(
   state: CollectiveState,
   message: CertifiedMessage,
   value: Extract<CollectiveValue, { readonly kind: "operation" }>,
-): Effect.Effect<Option.Option<InboundItem>, CollectiveEmitError> {
+): Effect.Effect<
+  Option.Option<InboundItem>,
+  CollectiveEmitError,
+  SqlClient.SqlClient
+> {
   switch (value.op) {
     case "multicast":
       return Effect.succeed(
@@ -685,7 +716,11 @@ function requestItem(
   state: CollectiveState,
   message: CertifiedMessage,
   value: CollectingValue,
-): Effect.Effect<Option.Option<InboundItem>, CollectiveEmitError> {
+): Effect.Effect<
+  Option.Option<InboundItem>,
+  CollectiveEmitError,
+  SqlClient.SqlClient
+> {
   if (
     state.recovering &&
     !retainedRequestMatches(state, message, value.operationId)
@@ -781,7 +816,7 @@ function retainRequest(
           Effect.fail(new EndpointStoreError({ reason: "invalid-input" })),
         ),
       );
-      yield* state.ports.store.putCollectiveOperation({
+      yield* Store.putCollectiveOperation({
         operationId,
         origin: {
           kind: "remote",
@@ -806,7 +841,7 @@ function recordAnswer(
   state: CollectiveState,
   message: CertifiedMessage,
   value: ResponseValue,
-): Effect.Effect<void, CollectiveEmitError> {
+): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     const open = state.gathers.get(value.operationId);
     if (open !== undefined) {
@@ -827,7 +862,7 @@ function groupRequestFailure(
   state: CollectiveState,
   prepared: PreparedGather,
   error: SendError,
-): Effect.Effect<never, SendError | CollectiveError> {
+): Effect.Effect<never, SendError | CollectiveError, SqlClient.SqlClient> {
   if (
     error.reason === "delivery-pending" ||
     error.reason === "outcome-unknown"
@@ -836,13 +871,19 @@ function groupRequestFailure(
   }
   return durableSend(
     state,
-    state.ports.store.readCollectiveMessages({
+    Store.readCollectiveMessages({
       operationId: prepared.operationId,
       role: "request",
     }),
   ).pipe(
     Effect.flatMap(
-      (messages): Effect.Effect<never, SendError | CollectiveError> =>
+      (
+        messages,
+      ): Effect.Effect<
+        never,
+        SendError | CollectiveError,
+        SqlClient.SqlClient
+      > =>
         messages.length > 0
           ? Effect.fail(error)
           : abandonGroupRequest(state, prepared, error),
@@ -858,7 +899,7 @@ function abandonGroupRequest(
   state: CollectiveState,
   prepared: PreparedGather,
   error: SendError,
-): Effect.Effect<never, CollectiveError | SendError> {
+): Effect.Effect<never, CollectiveError | SendError, SqlClient.SqlClient> {
   return forgetGather(state, prepared.operationId).pipe(
     Effect.zipRight(
       Effect.fail(

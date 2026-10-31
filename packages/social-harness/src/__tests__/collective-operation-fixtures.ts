@@ -1,6 +1,7 @@
 /** @file Recording ports, message builders and send helpers shared by the collective operation tests. */
 
 import { Duration, Effect, Schema, type Scope } from "effect";
+import { createHash } from "node:crypto";
 import type { CollectivePorts } from "../communication/collectives/ports.js";
 import type { InboundItem } from "../host-protocol/items.js";
 import {
@@ -20,11 +21,11 @@ import { MsgId, RecordHash } from "../communication/records/index.js";
 import { AgentAddress } from "../communication/records/values.js";
 import { digest, testAgentView } from "./agent-card-fixtures.js";
 import { collectiveOperationId } from "./collective-id-fixtures.js";
+import { collectivePersistencePorts } from "./collective-message-fixtures.js";
 import {
   type TestCollectiveOperations as CollectiveOperations,
   makeCollectiveOperations,
 } from "./collective-send.js";
-import { collectivePersistencePorts } from "./collective-storage-stub.js";
 
 /** The agent a layer `makeLayer` builds runs as unless told otherwise. */
 export const alice = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
@@ -63,9 +64,6 @@ export const gatherTo = "group:alice,bob,carol";
  */
 export const recordHashOf = (byte: number) =>
   Schema.decodeUnknownSync(RecordHash)(digest("rch_", byte));
-
-/** The record hash every message `classifyMessage` classifies carries. */
-const recordHash = recordHashOf(0);
 
 /** What a layer's ports saw: the messages it certified and the items it emitted, in order. */
 export interface Observed {
@@ -164,24 +162,25 @@ export const makeLayer = (
       }),
   }: LayerOptions = {},
 ): Effect.Effect<CollectiveOperations, never, Scope.Scope> =>
-  Effect.flatMap(Effect.scope, (scope) =>
-    Effect.gen(function* () {
-      const persistence = yield* collectivePersistencePorts((input) => {
-        const reason = refused[input.to];
-        if (reason === undefined) {
-          return sendMessage(input);
-        }
-        if (reason === "slow") {
-          return Effect.never;
-        }
-        if (reason === "late") {
-          return Effect.sleep(
-            Duration.sum(requestSendWait, lateMessageDelay),
-          ).pipe(Effect.zipRight(sendMessage(input)));
-        }
-        return Effect.fail(new SendError({ reason }));
-      }, self);
-      return yield* makeCollectiveOperations({
+  Effect.gen(function* () {
+    const scope = yield* Effect.scope;
+    const persistence = yield* collectivePersistencePorts((input) => {
+      const reason = refused[input.to];
+      if (reason === undefined) {
+        return sendMessage(input);
+      }
+      if (reason === "slow") {
+        return Effect.never;
+      }
+      if (reason === "late") {
+        return Effect.sleep(
+          Duration.sum(requestSendWait, lateMessageDelay),
+        ).pipe(Effect.zipRight(sendMessage(input)));
+      }
+      return Effect.fail(new SendError({ reason }));
+    }, self);
+    const operations = yield* persistence.run(
+      makeCollectiveOperations({
         ...persistence,
         self: testAgentView(self),
         prepareMessage: prepareKnownMembers(
@@ -190,9 +189,16 @@ export const makeLayer = (
         ),
         emit,
         scope,
-      });
-    }),
-  ).pipe(Effect.orDie, Effect.withSpan("makeLayer"));
+      }),
+    );
+    return {
+      ...operations,
+      classify: (message: Parameters<CollectiveOperations["classify"]>[0]) =>
+        persistence
+          .certifyInput(message)
+          .pipe(Effect.zipRight(operations.classify(message))),
+    };
+  }).pipe(Effect.orDie, Effect.withSpan("makeLayer"));
 
 /**
  * A message in the direct conversation with `sender`.
@@ -263,7 +269,13 @@ export const answerMessage = (
 export const classifyMessage = (
   layer: CollectiveOperations,
   message: InboundMessage,
-) => layer.classify({ message, recordHash });
+) =>
+  layer.classify({
+    message,
+    recordHash: Schema.decodeUnknownSync(RecordHash)(
+      `rch_${createHash("sha256").update(JSON.stringify(message)).digest("base64url")}`,
+    ),
+  });
 
 /**
  * Send an unvalidated input through the layer, decoding it first.

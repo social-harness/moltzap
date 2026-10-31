@@ -2,11 +2,14 @@
 
 import type { Implementation } from "@modelcontextprotocol/server";
 import { NodeFileSystem } from "@effect/platform-node";
+import { SqlClient } from "@effect/sql";
 import { Console, Effect, type Scope } from "effect";
 import type { Router } from "../communication/router/api/client.js";
 import type { Registry } from "../identity/registry/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { makeRouterWorker } from "../communication/router/index.js";
+import { FirewallPolicyError } from "../firewall/config.js";
+import { readDecisions } from "../firewall/store/index.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { packageVersion } from "../release/index.js";
 import { DaemonRuntimeError, runtimeFailure } from "./errors.js";
@@ -73,7 +76,11 @@ const productionDependencies: DaemonRuntimeDependencies = {
 export const runDaemonRuntime = (
   input: DaemonStartup,
   dependencies: DaemonRuntimeDependencies = productionDependencies,
-): Effect.Effect<never, DaemonRuntimeError, Registry | Router | Scope.Scope> =>
+): Effect.Effect<
+  never,
+  DaemonRuntimeError,
+  Registry | Router | Scope.Scope | SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const historyExport = yield* openHistoryExport(input, dependencies);
     const daemon = yield* makeDaemon({
@@ -82,7 +89,6 @@ export const runDaemonRuntime = (
       edges: dependencies,
     });
     const management = yield* makeDaemonManagementOperations({
-      store: input.store,
       bootstrap: input.bootstrap,
       registration: daemon,
     });
@@ -122,22 +128,37 @@ function makeHandler(
   management: DaemonManagementOperations,
   daemon: RunningDaemon,
 ) {
-  return dependencies
-    .makeHandler({
-      implementation: DAEMON_IMPLEMENTATION,
-      operations: Object.freeze({
-        ...management,
-        ...(input.firewall?.policy === undefined
-          ? {}
-          : { policy: input.firewall.policy }),
-        ...daemon.deliveryOperations,
-        protocolActive: daemon.protocolActive,
-      }),
-      credentials: input.bootstrap.mcpCredentials,
-      eventStore: daemon.eventStore,
-      onSubscriptionActiveChange: daemon.subscriptionChanged,
-    })
-    .pipe(Effect.mapError(() => runtimeFailure("storage")));
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    return yield* dependencies
+      .makeHandler({
+        implementation: DAEMON_IMPLEMENTATION,
+        operations: Object.freeze({
+          ...management,
+          readDecisions: (request: { readonly since?: number }) =>
+            readDecisions(request).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+              Effect.catchTag("EndpointStoreError", () =>
+                Effect.fail(
+                  new FirewallPolicyError({ reason: "persistence-failed" }),
+                ),
+              ),
+            ),
+          ...(input.firewall === undefined
+            ? {}
+            : {
+                readPolicy: input.firewall.readPolicy,
+                updatePolicy: input.firewall.updatePolicy,
+              }),
+          ...daemon.deliveryOperations,
+          protocolActive: daemon.protocolActive,
+        }),
+        credential: input.bootstrap.mcpCredential,
+        eventStore: daemon.eventStore,
+        onSubscriptionActiveChange: daemon.subscriptionChanged,
+      })
+      .pipe(Effect.mapError(() => runtimeFailure("storage")));
+  });
 }
 
 /** The existing management operation commits and activates a new registration before MCP listens. */

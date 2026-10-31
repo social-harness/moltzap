@@ -36,11 +36,14 @@ import {
   Data,
   Effect,
   Option,
+  Redacted,
   Schema,
   Stream,
   Struct,
 } from "effect";
 import { absurd } from "effect/Function";
+// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Native host plugins read one credential without requiring a platform service from the host.
+import { readFile } from "node:fs/promises";
 import { jsonResult } from "openclaw/plugin-sdk/channel-actions";
 import {
   type ChannelPlugin,
@@ -543,11 +546,24 @@ function acquireAccountEndpoint(
   if (injected !== undefined) {
     return Effect.succeed(injected);
   }
-  return configuredMcpEndpoint().pipe(Effect.flatMap(acquireHarnessEndpoint));
-}
-
-function configuredMcpEndpoint() {
-  return Config.url("SHARNESS_MCP_URL");
+  return Effect.gen(function* () {
+    const endpoint = yield* Config.url("SHARNESS_MCP_URL");
+    const credentialFile = yield* Config.redacted(
+      "SHARNESS_MCP_CREDENTIAL_FILE",
+    );
+    const credential = yield* Effect.tryPromise({
+      try: () => readFile(Redacted.value(credentialFile), "utf8"),
+      catch: () =>
+        new OpenClawConfigurationError({
+          detail:
+            "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#mcp-credential-file",
+        }),
+    });
+    return yield* acquireHarnessEndpoint(endpoint, {
+      credential: Redacted.make(credential),
+      receiveMode: "push",
+    });
+  });
 }
 
 function runAccountConnection(

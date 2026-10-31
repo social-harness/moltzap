@@ -84,7 +84,10 @@ function runOpenClawScenario() {
   return Effect.scoped(
     Effect.gen(function* () {
       const scenario = yield* acquireScenario("openclaw");
-      const caller = yield* acquireHarnessEndpoint(scenario.caller.endpoint);
+      const caller = yield* acquireHarnessEndpoint(scenario.caller.endpoint, {
+        credential: scenario.caller.mcpCredential,
+        receiveMode: "push",
+      });
       const callerAddress = directAddress(scenario.caller.agentName);
       const targetAddress = directAddress(scenario.target.agentName);
       const {
@@ -130,7 +133,10 @@ function runOpenClawGatherScenario() {
   return Effect.scoped(
     Effect.gen(function* () {
       const scenario = yield* acquireScenario("openclaw-gather");
-      const caller = yield* acquireHarnessEndpoint(scenario.caller.endpoint);
+      const caller = yield* acquireHarnessEndpoint(scenario.caller.endpoint, {
+        credential: scenario.caller.mcpCredential,
+        receiveMode: "push",
+      });
       const callerAddress = directAddress(scenario.caller.agentName);
       const targetAddress = directAddress(scenario.target.agentName);
       const cfg = openClawConfig(scenario.target.stateDirectory);
@@ -148,31 +154,13 @@ function runOpenClawGatherScenario() {
         messageTool,
       });
 
-      const started = yield* caller.send({
-        to: targetAddress,
-        text: GATHER_QUESTION,
-        collective: {
-          op: "gather",
-          deadline: 60,
-          requestedSchema: SLOT_SCHEMA,
-        },
-      });
-      const operationId = yield* Effect.fromNullable(started.operationId);
-      const requestTurn = yield* nextTurn(turns);
-      expect(requestTurn.From).toBe(callerAddress);
-      const answered = yield* messageTool("reply", {
-        to: callerAddress,
-        message: acceptText("tue", operationId),
-      });
-      expect(answered.details).toMatchObject({ ok: true });
-      expect(yield* nextItem(caller.messages)).toMatchObject({
-        kind: "collectiveResult",
-        outcomes: [
-          {
-            member: scenario.target.agent,
-            outcome: { kind: "answered", content: { slot: "tue" } },
-          },
-        ],
+      yield* receiveGather({
+        caller,
+        callerAddress,
+        targetAddress,
+        targetAgent: scenario.target.agent,
+        turns,
+        messageTool,
       });
 
       yield* stopGateway(abortController, runningGateway);
@@ -180,12 +168,56 @@ function runOpenClawGatherScenario() {
   );
 }
 
+function receiveGather({
+  caller,
+  callerAddress,
+  targetAddress,
+  targetAgent,
+  turns,
+  messageTool,
+}: Parameters<typeof sendGather>[0]) {
+  return Effect.gen(function* () {
+    const started = yield* caller.send({
+      to: targetAddress,
+      text: GATHER_QUESTION,
+      collective: {
+        op: "gather",
+        deadline: 60,
+        requestedSchema: SLOT_SCHEMA,
+      },
+    });
+    const operationId = yield* Effect.fromNullable(started.operationId);
+    const requestTurn = yield* nextTurn(turns);
+    expect(requestTurn.From).toBe(callerAddress);
+    const answered = yield* messageTool("reply", {
+      to: callerAddress,
+      message: acceptText("tue", operationId),
+    });
+    expect(answered.details).toMatchObject({ ok: true });
+    expect(yield* nextItem(caller.messages)).toMatchObject({
+      kind: "collectiveResult",
+      outcomes: [
+        {
+          member: targetAgent,
+          outcome: { kind: "answered", content: { slot: "tue" } },
+        },
+      ],
+    });
+  });
+}
+
 function runOpenClawAllGatherScenario() {
   return Effect.scoped(
     Effect.gen(function* () {
       const scenario = yield* acquireGroupScenario("openclaw-all-gather");
-      const caller = yield* acquireHarnessEndpoint(scenario.caller.endpoint);
-      const peer = yield* acquireHarnessEndpoint(scenario.peer.endpoint);
+      const caller = yield* acquireHarnessEndpoint(scenario.caller.endpoint, {
+        credential: scenario.caller.mcpCredential,
+        receiveMode: "push",
+      });
+      const peer = yield* acquireHarnessEndpoint(scenario.peer.endpoint, {
+        credential: scenario.peer.mcpCredential,
+        receiveMode: "push",
+      });
       const callerAddress = directAddress(scenario.caller.agentName);
       const peerAddress = directAddress(scenario.peer.agentName);
       const targetAddress = directAddress(scenario.target.agentName);

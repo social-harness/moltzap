@@ -1,5 +1,6 @@
 /** @file Queues signed conversation messages and sends them through the Router across retries. */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
 import { Effect, Queue, Schedule } from "effect";
 import type { DisseminationObligation } from "../store/index.js";
 import type {
@@ -26,6 +27,7 @@ import {
   routerWorkerReconnectSchedule,
   type RouterWorkerSendError,
 } from "../router/index.js";
+import * as Store from "../store/index.js";
 import { exitOutcome, markRetries } from "./retry-markers.js";
 
 /**
@@ -43,7 +45,7 @@ interface OutboxState {
 
 /**
  * Build the outbox of one engine.
- * @param input Signing identity, durable store, and Router worker.
+ * @param input Signing identity and Router worker.
  * @param retained Outbox identities the store retains at startup, in durable
  *   order; when there are any, the outbound loop wakes to send them.
  * @returns The engine's outbox port.
@@ -99,7 +101,7 @@ function queueBody(
   conversation: EngineConversation,
   body: DecodedOuterBody,
   obligation?: DisseminationObligation,
-): Effect.Effect<void, EngineOutboxError> {
+): Effect.Effect<void, EngineOutboxError, SqlClient.SqlClient> {
   return sign(state, conversation.membership, body).pipe(
     Effect.flatMap((message) =>
       enqueueSigned(state, conversation.conversationId, message, obligation),
@@ -127,7 +129,7 @@ function enqueueSigned(
   conversationId: ConversationId,
   message: SignedMessage,
   obligation?: DisseminationObligation,
-): Effect.Effect<void, EngineOutboxError> {
+): Effect.Effect<void, EngineOutboxError, SqlClient.SqlClient> {
   return encodeCanonical(SignedMessage, message).pipe(
     Effect.flatMap((canonicalSignedMessage) => {
       const input = {
@@ -137,8 +139,8 @@ function enqueueSigned(
         canonicalSignedMessage,
       };
       return obligation === undefined
-        ? state.input.store.enqueueOutbound(input)
-        : state.input.store.enqueueDisseminationOutbound(obligation, input);
+        ? Store.enqueueOutbound(input)
+        : Store.enqueueDisseminationOutbound(obligation, input);
     }),
     Effect.flatMap((outbound) => push(state, [outbound.envelopeId])),
   );

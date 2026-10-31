@@ -36,10 +36,10 @@ const webhookStatusSchema = Schema.Struct({
   lastError: Schema.optional(Schema.NullOr(Schema.Literal(...callbackReasons))),
 });
 
-/** Secret-free diagnostics shared with the owner-only MCP tool. */
+/** Secret-free diagnostics shared with the MCP tool. */
 export type WebhookStatus = typeof webhookStatusSchema.Type;
 
-/** The result schema of the owner-only, secret-free event status tool. */
+/** The result schema of the secret-free event status tool. */
 export const webhookStatusResult = resultSchema(webhookStatusSchema);
 
 const emptyArguments = Schema.Record({
@@ -98,17 +98,15 @@ interface EventSubscriptionGrant {
   readonly truncated: boolean;
 }
 
-/** Durable webhook edge, available only for an authenticated runtime principal. */
+/** Durable callback delivery for the daemon's authenticated clients. */
 export interface HarnessWebhookEvents {
   readonly hasActiveSubscription: () => boolean;
   readonly subscribe: (
     input: EventSubscribeInput,
-    principal: string,
     authorize?: Effect.Effect<void, ProtocolError>,
   ) => Effect.Effect<EventSubscriptionGrant, ProtocolError>;
   readonly unsubscribe: (
     input: EventUnsubscribeInput,
-    principal: string,
   ) => Effect.Effect<void, ProtocolError>;
   readonly observe: () => Effect.Effect<void, ProtocolError>;
   readonly status: Effect.Effect<WebhookStatus, ProtocolError>;

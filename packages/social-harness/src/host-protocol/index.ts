@@ -21,7 +21,7 @@ export {
   type WebhookStatus,
   webhookStatusResult,
 } from "./event-schemas.js";
-/** Owner-authorized management request and result schemas. */
+/** Management request and result schemas. */
 export {
   type ManagementReadConversationRequest,
   managementReadConversationRequestSchema,
@@ -31,17 +31,13 @@ export {
   managementRegisterRequestSchema,
   type ManagementRegisterResult,
   managementRegisterResultSchema,
-  type ManagementSearchAgentsRequest,
-  managementSearchAgentsRequestSchema,
-  type ManagementSearchAgentsResult,
-  managementSearchAgentsResultSchema,
   type ManagementSearchConversationsRequest,
   managementSearchConversationsRequestSchema,
   type ManagementSearchConversationsResult,
   managementSearchConversationsResultSchema,
   type ManagementStatusResult,
   managementStatusResultSchema,
-} from "./owner-tools.js";
+} from "./daemon-tools.js";
 /** MCP projections keep semantic operations separate from transport framing. */
 export {
   decodeHarnessSendCall,

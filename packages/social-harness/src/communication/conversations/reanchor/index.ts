@@ -4,6 +4,7 @@
  * the re-anchor once a quorum votes for it.
  */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
 import { Effect, Schema } from "effect";
 import type { SignedMessage as SignedMessageValue } from "../../../identity/envelope/signed-message.js";
 import type { EngineRuntime } from "../engine-context.js";
@@ -38,6 +39,7 @@ import {
   RouterWorkerPersistenceError,
   type RouterWorkerRecovery,
 } from "../../router/index.js";
+import * as Store from "../../store/index.js";
 import {
   type EndpointRecovery,
   isSemanticStoreRejection,
@@ -90,16 +92,16 @@ export interface ReanchorRunPort {
   /** Finish a conversation and resume its held work. */
   readonly markRecovered: (
     conversationId: ConversationIdValue,
-  ) => Effect.Effect<void, RouterWorkerPersistenceError>;
+  ) => Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient>;
   /** Sign `body` and route it as the run routes its traffic. */
   readonly queue: (
     membership: VerifiedMembership,
     body: DecodedOuterBody,
-  ) => Effect.Effect<void, RouterWorkerPersistenceError>;
+  ) => Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient>;
   /** Ask members again for the history after the conversation's position. */
   readonly requestCatchUp: (
     conversationId: ConversationIdValue,
-  ) => Effect.Effect<void, RouterWorkerPersistenceError>;
+  ) => Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient>;
   /**
    * Send members again the staged, uncertified successor this endpoint
    * holds and its durability vote for it, so the successor can certify.
@@ -107,7 +109,7 @@ export interface ReanchorRunPort {
   readonly resendStagedSuccessor: (
     membership: VerifiedMembership,
     staged: StagedRecord,
-  ) => Effect.Effect<void, RouterWorkerPersistenceError>;
+  ) => Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient>;
 }
 
 /**
@@ -139,7 +141,7 @@ export function startReanchorRun(port: ReanchorRunPort): ReanchorRun {
 export function positionReady(
   run: ReanchorRun,
   membership: VerifiedMembership,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return Effect.sync(() => {
     run.positionsReady.add(membership.descriptor.conversationId);
   }).pipe(Effect.zipRight(finishRestartedPosition(run, membership)));
@@ -158,7 +160,11 @@ export function acceptReanchorVote(
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   message: SignedMessageValue,
   statement: EvidenceStatement,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return acceptReanchorVoteEffect(run, ingress, message, statement).pipe(
     Effect.withSpan("acceptReanchorVote"),
   );
@@ -175,7 +181,11 @@ export function acceptCompletedReanchor(
   run: ReanchorRun,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   completed: CompletedReanchorValue,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return acceptCompletedReanchorEffect(run, ingress, completed).pipe(
     Effect.withSpan("acceptCompletedReanchor"),
   );
@@ -184,12 +194,12 @@ export function acceptCompletedReanchor(
 function finishRestartedPosition(
   run: ReanchorRun,
   membership: VerifiedMembership,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const conversationId = membership.descriptor.conversationId;
   if (!run.reanchoring.has(conversationId)) {
     return finishAnchoredPosition(run, membership);
   }
-  return durablePosition(run.runtime, conversationId).pipe(
+  return durablePosition(conversationId).pipe(
     Effect.flatMap(({ recovery, position }) => {
       if (position === undefined) {
         return Effect.fail(persistenceFailure());
@@ -243,7 +253,7 @@ interface RestartedPositionInput {
  */
 function advanceRestartedPosition(
   input: RestartedPositionInput,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const { head, membership, position, recovery, run } = input;
   const conversationId = membership.descriptor.conversationId;
   if (currentAnchorForRecovery(run, conversationId) !== undefined) {
@@ -276,7 +286,7 @@ function advanceRestartedPosition(
 function finishAnchoredPosition(
   run: ReanchorRun,
   membership: VerifiedMembership,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const conversationId = membership.descriptor.conversationId;
   const anchor = currentAnchorForRecovery(run, conversationId);
   const relay =
@@ -291,7 +301,11 @@ function acceptReanchorVoteEffect(
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   message: SignedMessageValue,
   statement: EvidenceStatement,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   if (statement.kind !== "reanchor_vote") {
     return Effect.succeed(ignoredDisposition);
   }
@@ -324,7 +338,8 @@ function verifyInboundVote(
   vote: Readonly<{ message: SignedMessageValue; statement: EvidenceStatement }>,
 ): Effect.Effect<
   RouterIngressDisposition,
-  ClientRepresentationError | RouterWorkerPersistenceError
+  ClientRepresentationError | RouterWorkerPersistenceError,
+  SqlClient.SqlClient
 > {
   return verifyDeliveredEvidence({
     outer: ingress.message,
@@ -352,7 +367,11 @@ function acceptCompletedReanchorEffect(
   run: ReanchorRun,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   completed: CompletedReanchorValue,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const conversationId = completed.reanchor.conversationId;
   const membership = run.membership(conversationId);
   if (
@@ -428,7 +447,7 @@ function processReanchorVote(
   run: ReanchorRun,
   membership: VerifiedMembership,
   vote: PendingReanchorVote,
-): Effect.Effect<boolean, RouterWorkerPersistenceError> {
+): Effect.Effect<boolean, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   if (!run.isActive() || !voteTargetsRecovery(run, membership, vote)) {
     return Effect.succeed(false);
   }
@@ -509,9 +528,9 @@ function processReadyReanchorVote(
   run: ReanchorRun,
   membership: VerifiedMembership,
   vote: PendingReanchorVote,
-): Effect.Effect<boolean, RouterWorkerPersistenceError> {
+): Effect.Effect<boolean, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const body = vote.statement.reanchor;
-  return durablePosition(run.runtime, body.conversationId).pipe(
+  return durablePosition(body.conversationId).pipe(
     Effect.flatMap(({ recovery, position }) => {
       if (position === undefined) {
         return Effect.fail(persistenceFailure());
@@ -556,7 +575,8 @@ function decodePosition(
   currentAnchorHash: string,
 ): Effect.Effect<
   Readonly<{ head: RecordHashValue; anchor: AnchorHashValue }>,
-  RouterWorkerPersistenceError
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
 > {
   return Effect.all({
     head: Schema.decodeUnknown(RecordHash)(headRecordHash),
@@ -587,7 +607,11 @@ const declineVote: ReadyVoteAction = "decline";
 
 function reconcileCandidatePosition(
   input: CandidatePositionInput,
-): Effect.Effect<ReadyVoteAction, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  ReadyVoteAction,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return selectedHeadAction(input).pipe(
     Effect.map((action) =>
       action === certifyVote
@@ -610,7 +634,11 @@ function reconcileCandidatePosition(
  */
 function selectedHeadAction(
   input: CandidatePositionInput,
-): Effect.Effect<ReadyVoteAction, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  ReadyVoteAction,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const { body, head, recovery, run } = input;
   if (body.selectedRecordHash === head) {
     return Effect.succeed(
@@ -691,7 +719,7 @@ function proposeReanchor(
   run: ReanchorRun,
   membership: VerifiedMembership,
   position: EndpointRecovery["positions"][number],
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   if (!run.isActive()) {
     return Effect.void;
   }
@@ -723,7 +751,11 @@ function makeReanchorBody(
   membership: VerifiedMembership,
   position: EndpointRecovery["positions"][number],
   selectedRecordHash: string,
-): Effect.Effect<ReanchorBodyValue, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  ReanchorBodyValue,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const conversation = run.runtime.conversations.get(
     membership.descriptor.conversationId,
   );
@@ -756,7 +788,7 @@ function proposeReanchorCandidate(
   membership: VerifiedMembership,
   body: ReanchorBodyValue,
   anchorHash: AnchorHashValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return stageReanchorCandidate(run, membership, body, anchorHash).pipe(
     Effect.flatMap((staged) =>
       staged ? voteAndComplete(run, membership, body, anchorHash) : Effect.void,
@@ -777,12 +809,12 @@ function certifyReanchorVote(
   run: ReanchorRun,
   membership: VerifiedMembership,
   vote: PendingReanchorVote,
-): Effect.Effect<boolean, RouterWorkerPersistenceError> {
+): Effect.Effect<boolean, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const body = vote.statement.reanchor;
   const anchorHash = vote.statement.anchorHash;
   return stageReanchorCandidate(run, membership, body, anchorHash).pipe(
     Effect.flatMap((staged) =>
-      staged ? persistReanchorVote(run.runtime, vote) : Effect.succeed(false),
+      staged ? persistReanchorVote(vote) : Effect.succeed(false),
     ),
     Effect.flatMap((counts) =>
       counts
@@ -799,7 +831,7 @@ function voteAndComplete(
   membership: VerifiedMembership,
   body: ReanchorBodyValue,
   anchorHash: AnchorHashValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return ensureLocalReanchorVote(run, membership, body, anchorHash).pipe(
     Effect.zipRight(
       completeReanchorAtThreshold(run, membership, body, anchorHash),
@@ -824,8 +856,8 @@ function stageReanchorCandidate(
   membership: VerifiedMembership,
   body: ReanchorBodyValue,
   anchorHash: AnchorHashValue,
-): Effect.Effect<boolean, RouterWorkerPersistenceError> {
-  return durablePosition(run.runtime, body.conversationId).pipe(
+): Effect.Effect<boolean, RouterWorkerPersistenceError, SqlClient.SqlClient> {
+  return durablePosition(body.conversationId).pipe(
     Effect.flatMap(({ recovery, position }) => {
       if (
         !run.isActive() ||
@@ -848,7 +880,7 @@ function stageReanchorCandidate(
       if (staged !== undefined && staged.anchorHash !== anchorHash) {
         return Effect.succeed(false);
       }
-      return persistReanchorCandidate(run.runtime, body, anchorHash);
+      return persistReanchorCandidate(body, anchorHash);
     }),
     Effect.mapError(persistenceFailure),
   );
@@ -888,14 +920,13 @@ function stagedCandidate(
 }
 
 function persistReanchorCandidate(
-  runtime: EngineRuntime,
   body: ReanchorBodyValue,
   anchorHash: AnchorHashValue,
-): Effect.Effect<boolean, RouterWorkerPersistenceError> {
+): Effect.Effect<boolean, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return encodeCanonical(ReanchorBody, body).pipe(
     Effect.mapError(persistenceFailure),
     Effect.flatMap((canonicalBody) =>
-      runtime.input.store.stageReanchor({
+      Store.stageReanchor({
         conversationId: body.conversationId,
         anchorHash,
         previousAnchorHash: body.previousAnchorHash,
@@ -928,13 +959,13 @@ function ensureLocalReanchorVote(
   membership: VerifiedMembership,
   body: ReanchorBodyValue,
   anchorHash: AnchorHashValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   if (!run.isActive()) {
     return Effect.void;
   }
   const localAgentId = run.runtime.input.localAgentCard.agentId;
   const statement = localReanchorVoteStatement(run.runtime, body, anchorHash);
-  return decodeReanchorVotes(run.runtime, membership, body, anchorHash).pipe(
+  return decodeReanchorVotes(membership, body, anchorHash).pipe(
     Effect.flatMap((votes) => {
       const message = votes.find((vote) => vote.senderAgentId === localAgentId);
       if (message === undefined) {
@@ -977,7 +1008,7 @@ function createLocalReanchorVote(
   run: ReanchorRun,
   membership: VerifiedMembership,
   statement: PendingReanchorVote["statement"],
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return signEvidenceMessage({
     statement,
     agentCard: run.runtime.input.localAgentCard,
@@ -986,7 +1017,7 @@ function createLocalReanchorVote(
     Effect.mapError(persistenceFailure),
     Effect.flatMap((message) => {
       const vote: PendingReanchorVote = { message, statement };
-      return persistReanchorVote(run.runtime, vote).pipe(
+      return persistReanchorVote(vote).pipe(
         Effect.filterOrFail(
           (persisted) => persisted,
           () => persistenceFailure(),
@@ -1003,11 +1034,11 @@ function completeReanchorAtThreshold(
   membership: VerifiedMembership,
   body: ReanchorBodyValue,
   anchorHash: AnchorHashValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   if (!run.isActive() || run.isRecovered(body.conversationId)) {
     return Effect.void;
   }
-  return decodeReanchorVotes(run.runtime, membership, body, anchorHash).pipe(
+  return decodeReanchorVotes(membership, body, anchorHash).pipe(
     Effect.flatMap((votes) =>
       votes.length < quorumThreshold(membership.members.length)
         ? Effect.succeed(undefined)
@@ -1025,7 +1056,7 @@ function finalizeCompletedReanchor(
   run: ReanchorRun,
   membership: VerifiedMembership,
   completed: CompletedReanchorValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return verifyCompletedReanchor({ completed, membership }).pipe(
     Effect.mapError(persistenceFailure),
     Effect.zipRight(persistCompletedReanchor(run.runtime, completed)),
@@ -1051,7 +1082,7 @@ function replayReanchorVotes(
   membership: VerifiedMembership,
   conversationId: ConversationIdValue,
   headRecordHash: RecordHashValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const candidates = run.isActive() ? run.votes.get(conversationId) : undefined;
   if (candidates === undefined) {
     return Effect.void;
@@ -1071,7 +1102,7 @@ function replayCandidateVotes(
     PendingReanchorVote
   >,
   headRecordHash: RecordHashValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return Effect.forEach(
     votes.values(),
     (vote) =>

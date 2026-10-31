@@ -95,17 +95,6 @@ export class TextPolicySettings extends Schema.Class<TextPolicySettings>(
 
 const editableRuleSchema = exactStruct(TextRule.fields);
 
-const policyAuthority = Schema.Literal("owner", "runtime");
-
-/** The daemon derives edit authority from its authenticated local caller. */
-export type PolicyAuthority = typeof policyAuthority.Type;
-
-/** Ownership is assigned after authenticating the local caller. */
-const ownedRuleSchema = exactStruct({
-  ...TextRule.fields,
-  owner: policyAuthority,
-});
-
 /** The most editable natural-language rules one daemon holds, across seeding, persistence and updates. */
 export const MAXIMUM_EDITABLE_RULES = 256;
 
@@ -152,7 +141,7 @@ const fixedRuleSchema = Schema.Union(
 
 /** The digest identifies the entire active installation, including fixed policy. */
 export const policyReadSchema = exactStruct({
-  rules: Schema.Array(ownedRuleSchema),
+  rules: editableDocumentSchema,
   fixedRules: Schema.Array(fixedRuleSchema),
   activeRevision: Schema.NonEmptyString,
 });
@@ -215,7 +204,6 @@ export const firewallDecisionsSchema = exactStruct({
         exactStruct({
           ruleId: Schema.NonEmptyString,
           from: Schema.Literal("code", "fixed", "editable"),
-          owner: Schema.optional(policyAuthority),
           advice: Schema.optional(Schema.NonEmptyString),
         }),
       ),
@@ -259,8 +247,6 @@ const policyReasonText: Readonly<
   "invalid-rule": "the update is invalid",
   "fixed-rule":
     "it is a fixed rule of the owner's policy, which policy_update cannot add, remove or replace",
-  "owner-rule":
-    "it belongs to the owner; runtime policy_update can change only rules the runtime adopted",
   "build-failed": "the new rules could not be installed",
   "persistence-failed": "the rules could not be stored",
 };
@@ -285,7 +271,6 @@ export class FirewallPolicyError extends Data.TaggedError(
     | "not-configured"
     | "invalid-rule"
     | "fixed-rule"
-    | "owner-rule"
     | "build-failed"
     | "persistence-failed";
 }> {
@@ -296,12 +281,7 @@ export class FirewallPolicyError extends Data.TaggedError(
         ? policyReasonText[this.reason]
         : policyProblemText[this.problem];
     const text = subject === undefined ? cause : `${subject}: ${cause}`;
-    return [
-      "invalid-rule",
-      "fixed-rule",
-      "owner-rule",
-      "build-failed",
-    ].includes(this.reason)
+    return ["invalid-rule", "fixed-rule", "build-failed"].includes(this.reason)
       ? `${text}. ${editRefusalDocs}`
       : text;
   }
@@ -321,21 +301,6 @@ export class FirewallPolicyError extends Data.TaggedError(
       ...(this.problem === undefined ? {} : { problem: this.problem }),
     };
   }
-}
-
-/** The authenticated authority limits edits without delegating owner read access. */
-export interface FirewallPolicyOperations {
-  readonly read: () => Effect.Effect<
-    typeof policyReadSchema.Type,
-    FirewallPolicyError
-  >;
-  readonly update: (
-    request: typeof policyUpdateSchema.Type,
-    authority: PolicyAuthority,
-  ) => Effect.Effect<typeof policyUpdateResultSchema.Type, FirewallPolicyError>;
-  readonly decisions: (
-    request: typeof firewallDecisionsRequestSchema.Type,
-  ) => Effect.Effect<typeof firewallDecisionsSchema.Type, FirewallPolicyError>;
 }
 
 /** Closed reasons the policy settings cannot start the daemon. */
@@ -652,7 +617,6 @@ const installationDocs: Readonly<
 > = {
   "invalid-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
   "fixed-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
-  "owner-rule": `${FIREWALL_GUIDE}#rules-not-installed`,
   "build-failed": `${FIREWALL_GUIDE}#rules-not-installed`,
   "persistence-failed": "",
 };

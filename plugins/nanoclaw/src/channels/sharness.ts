@@ -26,12 +26,15 @@ import {
   Effect,
   Exit,
   Option,
+  Redacted,
   Schema,
   Scope,
   Stream,
 } from "effect";
 import { absurd } from "effect/Function";
 import { randomUUID } from "node:crypto";
+// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Native host plugins read one credential without requiring a platform service from the host.
+import { readFile } from "node:fs/promises";
 import type { ChannelSetup, InboundMessage } from "./adapter.js";
 import { registerChannelAdapter } from "./channel-registry.js";
 
@@ -382,7 +385,37 @@ class HarnessChannelAdapter {
         new ChannelError({
           reason: "Social Harness channel MCP endpoint is invalid",
         }),
-    }).pipe(Effect.flatMap(acquireHarnessEndpoint), Scope.extend(scope));
+    }).pipe(
+      Effect.flatMap((endpoint) =>
+        Effect.gen(function* () {
+          const credentialFile = yield* Config.redacted(
+            "SHARNESS_MCP_CREDENTIAL_FILE",
+          ).pipe(
+            Effect.catchTag("ConfigError", () =>
+              Effect.fail(
+                new ChannelError({
+                  reason:
+                    "SHARNESS_MCP_CREDENTIAL_FILE is required. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#mcp-credential-file",
+                }),
+              ),
+            ),
+          );
+          const credential = yield* Effect.tryPromise({
+            try: () => readFile(Redacted.value(credentialFile), "utf8"),
+            catch: () =>
+              new ChannelError({
+                reason:
+                  "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#mcp-credential-file",
+              }),
+          });
+          return yield* acquireHarnessEndpoint(endpoint, {
+            credential: Redacted.make(credential),
+            receiveMode: "push",
+          });
+        }),
+      ),
+      Scope.extend(scope),
+    );
   }
 
   private deliverEffect(

@@ -15,7 +15,11 @@ import { Chunk, Deferred, Effect, Fiber, Schema, Stream } from "effect";
 import { describe, expect } from "vitest";
 import type { HarnessMessageReadyEvent } from "../../host-protocol/operations.js";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
-import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
+import {
+  loopbackMcpEndpoint,
+  mcpTestCredential,
+  mcpTestHeaders,
+} from "../../__tests__/mcp-http-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { DeliveryToken } from "../../communication/store/index.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
@@ -129,7 +133,6 @@ const inboxOperations = (inbox: MemoryInbox): HarnessMcpOperations => ({
   protocolActive: () => true,
   readStatus: unreachable,
   register: unreachable,
-  searchAgents: unreachable,
   searchConversations: unreachable,
   readConversation: unreachable,
   send: unreachable,
@@ -160,6 +163,7 @@ const acquireEventsServer = Effect.gen(function* () {
   const attached = yield* Deferred.make<undefined>();
   const detached = yield* Deferred.make<undefined>();
   const handler = yield* makeHarnessMcpHttpHandler({
+    credential: mcpTestCredential,
     implementation,
     operations: inboxOperations(inbox),
     onSubscriptionActiveChange: (active) => {
@@ -233,6 +237,7 @@ const rawRequest = (
   HttpClient.execute(
     HttpClientRequest.post(endpoint).pipe(
       HttpClientRequest.setHeaders({
+        ...mcpTestHeaders,
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
         "mcp-method": method,
@@ -311,7 +316,10 @@ const catchesUpAndDrainsNewArrivals = () =>
     const harness = yield* acquireRacingEventsServer;
     const guidance = localGuidance(1);
     harness.add({ ...delivery(1), guidance });
-    const endpoint = yield* acquireHarnessEndpoint(harness.endpoint);
+    const endpoint = yield* acquireHarnessEndpoint(harness.endpoint, {
+      credential: mcpTestCredential,
+      receiveMode: "push",
+    });
     const firstAccepted = yield* Deferred.make<undefined>();
     const received = yield* endpoint.messages.pipe(
       Stream.tap((item) =>
@@ -345,8 +353,14 @@ const catchesUpAndDrainsNewArrivals = () =>
 const preservesExclusiveOwnership = () =>
   Effect.gen(function* () {
     const harness = yield* acquireEventsServer;
-    const first = yield* acquireHarnessEndpoint(harness.endpoint);
-    const second = yield* acquireHarnessEndpoint(harness.endpoint);
+    const first = yield* acquireHarnessEndpoint(harness.endpoint, {
+      credential: mcpTestCredential,
+      receiveMode: "push",
+    });
+    const second = yield* acquireHarnessEndpoint(harness.endpoint, {
+      credential: mcpTestCredential,
+      receiveMode: "push",
+    });
     const running = yield* first.messages.pipe(
       Stream.runDrain,
       Effect.forkScoped,

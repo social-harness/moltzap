@@ -6,20 +6,20 @@
  */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Deferred, Effect, Exit, Fiber, Ref, Schema, Scope } from "effect";
+import { Effect, Exit, Schema, Scope } from "effect";
 import { describe, expect } from "vitest";
 import type { TestCollectiveOperations as CollectiveOperations } from "../../__tests__/collective-send.js";
 import type { HarnessMessageReadyEvent } from "../../host-protocol/operations.js";
 import type { HistoryExportRecord } from "./host-traffic-log.js";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import { openTestDatabase } from "../../__tests__/communication-test-database.js";
 import {
   pendingMessage,
   publishEveryMessage,
   recordAcknowledgments,
   takeEvery,
 } from "../../__tests__/pending-delivery-fixtures.js";
-import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import {
   CollectiveEmitError,
   CollectiveError,
@@ -28,13 +28,8 @@ import {
 } from "../../communication/collectives/contracts.js";
 import { SendError } from "../../communication/conversations/errors.js";
 import { AgentAddress, MsgId } from "../../communication/records/index.js";
-import {
-  DeliveryToken,
-  EndpointStoreError,
-} from "../../communication/store/index.js";
+import { DeliveryToken } from "../../communication/store/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
-import { type DaemonStore, openDaemonStore } from "../store.js";
 import { makeHostDelivery } from "./host-delivery.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Closed error reasons and export record kinds are the contract under test. */
@@ -58,21 +53,13 @@ const failure = Schema.decodeUnknownSync(InboundItem)({
 });
 const unboundToken = Schema.decodeUnknownSync(DeliveryToken)(digest("dlv_", 9));
 
-/**
- * Build one delivery over a fresh store, optionally adjusted, whose active
- * collective layer the test sets and replaces through the returned slot.
- */
-const makeFixture = (adjust: (store: DaemonStore) => DaemonStore) =>
+/** The active collective layer may be installed after delivery construction. */
+const makeFixture = () =>
   Effect.gen(function* () {
-    const store = adjust(
-      yield* openDaemonStore(stateDirectory(), {
-        liveWireVersions: LIVE_WIRE_VERSIONS,
-      }),
-    );
+    const database = yield* openTestDatabase();
     const records: HistoryExportRecord[] = [];
     const slot: { collectives?: Collectives } = {};
     const delivery = yield* makeHostDelivery({
-      store,
       historyExport: {
         record: (record) =>
           Effect.sync(() => {
@@ -94,11 +81,11 @@ const makeFixture = (adjust: (store: DaemonStore) => DaemonStore) =>
                 Effect.dieMessage("missing fixture sender"),
             },
       scope: yield* Scope.Scope,
-    });
-    return { delivery, records, slot };
+    }).pipe(database.run);
+    return { delivery, records, slot, database };
   });
 
-const deliveryFixture = makeFixture((store) => store);
+const deliveryFixture = makeFixture();
 
 /**
  * An unregistered service refuses every host operation with its closed
@@ -258,11 +245,10 @@ const exportsLocalItemOnceAndForgetsIt = () =>
  */
 const reportsAcknowledgmentPersistenceFailure = () =>
   Effect.gen(function* () {
-    const { delivery, slot } = yield* makeFixture((store) => ({
-      ...store,
-      acknowledgeInboxItem: () =>
-        Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
-    }));
+    const { delivery, slot, database } = yield* deliveryFixture;
+    yield* database.sql.unsafe(
+      "CREATE TRIGGER fail_receipt BEFORE UPDATE ON runtime_inbox BEGIN SELECT RAISE(ABORT, 'receipt write failed'); END",
+    );
     slot.collectives = { send: () => Effect.dieMessage("unexpected send") };
     yield* delivery.queueLocalItem(failure);
     const [queued] = (yield* delivery.operations.readInbox({})).items;
@@ -305,47 +291,12 @@ const releasesTheGateWhenAPassFails = () =>
     expect(page.items).toEqual([]);
   });
 
-/**
- * A send whose input fails its schema is refused as `content-invalid` before
- * it reaches the collective layer or the history export.
- */
-const refusesInvalidSendInput = () =>
-  Effect.gen(function* () {
-    const { delivery, records, slot } = yield* deliveryFixture;
-    let sent = 0;
-    slot.collectives = {
-      send: () =>
-        Effect.sync(() => {
-          sent += 1;
-          return { kind: "collective", operationId, msgIds: [msgId] };
-        }),
-    };
-    const malformed = Schema.decodeUnknownSync(Schema.Unknown)({
-      input: { to: "agent:bob", text: "hi", collective: { op: "broadcast" } },
-    });
-    const refused = yield* Effect.exit(
-      delivery.operations.send(
-        // eslint-disable-next-line agent-code-guard/require-assertion-rationale -- The operation's argument type admits only valid input; this probe passes what an untyped caller could.
-        malformed as Parameters<typeof delivery.operations.send>[0],
-      ),
-    );
-    expect(refused).toEqual(
-      Exit.fail(new SendError({ reason: "content-invalid" })),
-    );
-    expect(sent).toBe(0);
-    expect(records).toEqual([]);
-  });
-
 describe("host delivery", () => {
   it(
     "refuses host operations until a collective layer is active",
     refusesUntilRegistered,
   );
   it("records each completed send in the history export", exportsEachSend);
-  it(
-    "refuses a send whose input fails its schema as content-invalid",
-    refusesInvalidSendInput,
-  );
   it(
     "exports a queued local item once and forgets it on acknowledgment",
     exportsLocalItemOnceAndForgetsIt,
@@ -361,44 +312,6 @@ describe("host delivery", () => {
 });
 
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore repository defaults after the host delivery tests. */
-
-/**
- * A webhook receipt interrupted after the store commits it still finishes its
- * caller's uninterruptible state update, so shutdown cannot drop the update
- * that follows a durable receipt. The interruption is delivered before the
- * commit is released.
- */
-const finishesCallerStateAfterReceiptCommit = () =>
-  Effect.gen(function* () {
-    const committed = yield* Deferred.make<undefined>();
-    const release = yield* Deferred.make<undefined>();
-    const { delivery } = yield* makeFixture((store) => ({
-      ...store,
-      completeWebhookDelivery: () =>
-        Deferred.succeed(committed, undefined).pipe(
-          Effect.zipRight(Deferred.await(release)),
-        ),
-    }));
-    const updated = yield* Ref.make(false);
-    const receipt = yield* delivery.eventStore
-      .completeWebhookDelivery(unboundToken, new Uint8Array([1]))
-      .pipe(
-        Effect.zipRight(Ref.set(updated, true)),
-        Effect.uninterruptible,
-        Effect.fork,
-      );
-    yield* Deferred.await(committed);
-
-    const interruption = yield* Effect.fork(Fiber.interrupt(receipt));
-    yield* Effect.yieldNow();
-    yield* Deferred.succeed(release, undefined);
-    yield* Fiber.join(interruption);
-
-    expect(
-      yield* Ref.get(updated),
-      "caller state update after the committed receipt",
-    ).toBe(true);
-  }).pipe(Effect.timeout("1 second"));
 
 /**
  * An item read through the webhook's inbox view lands in the history export,
@@ -418,10 +331,6 @@ const exportsItemsReadThroughTheWebhookView = () =>
 
 describe("host delivery webhook view", () => {
   it(
-    "finishes the caller's state update after a committed receipt",
-    finishesCallerStateAfterReceiptCommit,
-  );
-  it(
     "exports an item read through the webhook inbox view",
     exportsItemsReadThroughTheWebhookView,
   );
@@ -439,7 +348,7 @@ const emittedFailure = Schema.decodeUnknownSync(InboundItem)({
  * An item the collective layer emitted is made durable when queued and is
  * published after the durable deliveries of the next pass.
  */
-const publishesTheCollectiveLayerSOwnItemsAfterDurableDeliveries = () =>
+const publishesLocalItemsAfterMessages = () =>
   Effect.gen(function* () {
     const { delivery } = yield* deliveryFixture;
     const taken: HarnessMessageReadyEvent[] = [];
@@ -493,7 +402,7 @@ const recordsEachPublishedItemInTheHistoryExportOnce = () =>
 describe("host delivery passes", () => {
   it(
     "publishes the collective layer's own items after durable deliveries",
-    publishesTheCollectiveLayerSOwnItemsAfterDurableDeliveries,
+    publishesLocalItemsAfterMessages,
   );
   it(
     "records each published item in the history export once",

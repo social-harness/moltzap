@@ -1,10 +1,8 @@
 /** @file Closed store errors, canonical value checks, and row projections. */
 
-import { Data } from "effect";
+import { Data, Effect } from "effect";
 import { randomBytes } from "node:crypto";
 import { sameBytes } from "../../../encoding/canonical-json.js";
-import { decodeCanonicalBase64Url } from "../../../encoding/identifier.js";
-
 /** Closed storage failures that never expose SQLite diagnostics. */
 export type EndpointStoreFailure =
   | "closed"
@@ -15,27 +13,20 @@ export type EndpointStoreFailure =
   | "invalid-input"
   | "not-found"
   | "persistence";
-
 /** One closed endpoint-store failure. */
 export class EndpointStoreError extends Data.TaggedError("EndpointStoreError")<{
   readonly reason: EndpointStoreFailure;
-  /** Absent means the store has no evidence that excludes a commit. */
-  readonly commitOutcome?: "not-committed";
 }> {}
-
 /** Pending signed bytes require an earlier release to drain the outbox. */
 export class OutboxTooOldError extends Data.TaggedError("OutboxTooOldError") {}
-
 /** Internal control-flow signal mapped to the closed store error. */
 export class StoreSignal extends Error {
   readonly reason: EndpointStoreFailure;
-
   constructor(reason: EndpointStoreFailure) {
     super(reason);
     this.reason = reason;
   }
 }
-
 /**
  * Maps every internal failure to the store's closed error channel.
  *
@@ -54,55 +45,20 @@ export function mapStoreFailure(
     reason: failure instanceof StoreSignal ? failure.reason : fallback,
   });
 }
-
-/**
- * Validates a process-local continuation's exact external form.
- *
- * @param continuation Candidate unpadded base64url authority.
- */
-export function validateContinuation(continuation: string): void {
-  if (!/^[A-Za-z0-9_-]{43}$/u.test(continuation)) {
-    throw new StoreSignal("invalid-continuation");
-  }
-  if (decodeCanonicalBase64Url(continuation)?.byteLength !== 32) {
-    throw new StoreSignal("invalid-continuation");
-  }
-}
-
-/**
- * Mints one collision-checked 32-byte volatile continuation.
- *
- * @param retained Existing process-local continuation keys.
- * @returns One fresh canonical unpadded base64url value.
- */
-export function mintContinuation(retained: ReadonlySet<string>): string {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const continuation = randomBytes(32).toString("base64url");
-    if (!retained.has(continuation)) {
-      return continuation;
+/** Random durable identities are checked against retained bindings before use. */
+export function mintDeliveryToken<E, R>(
+  isRetained: (token: string) => Effect.Effect<boolean, E, R>,
+): Effect.Effect<string, E | EndpointStoreError, R> {
+  return Effect.gen(function* () {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const token = `dlv_${randomBytes(32).toString("base64url")}`;
+      if (!(yield* isRetained(token))) {
+        return token;
+      }
     }
-  }
-  throw new StoreSignal("persistence");
+    return yield* new EndpointStoreError({ reason: "persistence" });
+  }).pipe(Effect.withSpan("mintDeliveryToken"));
 }
-
-/**
- * Mints one collision-checked durable delivery token.
- *
- * @param isRetained Whether a durable token already exists.
- * @returns One fresh `dlv_` token over 32 random bytes.
- */
-export function mintDeliveryToken(
-  isRetained: (token: string) => boolean,
-): string {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const deliveryToken = `dlv_${randomBytes(32).toString("base64url")}`;
-    if (!isRetained(deliveryToken)) {
-      return deliveryToken;
-    }
-  }
-  throw new StoreSignal("persistence");
-}
-
 /**
  * Reads and copies one nullable SQLite BLOB.
  *
@@ -120,7 +76,6 @@ export function readOptionalBytes(
   }
   return readBytes(row, key);
 }
-
 /**
  * Reads and copies one required SQLite BLOB.
  *
@@ -138,7 +93,6 @@ export function readBytes(
   }
   return copyBytes(value);
 }
-
 /**
  * Returns an isolated copy of canonical bytes.
  *
@@ -148,7 +102,6 @@ export function readBytes(
 export function copyBytes(value: Uint8Array): Uint8Array {
   return new Uint8Array(value);
 }
-
 /**
  * Reads one nullable nonempty SQLite TEXT.
  *
@@ -166,7 +119,6 @@ export function readOptionalText(
   }
   return readText(row, key);
 }
-
 /**
  * Reads one required nonempty SQLite TEXT.
  *
@@ -184,7 +136,6 @@ export function readText(
   }
   return value;
 }
-
 /**
  * Reads one safe SQLite INTEGER.
  *
@@ -202,7 +153,6 @@ export function readInteger(
   }
   return value;
 }
-
 /**
  * Requires two optional byte bindings to be both absent or byte-identical.
  *
@@ -221,7 +171,6 @@ export function requireSameOptionalBytes(
   }
   requireSameBytes(prior, next);
 }
-
 /**
  * Requires canonical byte equality for idempotent state.
  *
@@ -233,7 +182,6 @@ export function requireSameBytes(left: Uint8Array, right: Uint8Array): void {
     throw new StoreSignal("conflict");
   }
 }
-
 /**
  * Requires two exact bindings, including optional bindings, to agree.
  *
@@ -245,7 +193,6 @@ export function requireEqual<Value>(left: Value, right: Value): void {
     throw new StoreSignal("conflict");
   }
 }
-
 /**
  * Rejects empty and NUL-bearing values before they reach SQLite.
  *
@@ -256,7 +203,6 @@ export function requireText(value: string): void {
     throw new StoreSignal("invalid-input");
   }
 }
-
 /**
  * Rejects empty or non-byte canonical values before persistence.
  *

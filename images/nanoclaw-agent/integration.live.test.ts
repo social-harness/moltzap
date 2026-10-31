@@ -48,7 +48,11 @@ const SLOT_SCHEMA = {
 };
 
 /** The parts of a network endpoint the cases use. */
-interface Endpoint extends Pick<NetworkEndpoint, "address" | "mcp" | "agent"> {
+interface Endpoint
+  extends Pick<
+    NetworkEndpoint,
+    "address" | "mcp" | "agent" | "mcpCredentialFile"
+  > {
   send(input: object): Promise<{ readonly operationId?: string }>;
   next(count: number): Promise<readonly unknown[]>;
   history(address: string): Promise<readonly unknown[]>;
@@ -126,7 +130,7 @@ async function routesThroughNativeBoundaries({
   const callerReceived = caller.next(2);
   const peerReceived = peer.next(1);
   await runProbe(
-    target.mcp,
+    target,
     [
       { to: caller.address, text: DIRECT_REPLY },
       { to: shared, text: GROUP_REPLY, final: true },
@@ -169,15 +173,19 @@ async function assertRepliesRecorded(
   { caller, target, peer }: Trio,
   shared: string,
 ): Promise<undefined> {
-  const directHistory = [
+  assert.deepEqual(await caller.history(target.address), [
     multicastContent(INBOUND),
+    [{ type: "text", text: DIRECT_REPLY }],
+  ]);
+  assert.deepEqual(await target.history(caller.address), [
+    [{ type: "text", text: INBOUND }],
     multicastContent(DIRECT_REPLY),
-  ];
-  assert.deepEqual(await caller.history(target.address), directHistory);
-  assert.deepEqual(await target.history(caller.address), directHistory);
+  ]);
   for (const endpoint of [caller, target, peer]) {
     assert.deepEqual(await endpoint.history(shared), [
-      multicastContent(GROUP_REPLY),
+      endpoint === target
+        ? multicastContent(GROUP_REPLY)
+        : [{ type: "text", text: GROUP_REPLY }],
     ]);
   }
 }
@@ -194,7 +202,7 @@ async function answersAndStartsGather({
   const operationId = started.operationId ?? "";
   const received = caller.next(1);
   await runProbe(
-    target.mcp,
+    target,
     [
       { to: caller.address, text: acceptText("tue") },
       { to: caller.address, text: gatherText("gather") },
@@ -254,7 +262,7 @@ async function answersAndStartsAllGather(endpoints: Trio): Promise<undefined> {
   const group = groupAddress([caller, target, peer]);
   const operationId = await startDeclinedAllGather(endpoints, group);
   await runProbe(
-    target.mcp,
+    target,
     [
       { to: group, text: acceptText("tue") },
       { to: group, text: gatherText("all_gather") },
@@ -391,7 +399,7 @@ async function completesPendingSendOnce(
   await caller.send({ to: target.address, text: INBOUND });
   await awaitRecordedLast(target, caller.address, INBOUND);
   const delivery = await whileRouterHeld(network, () =>
-    probeDelivery(target.mcp, [{ to: caller.address, text: PENDING_SEND }], {
+    probeDelivery(target, [{ to: caller.address, text: PENDING_SEND }], {
       platformId: caller.address,
       sender: caller.address,
       text: INBOUND,
@@ -408,7 +416,11 @@ async function completesPendingSendOnce(
       delivered: 1,
       retried: 0,
       endpointMessages: [PENDING_REPORT],
-      posts: [INBOUND, PENDING_SEND, FENCE].map(multicastContent),
+      posts: [
+        multicastContent(INBOUND),
+        [{ type: "text", text: PENDING_SEND }],
+        [{ type: "text", text: FENCE }],
+      ],
     },
   );
 }
@@ -437,7 +449,7 @@ async function awaitRecordedLast(
   address: string,
   text: string,
 ): Promise<readonly unknown[]> {
-  const expected = multicastContent(text);
+  const expected = [{ type: "text", text }];
   const deadline = Date.now() + RECORD_TIMEOUT_MILLIS;
   let lastRead: HistoryRead = { failure: "no read" };
   while (Date.now() < deadline) {
@@ -529,12 +541,12 @@ function multicastSummary(item: unknown): Readonly<Record<string, unknown>> {
  * delivery pass completed every send, leaving none for a retry.
  */
 async function runProbe(
-  mcp: URL,
+  daemon: Pick<Endpoint, "mcp" | "mcpCredentialFile">,
   destinations: readonly Destination[],
   inbound: ExpectedInbound,
 ): Promise<undefined> {
   const { delivered, retried } = await probeDelivery(
-    mcp,
+    daemon,
     destinations,
     inbound,
   );
@@ -549,7 +561,7 @@ async function runProbe(
  * at `mcp`, and return its report once it exits 0.
  */
 async function probeDelivery(
-  mcp: URL,
+  daemon: Pick<Endpoint, "mcp" | "mcpCredentialFile">,
   destinations: readonly Destination[],
   inbound: ExpectedInbound,
 ): Promise<ProbeReport> {
@@ -559,10 +571,14 @@ async function probeDelivery(
       "run",
       "--rm",
       "--pull=never",
-      `--network=container:${mcp.port ? "sharness-daemon-" + mcp.port : ""}`,
+      `--network=container:${daemon.mcp.port ? "sharness-daemon-" + daemon.mcp.port : ""}`,
       "--entrypoint=node",
       "--env",
-      `SHARNESS_MCP_URL=${mcp.href}`,
+      `SHARNESS_MCP_URL=${daemon.mcp.href}`,
+      "--env",
+      "SHARNESS_MCP_CREDENTIAL_FILE=/run/sharness-mcp-credential",
+      "--volume",
+      `${daemon.mcpCredentialFile}:/run/sharness-mcp-credential:ro`,
       "--env",
       `NANOCLAW_DESTINATIONS_JSON=${JSON.stringify(destinations)}`,
       "--env",

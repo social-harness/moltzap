@@ -136,8 +136,14 @@ function releaseClosure(version: string, view = npmView) {
 function exchange(from: DaemonProcessFixture, to: DaemonProcessFixture) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const sender = yield* acquireHarnessEndpoint(from.endpoint);
-      const receiver = yield* acquireHarnessEndpoint(to.endpoint);
+      const sender = yield* acquireHarnessEndpoint(from.endpoint, {
+        credential: from.mcpCredential,
+        receiveMode: "push",
+      });
+      const receiver = yield* acquireHarnessEndpoint(to.endpoint, {
+        credential: to.mcpCredential,
+        receiveMode: "push",
+      });
       const waiting = yield* Stream.runHead(
         receiver.messages.pipe(Stream.tap((delivery) => delivery.acknowledge)),
       ).pipe(Effect.forkScoped);
@@ -462,9 +468,7 @@ function certifyPair(
         join(current, "node_modules/.bin/sharnessd"),
       );
       for (const fixture of [peer, local]) {
-        const management = yield* acquireDaemonManagementClient(
-          fixture.endpoint,
-        );
+        const management = yield* acquireDaemonManagementClient(fixture);
         const registration = yield* management.register(
           makeRegistrationRequest(fixture),
         );

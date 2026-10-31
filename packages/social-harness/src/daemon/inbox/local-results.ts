@@ -1,5 +1,6 @@
 /** @file Checks collective result text and admits operation failures for host delivery. */
 
+import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect, Array as EffectArray, Schema, Struct } from "effect";
 import type { RecordHash } from "../../communication/records/index.js";
 import type {
@@ -40,7 +41,10 @@ import {
 } from "../../host-protocol/render.js";
 import { AgentView } from "../../identity/cards.js";
 import {
-  contextFrom,
+  readFirewallEvidenceSlices,
+  readFirewallRequestAdmission,
+} from "./evidence.js";
+import {
   type DecodedRecord,
   decodeMessage,
   decodeRecord,
@@ -48,7 +52,9 @@ import {
   hashedId,
   messageFields,
   prepareMessageCheck,
-} from "./message.js";
+} from "./firewall-context.js";
+
+// safer-arch-ignore no-fat-orchestrator: One collective result is checked and saved with its question and answers under one captured policy.
 /** The window of a check with no history: a result's missing record, or a failure. */
 const EMPTY_WINDOW = {
   pendingOutgoing: false,
@@ -72,9 +78,8 @@ type WithheldText = Extract<
 
 /**
  * Check one local item and build its commit. A failure's text is the
- * endpoint's own, so it is admitted without inference under a deterministic
- * check. A result's shell, its members and their outcomes, is always
- * admitted; each answer but the endpoint's own is checked on its own, from
+ * endpoint's own, so it is admitted without inference. A result's shell, its
+ * members and their outcomes, is always admitted; each answer but the endpoint's own is checked on its own, from
  * one evidence capture, and the question when the runtime was never shown
  * its request and no check withheld it. An answer or question a check does
  * not admit becomes `withheld` in the projection the runtime reads.
@@ -167,7 +172,6 @@ function failureAdmission(
         canonicalItem: entry.canonicalItem,
       },
       completions: [],
-      deterministic: yield* deterministicCheck(environment, entry, message),
       answers: [],
       evidence: yield* localEvidence(item.to, message),
     } satisfies FirewallLocalAdmission;
@@ -200,10 +204,10 @@ function checkResultTexts(
 ): Effect.Effect<CheckedResult, EndpointStoreError> {
   return Effect.gen(function* () {
     const { answers, question } = texts;
-    const captured = yield* environment.store.readFirewallEvidenceSlices({
+    const captured = yield* readFirewallEvidenceSlices({
       ranges: resultRanges(result.item, texts),
       maximumRecords: environment.firewall.configuration.maximumHistoryRecords,
-    });
+    }).pipe(Effect.provideService(SqlClient.SqlClient, environment.sql));
     const answerInputs = yield* Effect.forEach(
       answers,
       (answer, index) =>
@@ -226,7 +230,7 @@ function checkResultTexts(
             ),
           ];
     const checks: readonly CheckedMessage[] =
-      inputs.length === 0 ? [] : yield* environment.firewall.checkMany(inputs);
+      inputs.length === 0 ? [] : yield* environment.firewall.check(inputs);
     return yield* checkedResult(texts, checks);
   }).pipe(Effect.withSpan("checkResultTexts"));
 }
@@ -296,15 +300,6 @@ function resultCommit(
       queuedItem: entry.canonicalItem,
       item: yield* projectedEntry(entry, projected, resultGuidance(checked)),
       completions,
-      ...(completions.length === 0
-        ? {
-            deterministic: yield* deterministicCheck(
-              environment,
-              entry,
-              message,
-            ),
-          }
-        : {}),
       answers: checked.answers.map((answer) => ({
         recordHash: answer.recordHash,
         admitted:
@@ -334,28 +329,30 @@ function questionAdmission(
   if (request === undefined) {
     return Effect.succeed({ kind: "shown" });
   }
-  return environment.store.readFirewallRequestAdmission(request).pipe(
-    Effect.flatMap(
-      (admission): Effect.Effect<QuestionAdmission, EndpointStoreError> => {
-        if (admission?.presented === true) {
-          return Effect.succeed({ kind: "shown" });
-        }
-        const enforced =
-          environment.firewall.configuration.mode === "enforcement";
-        return (
-          enforced ? withheldBy(admission) : Effect.succeed(undefined)
-        ).pipe(
-          Effect.map(
-            (withheld): QuestionAdmission =>
-              withheld === undefined
-                ? { kind: "check", recordHash: request }
-                : { kind: "withheld", withheld },
-          ),
-        );
-      },
-    ),
-    Effect.withSpan("questionAdmission"),
-  );
+  return readFirewallRequestAdmission(request)
+    .pipe(Effect.provideService(SqlClient.SqlClient, environment.sql))
+    .pipe(
+      Effect.flatMap(
+        (admission): Effect.Effect<QuestionAdmission, EndpointStoreError> => {
+          if (admission?.presented === true) {
+            return Effect.succeed({ kind: "shown" });
+          }
+          const enforced =
+            environment.firewall.configuration.mode === "enforcement";
+          return (
+            enforced ? withheldBy(admission) : Effect.succeed(undefined)
+          ).pipe(
+            Effect.map(
+              (withheld): QuestionAdmission =>
+                withheld === undefined
+                  ? { kind: "check", recordHash: request }
+                  : { kind: "withheld", withheld },
+            ),
+          );
+        },
+      ),
+      Effect.withSpan("questionAdmission"),
+    );
 }
 
 /** Which records a result's checks read their windows before, and in which conversations. */
@@ -619,22 +616,4 @@ function localEvidence(conversation: MessageAddressInput, message: Message) {
     visibility: "runtime",
     admission: "admitted",
   }).pipe(Effect.map((canonicalEntry) => ({ conversation, canonicalEntry })));
-}
-
-/** The managed owner supplies audit bytes; local publication inserts them atomically with the item. */
-function deterministicCheck(
-  environment: FirewallEnvironment,
-  entry: FirewallInboxEntry,
-  message: Message,
-) {
-  return Effect.gen(function* () {
-    const { context } = yield* contextFrom(environment, EMPTY_WINDOW, []);
-    return yield* environment.firewall.recordEndpoint({
-      direction: "incoming",
-      canonicalCandidate: entry.canonicalItem,
-      context,
-      agents: [AgentView.make(environment.localAgentCard)],
-      message,
-    });
-  }).pipe(Effect.withSpan("deterministicCheck"));
 }

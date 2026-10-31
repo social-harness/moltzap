@@ -1,10 +1,12 @@
 /** @file A daemon ignores a peer's outer body that does not open for it, and its Router worker keeps accepting sealed traffic. */
 
+import { SqlClient } from "@effect/sql";
 import { scopedLive as it } from "@effect/vitest";
 import {
-  type Context,
+  Context,
   Deferred,
   Effect,
+  Layer,
   Queue,
   Ref,
   Schema,
@@ -18,7 +20,6 @@ import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type { DaemonRuntimeError } from "../errors.js";
 import { digest, identifier } from "../../__tests__/agent-card-fixtures.js";
 import { makeFixture } from "../../__tests__/daemon-runtime-fixtures.js";
-import { makeStore } from "../../__tests__/daemon-runtime-harness.js";
 import {
   batch,
   emptyBatch,
@@ -27,6 +28,7 @@ import {
   registryLayer,
   routerInstanceId,
 } from "../../__tests__/router-worker-fixtures.js";
+import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import {
   type CatchUpRequest,
   ConversationId,
@@ -47,7 +49,11 @@ import {
   SignedMessage,
 } from "../../identity/envelope/signed-message.js";
 import { Registry } from "../../identity/registry/index.js";
-import { WIRE_VERSION } from "../../identity/wire-version.js";
+import {
+  LIVE_WIRE_VERSIONS,
+  WIRE_VERSION,
+} from "../../identity/wire-version.js";
+import { layer } from "../store.js";
 import { acquireProtocol } from "./protocol.js";
 
 /** The daemon's identity, the peer it shares a conversation with, and an agent outside it. */
@@ -185,6 +191,16 @@ interface RunningProtocol {
  * carries `feed` once `released` resolves and signals `polledAgain` on the
  * poll after it, and an engine that records every payload it accepts.
  */
+const acquireSql = Effect.gen(function* () {
+  const context = yield* Layer.build(
+    layer({
+      stateDirectory: stateDirectory(),
+      liveWireVersions: LIVE_WIRE_VERSIONS,
+    }),
+  );
+  return Context.get(context, SqlClient.SqlClient);
+});
+
 const runProtocol = (input: {
   readonly fixture: Effect.Effect.Success<typeof makeFixture>;
   readonly members: Members;
@@ -196,9 +212,10 @@ const runProtocol = (input: {
     const workerReady = yield* Deferred.make<RouterWorker>();
     const accepted = yield* Queue.unbounded<DecodedOuterBody>();
     const fatal = yield* Deferred.make<never, DaemonRuntimeError>();
+    const sql = yield* acquireSql;
     yield* acquireProtocol(
       {
-        store: makeStore(input.fixture, true),
+        sql,
         bootstrap: input.fixture.bootstrap,
         edges: {
           makeWorker: (workerInput) =>

@@ -3,24 +3,17 @@
 import { Schema } from "effect";
 import {
   AgentAddress,
-  compareAgentIds,
+  Content,
   GroupAddress,
-  RecordCore,
   RecordHash,
-  RouterAnchor,
 } from "../communication/records/index.js";
 import { exactParseOptions, exactStruct } from "../encoding/exact.js";
-import {
-  compareAscii,
-  decodeCanonicalBase64Url,
-  isStrictlyAscending,
-} from "../encoding/identifier.js";
+import { compareAscii, isStrictlyAscending } from "../encoding/identifier.js";
 import { AgentCard, AgentView } from "../identity/cards.js";
-import { AgentId, AgentName, PrincipalId } from "../identity/identifiers.js";
-import {
-  OperationId,
-  RegistryLookupRequest,
-} from "../identity/registry/contract.js";
+import { AgentName, PrincipalId } from "../identity/identifiers.js";
+import { OperationId } from "../identity/registry/contract.js";
+import { localGuidanceSchema } from "./advice.js";
+import { InboundItem } from "./items.js";
 
 const encodedAgentCard = Schema.encodedSchema(AgentCard);
 
@@ -32,45 +25,22 @@ function addressesAreOrdered(addresses: readonly string[]): boolean {
   return isStrictlyAscending(addresses, compareAscii);
 }
 
-function canonicalBase64UrlBytes(value: string, byteLength: number): boolean {
-  return decodeCanonicalBase64Url(value)?.byteLength === byteLength;
-}
+const historyContinuation = Schema.NonEmptyString;
 
-function agentIdsAreOrdered(agentIds: readonly AgentId[]): boolean {
-  return isStrictlyAscending(agentIds, compareAgentIds);
-}
-
-const historyContinuation = Schema.String.pipe(
-  Schema.pattern(/^[A-Za-z0-9_-]{43}$/u),
-  Schema.filter((value) => canonicalBase64UrlBytes(value, 32)),
+const historyRecord = Schema.Union(
+  Schema.Struct({
+    kind: Schema.Literal("sent"),
+    author: AgentView,
+    recordHash: RecordHash,
+    content: Content,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("received"),
+    recordHash: RecordHash,
+    item: InboundItem,
+    guidance: Schema.optionalWith(localGuidanceSchema, { exact: true }),
+  }),
 );
-
-const ed25519Signature = Schema.String.pipe(
-  Schema.pattern(/^[A-Za-z0-9_-]{86}$/u),
-  Schema.filter((value) => canonicalBase64UrlBytes(value, 64)),
-);
-
-const signerEvidence = exactStruct({
-  signerAgentId: AgentId,
-  signature: ed25519Signature,
-});
-
-const orderedSignerEvidence = Schema.NonEmptyArray(signerEvidence).pipe(
-  Schema.maxItems(32),
-  Schema.filter((evidence) =>
-    agentIdsAreOrdered(evidence.map((item) => item.signerAgentId)),
-  ),
-);
-
-const historyRecord = Schema.Struct({
-  /** The record's author, from its conversation's verified membership and outside the signed bytes. */
-  author: AgentView,
-  recordHash: RecordHash,
-  recordCore: RecordCore,
-  routerAnchor: RouterAnchor,
-  actionSignatures: orderedSignerEvidence,
-  durabilityVotes: orderedSignerEvidence,
-});
 
 /** Closed local registration input; configured secrets are never tool fields. */
 export const managementRegisterRequestSchema = exactStruct({
@@ -112,22 +82,6 @@ export const managementStatusResultSchema = Schema.Union(
   }),
 );
 
-/** Exact Registry lookup selector accepted by `search_agents`. */
-export const managementSearchAgentsRequestSchema = Schema.Union(
-  ...RegistryLookupRequest.members,
-).annotations({ parseOptions: exactParseOptions });
-
-/** Registry lookup result, with the found agent's view from the verified card. */
-// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The MCP catalog projects this result to JSON Schema; readers decode it additively with this schema.
-export const managementSearchAgentsResultSchema = Schema.Union(
-  Schema.Struct({
-    kind: Schema.Literal("found"),
-    agentCard: encodedAgentCard,
-    agent: AgentView,
-  }),
-  Schema.Struct({ kind: Schema.Literal("not_found") }),
-);
-
 /** Canonically ordered local-conversation page selector. */
 export const managementSearchConversationsRequestSchema = exactStruct({
   afterAddress: Schema.optional(messageAddress).annotations({
@@ -149,7 +103,7 @@ export const managementSearchConversationsResultSchema = Schema.Struct({
   ),
 );
 
-/** Frozen certified-history page selector or process-local continuation. */
+/** Starts a fixed-head history read or resumes its saved position. */
 export const managementReadConversationRequestSchema = Schema.Union(
   exactStruct({
     address: Schema.propertySignature(messageAddress).annotations({
@@ -164,12 +118,12 @@ export const managementReadConversationRequestSchema = Schema.Union(
   exactStruct({
     continuation: Schema.propertySignature(historyContinuation).annotations({
       description:
-        "Single-use token from the previous history page; use alone and only within this daemon process.",
+        "Continuation from the previous history page; reusable while that history is retained, including after restart.",
     }),
   }),
 ).annotations({ parseOptions: exactParseOptions });
 
-/** Complete proof-bearing local certified-history page. */
+/** Saved permitted messages and locally authored content for one conversation. */
 // eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The MCP catalog projects this result to JSON Schema; readers decode it additively with this schema.
 export const managementReadConversationResultSchema = Schema.Struct({
   kind: Schema.Literal("page"),
@@ -185,12 +139,6 @@ export type ManagementRegisterResult =
   typeof managementRegisterResultSchema.Type;
 /** Encoded daemon status crossing MCP. */
 export type ManagementStatusResult = typeof managementStatusResultSchema.Type;
-/** Decoded exact Registry selector crossing MCP. */
-export type ManagementSearchAgentsRequest =
-  typeof managementSearchAgentsRequestSchema.Type;
-/** Encoded exact Registry result crossing MCP. */
-export type ManagementSearchAgentsResult =
-  typeof managementSearchAgentsResultSchema.Type;
 /** Decoded local conversation search request. */
 export type ManagementSearchConversationsRequest =
   typeof managementSearchConversationsRequestSchema.Type;

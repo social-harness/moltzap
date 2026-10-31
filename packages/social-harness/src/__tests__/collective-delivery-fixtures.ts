@@ -1,4 +1,4 @@
-/** @file Shared values and helpers for the collective-operation firewall suites: alice's members, Bob's requests and the sends alice makes. */
+/** @file Requests and answers for daemon delivery tests. */
 
 import { Effect, Queue, Schema } from "effect";
 import type { MiddlewareInput } from "../firewall/check.js";
@@ -14,14 +14,13 @@ import {
 import { testAgentView } from "./agent-card-fixtures.js";
 import { appendCertifiedMessage } from "./certified-history-fixtures.js";
 import { collectiveOperationId } from "./collective-id-fixtures.js";
+import { type Fixture, seedIncoming } from "./conversation-fixtures.js";
 import {
   block,
-  type Fixture,
   type incomingFixture,
   pass,
   policy,
-  seedIncoming,
-} from "./firewall-runtime-fixtures.js";
+} from "./daemon-delivery-fixtures.js";
 
 /** Bob's address, the remote member of alice's direct conversation. */
 export const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
@@ -104,7 +103,7 @@ export function seedRequest(
       firstMessage,
       yield* gatherRequestContent(deadlineAt, text),
     );
-  }).pipe(Effect.withSpan("seedRequest"));
+  }).pipe(subject.run, Effect.withSpan("seedRequest"));
 }
 
 /**
@@ -135,8 +134,8 @@ export function admitPending(runtime: IncomingRuntime) {
  * @returns Every bound intent without a certified record.
  */
 export function unfinishedIntents(subject: Fixture) {
-  return subject.store
-    .recover()
+  return subject
+    .run(subject.store.recover())
     .pipe(
       Effect.map(({ messageIntents }) =>
         messageIntents.filter(

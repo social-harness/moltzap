@@ -51,11 +51,6 @@ export const harnessFailureReasons = {
     "incompatible-daemon",
   ]),
   STATUS_REASONS: new Set(["incompatible-daemon"]),
-  SEARCH_AGENTS_REASONS: new Set([
-    "not-registered",
-    "dependency-unavailable",
-    "incompatible-daemon",
-  ]),
   SEARCH_CONVERSATIONS_REASONS: new Set([
     "not-registered",
     "invalid-address",

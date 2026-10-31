@@ -18,6 +18,7 @@ import {
   processTestError,
   type ProcessTestError,
 } from "./daemon-process-harness.ts";
+import { historyMessageContent } from "./saved-history.js";
 
 /* eslint-disable agent-code-guard/async-keyword, agent-code-guard/promise-type -- node:test consumes promises at the fixture boundary. */
 
@@ -25,6 +26,7 @@ import {
 interface Daemon {
   readonly address: string;
   readonly mcp: URL;
+  readonly mcpCredentialFile: string;
 }
 
 /**
@@ -73,7 +75,11 @@ export async function startNetwork(startDaemon: StartDaemon): Promise<Network> {
     return {
       daemon: async (name) => {
         const fixture = await daemon(name);
-        return { address: `agent:${fixture.agentName}`, mcp: fixture.endpoint };
+        return {
+          address: `agent:${fixture.agentName}`,
+          mcp: fixture.endpoint,
+          mcpCredentialFile: fixture.mcpCredentialFile,
+        };
       },
       endpoint: async (name) =>
         await networkEndpoint(scope, await daemon(name)),
@@ -111,13 +117,17 @@ async function networkEndpoint(
 ): Promise<Endpoint> {
   const harness = await runInScope(
     scope,
-    acquireHarnessEndpoint(fixture.endpoint),
+    acquireHarnessEndpoint(fixture.endpoint, {
+      credential: fixture.mcpCredential,
+      receiveMode: "push",
+    }),
   );
   const agent = await runInScope(scope, readAgent(fixture));
   return {
     agent,
     address: `agent:${fixture.agentName}`,
     mcp: fixture.endpoint,
+    mcpCredentialFile: fixture.mcpCredentialFile,
     send: (input) =>
       Effect.runPromise(
         Schema.decodeUnknown(SendInput)(input).pipe(
@@ -132,7 +142,7 @@ async function networkEndpoint(
 function readAgent(fixture: DaemonProcessFixture) {
   return Effect.scoped(
     Effect.gen(function* () {
-      const management = yield* acquireDaemonManagementClient(fixture.endpoint);
+      const management = yield* acquireDaemonManagementClient(fixture);
       const status = yield* management.status();
       return status.kind === "active"
         ? status.agent
@@ -172,17 +182,13 @@ function nextItems(harness: HarnessEndpoint, count: number) {
 
 function readContents(fixture: DaemonProcessFixture, address: string) {
   return Effect.scoped(
-    acquireDaemonManagementClient(fixture.endpoint).pipe(
+    acquireDaemonManagementClient(fixture).pipe(
       Effect.flatMap((management) =>
         management.readConversation(
           Schema.decodeUnknownSync(MessageAddressInput)(address),
         ),
       ),
-      Effect.map((result) =>
-        result.records.map(
-          (record) => record.recordCore.action.messageIntent.content,
-        ),
-      ),
+      Effect.map((result) => result.records.map(historyMessageContent)),
     ),
   );
 }

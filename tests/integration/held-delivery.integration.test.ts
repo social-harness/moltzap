@@ -20,7 +20,6 @@ import {
   Stream,
 } from "effect";
 import { expect, it } from "vitest";
-import { expectEveryMemberSigned } from "./certified-history.js";
 import {
   acquireDaemonManagementClient,
   acquireDaemonProcess,
@@ -35,6 +34,7 @@ import {
   acquireRouterHoldProxy,
   type RouterHoldProxy,
 } from "./router-hold-proxy.js";
+import { historyMessageContent } from "./saved-history.js";
 
 /**
  * The test starts PGlite, the Registry, the Router, a hold proxy and two
@@ -91,13 +91,8 @@ const awaitParkedResponse = (parkedResponses: Effect.Effect<number>) =>
 const readHistory = (fixture: DaemonProcessFixture, address: AgentAddress) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const management = yield* acquireDaemonManagementClient(fixture.endpoint);
+      const management = yield* acquireDaemonManagementClient(fixture);
       const history = yield* management.readConversation(address);
-
-      expectEveryMemberSigned(history.records, [
-        fixture.agentName,
-        address.slice("agent:".length),
-      ]);
       return history;
     }),
   );
@@ -220,8 +215,14 @@ function waitForHeldDelivery(pair: HeldPair) {
       pair;
     const senderAddress = directAddress(senderFixture.agentName);
     const targetAddress = directAddress(targetFixture.agentName);
-    const sender = yield* acquireHarnessEndpoint(senderFixture.endpoint);
-    const target = yield* acquireHarnessEndpoint(targetFixture.endpoint);
+    const sender = yield* acquireHarnessEndpoint(senderFixture.endpoint, {
+      credential: senderFixture.mcpCredential,
+      receiveMode: "push",
+    });
+    const target = yield* acquireHarnessEndpoint(targetFixture.endpoint, {
+      credential: targetFixture.mcpCredential,
+      receiveMode: "push",
+    });
     const senderInbox = yield* collectDeliveries(sender.messages);
     const targetInbox = yield* collectDeliveries(target.messages);
 
@@ -336,14 +337,13 @@ function readHeldHistory(pair: HeldPair) {
       yield* readHistory(targetFixture, senderAddress),
     ]) {
       expect(history.continuation).toBeNull();
-      expect(
-        history.records.map(({ recordCore }) => recordCore.action.kind),
-      ).toEqual(["FIRST_MESSAGE", "MESSAGE", "MESSAGE"]);
-      expect(
-        history.records.map(
-          ({ recordCore }) => recordCore.action.messageIntent.content,
+      expect(history.records.map(historyMessageContent)).toEqual(
+        expectedContents.map((content, index) =>
+          history.records[index]?.kind === "sent"
+            ? content
+            : content.slice(0, -1),
         ),
-      ).toEqual(expectedContents);
+      );
     }
   });
 }

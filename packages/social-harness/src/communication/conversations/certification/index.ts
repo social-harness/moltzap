@@ -3,9 +3,9 @@
  * and the resume of durable dissemination obligations.
  */
 
-import { absurd, Deferred, Effect } from "effect";
+import type * as SqlClient from "@effect/sql/SqlClient";
+import { absurd, Effect } from "effect";
 import type { SignedMessage } from "../../../identity/envelope/signed-message.js";
-import type { SendError } from "../errors.js";
 import {
   ClientRepresentationError,
   decodeCanonical,
@@ -43,6 +43,7 @@ import {
   type RouterWorkerIngress,
   RouterWorkerPersistenceError,
 } from "../../router/index.js";
+import * as Store from "../../store/index.js";
 import {
   type ConversationFoundation,
   type EndpointStoreError,
@@ -52,7 +53,6 @@ import {
 import {
   type EngineActionFold,
   type EngineConversation,
-  type EngineMessageIntent,
   type EngineRuntime,
   evidenceMatchesFold,
   type EvidenceRoute,
@@ -68,6 +68,7 @@ import {
   stagedRecord,
   storedCertifiedRecord,
 } from "../history/index.js";
+import { completePromotion, rebasePendingIntents } from "./head.js";
 
 /** Dissemination resume, bound as the `resumeDissemination` engine phase. */
 export { resumeDisseminationObligations } from "./dissemination.js";
@@ -79,7 +80,11 @@ const localRepresentationFailure = (): RouterWorkerPersistenceError =>
 
 const currentAnchorHash = (
   conversation: EngineConversation,
-): Effect.Effect<AnchorHash, RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  AnchorHash,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   conversation.currentAnchor.kind === "initial_anchor_body"
     ? hashAnchor(conversation.currentAnchor).pipe(
         Effect.mapError(localRepresentationFailure),
@@ -89,7 +94,7 @@ const currentAnchorHash = (
 const gapFree = (
   conversation: EngineConversation,
   action: ActionCore,
-): Effect.Effect<boolean, RouterWorkerPersistenceError> =>
+): Effect.Effect<boolean, RouterWorkerPersistenceError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     if (action.kind === "FIRST_MESSAGE") {
       return (
@@ -121,7 +126,11 @@ const gapFree = (
 const ingressMembership = (
   runtime: EngineRuntime,
   action: ActionCore,
-): Effect.Effect<VerifiedMembership, ClientRepresentationError> => {
+): Effect.Effect<
+  VerifiedMembership,
+  ClientRepresentationError,
+  SqlClient.SqlClient
+> => {
   const retained = runtime.conversations.get(action.conversationId);
   if (retained !== undefined) {
     return Effect.succeed(retained.membership);
@@ -138,7 +147,11 @@ const conversationForAction = (
   runtime: EngineRuntime,
   action: ActionCore,
   routerInstanceId: RouterWorkerIngress<DecodedOuterBody>["routerInstanceId"],
-): Effect.Effect<EngineConversation | undefined, ClientRepresentationError> =>
+): Effect.Effect<
+  EngineConversation | undefined,
+  ClientRepresentationError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const retained = runtime.conversations.get(action.conversationId);
     if (retained !== undefined || action.kind === "MESSAGE") {
@@ -161,7 +174,11 @@ const conversationForAction = (
 const firstMessageFoundation = (
   conversation: EngineConversation,
   action: Extract<ActionCore, { readonly kind: "FIRST_MESSAGE" }>,
-): Effect.Effect<ConversationFoundation, RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  ConversationFoundation,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     return {
       conversationId: action.conversationId,
@@ -184,7 +201,11 @@ const proposalLock = (
   conversation: EngineConversation,
   action: ActionCore,
   actionHash: ActionHash,
-): Effect.Effect<ProposalLock, RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  ProposalLock,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   encodeCanonical(ActionCoreSchema, action).pipe(
     Effect.mapError(localRepresentationFailure),
     Effect.map((canonicalActionCore) => ({
@@ -202,7 +223,11 @@ const lockAction = (
   conversation: EngineConversation,
   action: ActionCore,
   actionHash: ActionHash,
-): Effect.Effect<void, EndpointStoreError | RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  void,
+  EndpointStoreError | RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const lock = yield* proposalLock(conversation, action, actionHash);
     if (
@@ -210,13 +235,13 @@ const lockAction = (
       !runtime.conversations.has(action.conversationId)
     ) {
       const foundation = yield* firstMessageFoundation(conversation, action);
-      yield* runtime.input.store.lockFirstMessageProposal(foundation, lock);
+      yield* Store.lockFirstMessageProposal(foundation, lock);
       yield* Effect.sync(() => {
         runtime.conversations.set(action.conversationId, conversation);
       });
       return;
     }
-    yield* runtime.input.store.lockProposal(lock);
+    yield* Store.lockProposal(lock);
   });
 
 const foldFor = (
@@ -244,11 +269,14 @@ const foldFor = (
 type LocalEvidenceRole = "action" | "durability";
 
 const mergeEvidence = (
-  runtime: EngineRuntime,
   fold: EngineActionFold,
   role: LocalEvidenceRole,
   message: SignedMessage,
-): Effect.Effect<void, EndpointStoreError | RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  void,
+  EndpointStoreError | RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const subjectId = role === "action" ? fold.actionHash : fold.recordHash;
     if (subjectId === undefined) {
@@ -260,7 +288,7 @@ const mergeEvidence = (
       subjectId,
       message,
     ).pipe(Effect.mapError(localRepresentationFailure));
-    yield* runtime.input.store.mergeEvidence(row);
+    yield* Store.mergeEvidence(row);
     const evidence =
       role === "action" ? fold.actionEvidence : fold.durabilityEvidence;
     yield* Effect.sync(() => {
@@ -282,12 +310,16 @@ const completeLocalEvidence = (
   fold: EngineActionFold,
   role: LocalEvidenceRole,
   evidence: SignedMessage,
-): Effect.Effect<void, EndpointStoreError | RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  void,
+  EndpointStoreError | RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const retained =
       role === "action" ? fold.actionEvidence : fold.durabilityEvidence;
     if (!retained.has(runtime.input.localAgentCard.agentId)) {
-      yield* mergeEvidence(runtime, fold, role, evidence);
+      yield* mergeEvidence(fold, role, evidence);
     }
     yield* Effect.uninterruptible(
       runtime.outbox.queueEvidence(fold.conversation, evidence).pipe(
@@ -313,7 +345,11 @@ const completeLocalEvidence = (
 const localActionEvidence = (
   runtime: EngineRuntime,
   fold: EngineActionFold,
-): Effect.Effect<void, EndpointStoreError | RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  void,
+  EndpointStoreError | RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     if (fold.localActionEvidenceQueued) {
       return;
@@ -339,7 +375,11 @@ const localActionEvidence = (
 function selectLocalActionEvidence(
   runtime: EngineRuntime,
   fold: EngineActionFold,
-): Effect.Effect<SignedMessage | undefined, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  SignedMessage | undefined,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const retained = fold.actionEvidence.get(
     runtime.input.localAgentCard.agentId,
   );
@@ -355,7 +395,11 @@ function selectLocalActionEvidence(
 function signLocalActionEvidence(
   runtime: EngineRuntime,
   fold: EngineActionFold,
-): Effect.Effect<SignedMessage, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  SignedMessage,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return signEvidenceMessage({
     statement: {
       sharnessVersion: runtime.wireVersion,
@@ -387,8 +431,11 @@ const hasDurabilityThreshold = (fold: EngineActionFold): boolean =>
 
 const actionAnchorHash = (
   fold: EngineActionFold,
-): Effect.Effect<AnchorHash, RouterWorkerPersistenceError> =>
-  recordAnchorHash(fold).pipe(Effect.mapError(localRepresentationFailure));
+): Effect.Effect<
+  AnchorHash,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> => recordAnchorHash(fold).pipe(Effect.mapError(localRepresentationFailure));
 
 /**
  * Queue this endpoint's durability vote for a fold's staged record: the vote
@@ -404,7 +451,11 @@ const actionAnchorHash = (
 const localDurabilityEvidence = (
   runtime: EngineRuntime,
   fold: EngineActionFold,
-): Effect.Effect<void, EndpointStoreError | RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  void,
+  EndpointStoreError | RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const recordHash = fold.recordHash;
     const localAgentId = runtime.input.localAgentCard.agentId;
@@ -431,104 +482,6 @@ const localDurabilityEvidence = (
       }).pipe(Effect.mapError(localRepresentationFailure)));
     yield* completeLocalEvidence(runtime, fold, "durability", evidence);
   });
-
-const applyPromotionState = (
-  runtime: EngineRuntime,
-  fold: EngineActionFold,
-  record: CertifiedRecord,
-) =>
-  Effect.sync(() => {
-    fold.certified = true;
-    fold.conversation.head = {
-      recordHash: record.actionCertifiedRecord.recordHash,
-      record,
-    };
-    if (
-      fold.action.messageIntent.authorAgentId !==
-      runtime.input.localAgentCard.agentId
-    ) {
-      return undefined;
-    }
-    runtime.completedMessages.set(
-      fold.action.messageIntent.msgId,
-      record.actionCertifiedRecord.recordHash,
-    );
-    return runtime.intents.get(fold.action.messageIntent.msgId);
-  });
-
-function completePromotion(
-  runtime: EngineRuntime,
-  fold: EngineActionFold,
-  record: CertifiedRecord,
-): Effect.Effect<void> {
-  return applyPromotionState(runtime, fold, record).pipe(
-    Effect.flatMap((intent) =>
-      intent === undefined
-        ? Effect.void
-        : Deferred.succeed(
-            intent.completion,
-            record.actionCertifiedRecord.recordHash,
-          ).pipe(Effect.asVoid),
-    ),
-  );
-}
-
-type ReproposalDisposition = "fail" | "ignore";
-
-const reproposalDispositionByReason = {
-  "outcome-unknown": "fail",
-  "certification-unavailable": "ignore",
-  "content-invalid": "fail",
-  "invalid-address": "fail",
-  "membership-invalid": "fail",
-  "network-unavailable": "ignore",
-  "delivery-pending": "ignore",
-  "not-registered": "fail",
-  "persistence-failed": "fail",
-  "unknown-agent": "fail",
-  "version-mismatch": "fail",
-} as const satisfies Readonly<
-  Record<SendError["reason"], ReproposalDisposition>
->;
-
-const reproposePendingIntent = (
-  runtime: EngineRuntime,
-  pending: EngineMessageIntent,
-): Effect.Effect<void, RouterWorkerPersistenceError> =>
-  runtime.phases.proposeIntent(runtime, pending).pipe(
-    Effect.asVoid,
-    Effect.catchTag("SendError", (error) =>
-      reproposalDispositionByReason[error.reason] === "ignore"
-        ? Effect.void
-        : Effect.fail(persistenceFailure()),
-    ),
-  );
-
-/**
- * Propose a conversation's uncertified messages again at its new head. A
- * conversation still recovering proposes nothing here: its endpoint ignores
- * the Router's echo of a proposal while fenced, so the proposal would be
- * signed by members but never by its author, and its recovery proposes the
- * messages at the head it settles on.
- * @param runtime Engine whose pending messages are rebased.
- * @param conversationId Conversation whose head moved.
- * @returns Completion once each pending message is proposed again.
- */
-const rebasePendingIntents = (
-  runtime: EngineRuntime,
-  conversationId: EngineConversation["conversationId"],
-): Effect.Effect<void, RouterWorkerPersistenceError> =>
-  runtime.phases.isRecovering(runtime, conversationId)
-    ? Effect.void
-    : Effect.forEach(
-        runtime.intents.values(),
-        (pending) =>
-          pending.intent.conversationId === conversationId &&
-          !runtime.completedMessages.has(pending.intent.msgId)
-            ? reproposePendingIntent(runtime, pending)
-            : Effect.void,
-        { concurrency: 1, discard: true },
-      );
 
 /**
  * The store rows of a fold's complete certified record: the record with the
@@ -574,7 +527,11 @@ const promote = (
   runtime: EngineRuntime,
   fold: EngineActionFold,
   record: CertifiedRecord,
-): Effect.Effect<void, EndpointStoreError | RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  void,
+  EndpointStoreError | RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const { stored, delivery } = yield* certifiedRecordRows(
       runtime,
@@ -583,9 +540,9 @@ const promote = (
       fold.durabilityEvidence.values(),
     );
     yield* Effect.uninterruptible(
-      runtime.input.store
-        .promoteRecord(stored, delivery)
-        .pipe(Effect.zipRight(completePromotion(runtime, fold, record))),
+      Store.promoteRecord(stored, delivery).pipe(
+        Effect.zipRight(completePromotion(runtime, fold, record)),
+      ),
     );
     yield* rebasePendingIntents(runtime, fold.conversation.conversationId);
     yield* runtime.phases.headAdvanced(
@@ -598,7 +555,11 @@ const maybePromote = (
   runtime: EngineRuntime,
   fold: EngineActionFold,
   actionCertifiedRecord: ActionCertifiedRecord,
-): Effect.Effect<void, EndpointStoreError | RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  void,
+  EndpointStoreError | RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     if (!hasDurabilityThreshold(fold) || fold.certified) {
       return;
@@ -629,13 +590,17 @@ const stageActionCertificate = (
   runtime: EngineRuntime,
   fold: EngineActionFold,
   record: ActionCertifiedRecord,
-): Effect.Effect<void, EndpointStoreError | RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  void,
+  EndpointStoreError | RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     if (fold.recordHash === undefined) {
       const stored = yield* stagedRecord(record).pipe(
         Effect.mapError(localRepresentationFailure),
       );
-      yield* runtime.input.store.stageRecordForDissemination(stored);
+      yield* Store.stageRecordForDissemination(stored);
       yield* Effect.uninterruptible(
         runtime.outbox
           .queueActionCertifiedRecord(fold.conversation, record)
@@ -657,7 +622,11 @@ const stageActionCertificate = (
 const maybeCertifyAction = (
   runtime: EngineRuntime,
   fold: EngineActionFold,
-): Effect.Effect<void, EndpointStoreError | RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  void,
+  EndpointStoreError | RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     if (!hasActionThreshold(fold) || fold.recordHash !== undefined) {
       return;
@@ -678,7 +647,11 @@ const prepareProposalFold = (
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   proposal: ActionProposal,
-): Effect.Effect<EngineActionFold | undefined, ProtocolAcceptanceError> =>
+): Effect.Effect<
+  EngineActionFold | undefined,
+  ProtocolAcceptanceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const conversation = yield* conversationForAction(
       runtime,
@@ -713,7 +686,11 @@ const acceptProposal = (
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   proposal: ActionProposal,
-): Effect.Effect<RouterIngressDisposition, ProtocolAcceptanceError> =>
+): Effect.Effect<
+  RouterIngressDisposition,
+  ProtocolAcceptanceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const fold = yield* prepareProposalFold(runtime, ingress, proposal);
     if (fold === undefined) {
@@ -729,7 +706,11 @@ const acceptEvidence = (
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   message: SignedMessage,
   statement: EvidenceStatementValue,
-): Effect.Effect<RouterIngressDisposition, ProtocolAcceptanceError> =>
+): Effect.Effect<
+  RouterIngressDisposition,
+  ProtocolAcceptanceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const { route } = evidenceTarget(runtime, statement);
     if (route === undefined) {
@@ -744,7 +725,7 @@ const acceptEvidence = (
     if (!evidenceMatchesFold(route, evidence.statement)) {
       return "ignored";
     }
-    yield* mergeEvidence(runtime, route.fold, route.kind, evidence.message);
+    yield* mergeEvidence(route.fold, route.kind, evidence.message);
     yield* advanceEvidenceFold(runtime, route);
     return "accepted";
   });
@@ -752,7 +733,7 @@ const acceptEvidence = (
 function advanceEvidenceFold(
   runtime: EngineRuntime,
   route: EvidenceRoute,
-): Effect.Effect<void, ProtocolAcceptanceError> {
+): Effect.Effect<void, ProtocolAcceptanceError, SqlClient.SqlClient> {
   switch (route.kind) {
     case "action":
       return maybeCertifyAction(runtime, route.fold);
@@ -768,7 +749,7 @@ function advanceEvidenceFold(
 function advanceDurabilityFold(
   runtime: EngineRuntime,
   fold: EngineActionFold,
-): Effect.Effect<void, ProtocolAcceptanceError> {
+): Effect.Effect<void, ProtocolAcceptanceError, SqlClient.SqlClient> {
   const recordHash = fold.recordHash;
   if (recordHash === undefined) {
     return Effect.void;
@@ -789,7 +770,11 @@ function advanceDurabilityFold(
 const membershipForRecord = (
   runtime: EngineRuntime,
   record: ActionCertifiedRecord,
-): Effect.Effect<VerifiedMembership, ClientRepresentationError> =>
+): Effect.Effect<
+  VerifiedMembership,
+  ClientRepresentationError,
+  SqlClient.SqlClient
+> =>
   ingressMembership(runtime, record.recordCore.action).pipe(
     Effect.tap((membership) =>
       verifyActionCertifiedRecord({ record, membership }),
@@ -820,10 +805,9 @@ const ensureConversation = (
 };
 
 const mergeActionCertificate = (
-  runtime: EngineRuntime,
   fold: EngineActionFold,
   signatures: readonly unknown[],
-): Effect.Effect<void, ProtocolAcceptanceError> =>
+): Effect.Effect<void, ProtocolAcceptanceError, SqlClient.SqlClient> =>
   Effect.forEach(
     signatures,
     (representation) =>
@@ -836,9 +820,7 @@ const mergeActionCertificate = (
             evidenceMatchesFold({ fold, kind: "action" }, statement),
           () => new ClientRepresentationError(),
         ),
-        Effect.flatMap(({ message }) =>
-          mergeEvidence(runtime, fold, "action", message),
-        ),
+        Effect.flatMap(({ message }) => mergeEvidence(fold, "action", message)),
       ),
     { concurrency: 1, discard: true },
   );
@@ -864,7 +846,7 @@ const supersedeLock = (
   runtime: EngineRuntime,
   conversation: EngineConversation,
   record: ActionCertifiedRecord,
-): Effect.Effect<void, ProtocolAcceptanceError> =>
+): Effect.Effect<void, ProtocolAcceptanceError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const { action, actionHash } = record.recordCore;
     const lock = yield* proposalLock(conversation, action, actionHash);
@@ -888,7 +870,7 @@ const supersedeLock = (
         ),
       { concurrency: 1 },
     );
-    yield* runtime.input.store.supersedeProposalLock(lock, certificate).pipe(
+    yield* Store.supersedeProposalLock(lock, certificate).pipe(
       Effect.zipRight(
         Effect.sync(() => {
           dropFoldsAtPredecessor(runtime, conversation, action, actionHash);
@@ -927,7 +909,11 @@ const prepareRecordFold = (
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   membership: VerifiedMembership,
   record: ActionCertifiedRecord,
-): Effect.Effect<EngineActionFold | undefined, ProtocolAcceptanceError> =>
+): Effect.Effect<
+  EngineActionFold | undefined,
+  ProtocolAcceptanceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     yield* verifyOuterMessage({
       message: ingress.message,
@@ -956,11 +942,7 @@ const prepareRecordFold = (
       action,
       record.recordCore.actionHash,
     );
-    yield* mergeActionCertificate(
-      runtime,
-      fold,
-      record.actionCertificate.signatures,
-    );
+    yield* mergeActionCertificate(fold, record.actionCertificate.signatures);
     return fold;
   });
 
@@ -968,7 +950,11 @@ const acceptActionCertifiedRecord = (
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   record: ActionCertifiedRecord,
-): Effect.Effect<RouterIngressDisposition, ProtocolAcceptanceError> =>
+): Effect.Effect<
+  RouterIngressDisposition,
+  ProtocolAcceptanceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const membership = yield* membershipForRecord(runtime, record);
     const fold = yield* prepareRecordFold(runtime, ingress, membership, record);
@@ -978,6 +964,21 @@ const acceptActionCertifiedRecord = (
     yield* stageActionCertificate(runtime, fold, record);
     return "accepted";
   });
+
+function retainCertifiedFold(
+  runtime: EngineRuntime,
+  fold: EngineActionFold,
+  record: ActionCertifiedRecord,
+  votes: readonly SignedMessage[],
+) {
+  return Effect.sync(() => {
+    fold.recordHash = record.recordHash;
+    runtime.recordFolds.set(record.recordHash, fold);
+    for (const vote of votes) {
+      fold.durabilityEvidence.set(vote.senderAgentId, vote);
+    }
+  });
+}
 
 /**
  * Accept a record that arrives whole, with its durability certificate. The
@@ -995,7 +996,11 @@ const acceptCertifiedRecord = (
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   record: CertifiedRecord,
-): Effect.Effect<RouterIngressDisposition, ProtocolAcceptanceError> =>
+): Effect.Effect<
+  RouterIngressDisposition,
+  ProtocolAcceptanceError,
+  SqlClient.SqlClient
+> =>
   Effect.gen(function* () {
     const membership = yield* ingressMembership(
       runtime,
@@ -1021,15 +1026,9 @@ const acceptCertifiedRecord = (
       votes,
     );
     yield* Effect.uninterruptible(
-      runtime.input.store.applyCertifiedRecord(stored, delivery).pipe(
+      Store.applyCertifiedRecord(stored, delivery).pipe(
         Effect.zipRight(
-          Effect.sync(() => {
-            fold.recordHash = actionRecord.recordHash;
-            runtime.recordFolds.set(actionRecord.recordHash, fold);
-            for (const vote of votes) {
-              fold.durabilityEvidence.set(vote.senderAgentId, vote);
-            }
-          }),
+          retainCertifiedFold(runtime, fold, actionRecord, votes),
         ),
         Effect.zipRight(completePromotion(runtime, fold, record)),
       ),
@@ -1046,7 +1045,11 @@ function acceptPacket(
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   packet: Extract<DecodedOuterBody, { readonly kind: "direct" }>["packet"],
-): Effect.Effect<RouterIngressDisposition, ProtocolAcceptanceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  ProtocolAcceptanceError,
+  SqlClient.SqlClient
+> {
   switch (packet.kind) {
     case "action_proposal":
       return acceptProposal(runtime, ingress, packet);
@@ -1079,7 +1082,11 @@ export const acceptEngineIngress = (
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   statement?: EvidenceStatementValue,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   runtime.gate
     .withPermits(1)(
       Effect.gen(function* () {
@@ -1121,7 +1128,11 @@ export const acceptEngineIngress = (
 export const acceptEngineRecoveryIngress = (
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> =>
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> =>
   runtime.gate
     .withPermits(1)(
       ingress.payload.kind === "direct" &&
@@ -1153,7 +1164,7 @@ export const acceptEngineRecoveryIngress = (
 const resumeFold = (
   runtime: EngineRuntime,
   fold: EngineActionFold,
-): Effect.Effect<void, RouterWorkerPersistenceError> =>
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     yield* localActionEvidence(runtime, fold);
     yield* maybeCertifyAction(runtime, fold);
@@ -1191,7 +1202,7 @@ const resumeFold = (
 export const resumeEngineFolds = (
   runtime: EngineRuntime,
   conversationId?: ConversationId,
-): Effect.Effect<void, RouterWorkerPersistenceError> =>
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> =>
   runtime.gate
     .withPermits(1)(
       Effect.forEach(

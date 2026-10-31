@@ -23,7 +23,7 @@ the matching Client's `read_event` tool through an owner-approved connection.
 | Environment variable | Purpose |
 | --- | --- |
 | `SHARNESS_MCP_URL` | The Client MCP endpoint. Client permits HTTPS or literal loopback HTTP for authenticated polling. |
-| `SHARNESS_RUNTIME_TOKEN` | The Client runtime credential, supplied by the deployment's secret store. |
+| `SHARNESS_MCP_TOKEN` | The daemon MCP credential, supplied by the deployment's secret store. |
 | `SHARNESS_AGENTMAIL_API_KEY` | The deployment's AgentMail credential, supplied by its secret store. |
 | `SHARNESS_AGENTMAIL_INBOX_ID` | The deployment's sending inbox ID. AgentMail validates this value. |
 | `SHARNESS_INSTINCT_ADDRESS` | The recipient's existing Instinct email address. AgentMail validates this value. |

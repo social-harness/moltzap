@@ -1,5 +1,6 @@
 /** @file Recovers conversation history and ordering when starting or replacing the Router message feed. */
 
+import type * as SqlClient from "@effect/sql/SqlClient";
 import {
   Duration,
   Effect,
@@ -36,6 +37,7 @@ import {
   type RouterWorkerRecovery,
   RouterWorkerRecoveryError,
 } from "../../router/index.js";
+import * as Store from "../../store/index.js";
 import { type EngineRuntime, evidenceTarget } from "../engine-context.js";
 import {
   durableRouterInstanceId,
@@ -180,7 +182,11 @@ const ignoredDisposition: RouterIngressDisposition = "ignored";
 export function acceptEngineIngressWithRecovery(
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const { payload } = ingress;
   return (
     payload.kind === "evidence"
@@ -205,7 +211,7 @@ export function acceptEngineIngressWithRecovery(
 export function rearmPausedCatchUp(
   runtime: EngineRuntime,
   conversationId?: ConversationIdValue,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     const run = activeRuns.get(runtime);
     if (run === undefined) {
@@ -242,7 +248,7 @@ export function rearmPausedCatchUp(
 export function recoveryHeadAdvanced(
   runtime: EngineRuntime,
   conversationId: ConversationIdValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const run = activeRuns.get(runtime);
   return run !== undefined && isRecovering(runtime, conversationId)
     ? armCatchUp(run, conversationId)
@@ -281,16 +287,16 @@ export function isRecovering(
 export const recoverCertifiedHistory = (
   runtime: EngineRuntime,
   recoveryInput: RouterWorkerRecovery,
-): Effect.Effect<void, RouterWorkerRecoveryError> =>
+): Effect.Effect<void, RouterWorkerRecoveryError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const barrier = currentRecoveryBarrier(runtime);
     if (barrier === undefined) {
       return yield* Effect.fail(recoveryFailure());
     }
     yield* endRun(runtime);
-    const recovered = yield* runtime.input.store
-      .recover()
-      .pipe(Effect.mapError(recoveryFailure));
+    const recovered = yield* Store.recover().pipe(
+      Effect.mapError(recoveryFailure),
+    );
     const memberships = yield* recoverMemberships(runtime, recovered);
     yield* verifyRecoveredHistory(recovered, memberships);
     const reanchoring = yield* reanchoringConversations(
@@ -330,7 +336,11 @@ function acceptPacket(
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   packet: DirectPacket,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   return routePacket(runtime, ingress, packet).pipe(
     Effect.tap(() =>
       rearmOnMemberTraffic(runtime, ingress, packetConversation(packet)),
@@ -342,7 +352,11 @@ function routePacket(
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   packet: DirectPacket,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   switch (packet.kind) {
     case "catch_up_request":
       return acceptCatchUpRequest(catchUpResponder(runtime), ingress, packet);
@@ -384,7 +398,11 @@ function acceptHistoryPacket(
         | "action_certified_record";
     }
   >,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   if (!isRecovering(runtime, packetConversation(packet))) {
     return runtime.phases.acceptIngress(runtime, ingress);
   }
@@ -421,7 +439,11 @@ function acceptEvidence(
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   message: SignedMessage,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   if (
     !activeRuns.has(runtime) &&
     currentRecoveryBarrier(runtime) === undefined
@@ -458,7 +480,11 @@ function routeEvidence(
     statement: EvidenceStatementValue;
     fenced: boolean;
   }>,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const { message, statement } = evidence;
   const run = activeRuns.get(runtime);
   if (statement.kind === "reanchor_vote") {
@@ -499,7 +525,7 @@ function noteEarlierReanchor(
       { readonly kind: "reanchor_vote" }
     >;
   }>,
-): Effect.Effect<RouterIngressDisposition> {
+): Effect.Effect<RouterIngressDisposition, never, SqlClient.SqlClient> {
   const body = vote.statement.reanchor;
   const membership = run.memberships.get(body.conversationId);
   if (membership === undefined || body.membershipHash !== membership.hash) {
@@ -531,7 +557,11 @@ function acceptRunVote(
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   message: SignedMessage,
   statement: EvidenceStatementValue,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const run = activeRuns.get(runtime);
   return run === undefined
     ? Effect.succeed(ignoredDisposition)
@@ -550,7 +580,11 @@ function acceptRunPacket(
         | "completed_reanchor";
     }
   >,
-): Effect.Effect<RouterIngressDisposition, RouterWorkerPersistenceError> {
+): Effect.Effect<
+  RouterIngressDisposition,
+  RouterWorkerPersistenceError,
+  SqlClient.SqlClient
+> {
   const run = activeRuns.get(runtime);
   if (run === undefined) {
     return Effect.succeed(ignoredDisposition);
@@ -581,7 +615,7 @@ function rearmOnMemberTraffic(
   runtime: EngineRuntime,
   ingress: RouterWorkerIngress<DecodedOuterBody>,
   conversationId: ConversationIdValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const membership = activeRuns.get(runtime)?.memberships.get(conversationId);
   return membership !== undefined &&
     sentByOtherMember(runtime, membership, ingress.message.senderAgentId)
@@ -600,7 +634,7 @@ function rearmOnMemberTraffic(
 function rearmIfPaused(
   runtime: EngineRuntime,
   conversationId: ConversationIdValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const run = activeRuns.get(runtime);
   if (
     run === undefined ||
@@ -630,7 +664,7 @@ function rearmIfPaused(
 function armCatchUp(
   run: RecoveryRun,
   conversationId: ConversationIdValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return requestCertifiedHistory(run.catchUp, conversationId).pipe(
     Effect.zipRight(
       Effect.suspend(() =>
@@ -663,7 +697,7 @@ function armCatchUp(
 function retryCatchUp(
   run: RecoveryRun,
   conversationId: ConversationIdValue,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.schedule(
     resendCertifiedHistoryRequest(run.catchUp, conversationId),
     catchUpRetrySchedule,
@@ -703,7 +737,7 @@ function retryCatchUp(
 function recoverOnQuorum(
   run: RecoveryRun,
   conversationId: ConversationIdValue,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.uninterruptibleMask((restore) =>
     retryPending("catch-up", conversationId).pipe(
       Effect.zipRight(
@@ -764,7 +798,11 @@ function reanchoringConversations(
   recovery: RouterWorkerRecovery,
   snapshot: EndpointRecovery,
   memberships: ReadonlyMap<ConversationIdValue, VerifiedMembership>,
-): Effect.Effect<ReadonlySet<string>, RouterWorkerRecoveryError> {
+): Effect.Effect<
+  ReadonlySet<string>,
+  RouterWorkerRecoveryError,
+  SqlClient.SqlClient
+> {
   if (recovery.reason !== "router_restarted") {
     return Effect.succeed(new Set<string>());
   }
@@ -799,7 +837,11 @@ function prepareRecoveryOutbox(
   snapshot: EndpointRecovery,
   memberships: ReadonlyMap<ConversationIdValue, VerifiedMembership>,
   reanchoring: ReadonlySet<string>,
-): Effect.Effect<readonly StoredOutboundMessage[], RouterWorkerRecoveryError> {
+): Effect.Effect<
+  readonly StoredOutboundMessage[],
+  RouterWorkerRecoveryError,
+  SqlClient.SqlClient
+> {
   return verifyStoredOutbounds(
     runtime.input,
     snapshot.outboundMessages,
@@ -808,7 +850,6 @@ function prepareRecoveryOutbox(
     Effect.mapError(recoveryFailure),
     Effect.flatMap((outbounds) =>
       discardRestartedOutbounds(
-        runtime,
         outbounds.filter((outbound) =>
           reanchoring.has(outbound.conversationId),
         ),
@@ -826,17 +867,16 @@ function prepareRecoveryOutbox(
 
 /**
  * Retire verified envelopes whose conversations require a new Router anchor.
- * @param runtime Engine whose durable outbox retains the envelopes.
  * @param outbounds Envelopes bound to the replaced Router instance.
  * @returns Completion once the stale envelopes are inactive.
  */
 function discardRestartedOutbounds(
-  runtime: EngineRuntime,
   outbounds: readonly StoredOutboundMessage[],
-): Effect.Effect<void, RouterWorkerRecoveryError> {
-  return runtime.input.store
-    .discardOutbound(outbounds)
-    .pipe(Effect.mapError(recoveryFailure), Effect.asVoid);
+): Effect.Effect<void, RouterWorkerRecoveryError, SqlClient.SqlClient> {
+  return Store.discardOutbound(outbounds).pipe(
+    Effect.mapError(recoveryFailure),
+    Effect.asVoid,
+  );
 }
 
 function groupByConversation(
@@ -868,7 +908,7 @@ function makeRecoveryRun(
     RecoveryRun,
     "memberships" | "reanchoring" | "retainedOutbounds"
   >,
-): Effect.Effect<RecoveryRun> {
+): Effect.Effect<RecoveryRun, never, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const scope = yield* Scope.fork(
       runtime.scope,
@@ -916,7 +956,7 @@ function makeRecoveryRun(
  */
 function settleReanchorWaits(
   waits: Set<ConversationIdValue>,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     const open = [...waits];
     waits.clear();
@@ -1040,7 +1080,7 @@ function successorPort(
 function positionReady(
   run: RecoveryRun,
   conversationId: ConversationIdValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const membership = run.memberships.get(conversationId);
   if (!run.catchUp.isActive() || membership === undefined) {
     return Effect.void;
@@ -1066,7 +1106,7 @@ function positionReady(
 function awaitReanchor(
   run: RecoveryRun,
   conversationId: ConversationIdValue,
-): Effect.Effect<void> {
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.uninterruptible(
     Effect.suspend(() => {
       if (
@@ -1096,7 +1136,7 @@ function awaitReanchor(
 function markRecovered(
   run: RecoveryRun,
   conversationId: ConversationIdValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     if (
       !run.catchUp.isActive() ||
@@ -1128,7 +1168,7 @@ function markRecovered(
 function resumeConversation(
   run: RecoveryRun,
   conversationId: ConversationIdValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const { runtime } = run;
   return Effect.suspend(() => {
     const retained = run.retainedOutbounds.get(conversationId) ?? [];
@@ -1156,7 +1196,7 @@ function resumeConversation(
 function resumeIntents(
   run: RecoveryRun,
   conversationId: ConversationIdValue,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   const { runtime } = run;
   return Effect.forEach(
     [...runtime.intents.values()].filter(
@@ -1182,7 +1222,9 @@ function resumeIntents(
  * @param run Recovery run to check.
  * @returns Completion after a finished run is uninstalled.
  */
-function endRunOnceRecovered(run: RecoveryRun): Effect.Effect<void> {
+function endRunOnceRecovered(
+  run: RecoveryRun,
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.suspend(() =>
     run.catchUp.isActive() &&
     run.completedConversations.size === run.memberships.size
@@ -1198,7 +1240,9 @@ function endRunOnceRecovered(run: RecoveryRun): Effect.Effect<void> {
  * @param runtime Engine whose run ends.
  * @returns Completion once no run is installed.
  */
-function endRun(runtime: EngineRuntime): Effect.Effect<void> {
+function endRun(
+  runtime: EngineRuntime,
+): Effect.Effect<void, never, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     const run = activeRuns.get(runtime);
     if (run === undefined) {
@@ -1223,7 +1267,7 @@ function queueRecoveryEnvelope(
   runtime: EngineRuntime,
   membership: VerifiedMembership,
   body: DecodedOuterBody,
-): Effect.Effect<void, RouterWorkerPersistenceError> {
+): Effect.Effect<void, RouterWorkerPersistenceError, SqlClient.SqlClient> {
   return runtime.outbox.sign(membership, body).pipe(
     Effect.flatMap((message) =>
       runtime.outbox.enqueueSigned(
@@ -1268,7 +1312,8 @@ function recoverMemberships(
   recovery: EndpointRecovery,
 ): Effect.Effect<
   Map<ConversationIdValue, VerifiedMembership>,
-  RouterWorkerRecoveryError
+  RouterWorkerRecoveryError,
+  SqlClient.SqlClient
 > {
   return verifyStoredMemberships(
     recovery.memberships,

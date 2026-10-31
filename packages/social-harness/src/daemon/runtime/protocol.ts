@@ -1,16 +1,11 @@
 /** @file Acquisition and supervision of the protocol one daemon identity runs. */
 
+import { SqlClient } from "@effect/sql";
 import { Cause, type Context, Deferred, Effect, Option, Scope } from "effect";
 import type { ListenError } from "../../communication/conversations/errors.js";
-import type {
-  DeliveryToken,
-  EndpointStoreError,
-  StoredMembership,
-} from "../../communication/store/index.js";
 import type { Firewall } from "../../firewall/index.js";
 import type { AgentId } from "../../identity/identifiers.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
-import type { DaemonStore } from "../store.js";
 import {
   type CollectiveEmitError,
   type CollectiveOperations,
@@ -38,6 +33,12 @@ import {
   RouterWorkerRejectedError,
   type RouterWorkerTransportError,
 } from "../../communication/router/index.js";
+import {
+  type DeliveryToken,
+  type EndpointStoreError,
+  recover,
+  type StoredMembership,
+} from "../../communication/store/index.js";
 import { encodeCanonical, sameBytes } from "../../encoding/canonical-json.js";
 import { compareAscii } from "../../encoding/identifier.js";
 import {
@@ -60,11 +61,15 @@ export interface ProtocolEdges {
   ) => Effect.Effect<
     RouterWorker,
     RouterWorkerTransportError | RouterWorkerProtocolError,
-    Registry | Router
+    Registry | Router | SqlClient.SqlClient
   >;
   readonly makeEngine: (
     input: EndpointEngineInput,
-  ) => Effect.Effect<EndpointEngine, EngineInitializationError, Scope.Scope>;
+  ) => Effect.Effect<
+    EndpointEngine,
+    EngineInitializationError,
+    Scope.Scope | SqlClient.SqlClient
+  >;
 }
 
 /** Engine, Router worker and collective layer active for the daemon's identity. */
@@ -77,7 +82,7 @@ export interface ActiveProtocol {
 
 /** The daemon resources a protocol is acquired from and supervised in. */
 export interface ProtocolEnvironment {
-  readonly store: DaemonStore;
+  readonly sql: SqlClient.SqlClient;
   readonly bootstrap: DaemonBootstrap;
   readonly edges: ProtocolEdges;
   readonly registry: Context.Tag.Service<typeof Registry>;
@@ -171,9 +176,10 @@ const recoverPinnedSenderCards = (
   localAgentCard: VerifiedAgentCard,
 ): Effect.Effect<readonly VerifiedAgentCard[], DaemonActivationError> =>
   Effect.gen(function* () {
-    const recovery = yield* environment.store
-      .recover()
-      .pipe(Effect.mapError(() => activationFailure("persistence")));
+    const recovery = yield* recover().pipe(
+      Effect.provideService(SqlClient.SqlClient, environment.sql),
+      Effect.mapError(() => activationFailure("persistence")),
+    );
     const pinned: PinnedCards = new Map();
     yield* retainPinnedCard(pinned, localAgentCard);
     yield* Effect.forEach(
@@ -278,7 +284,6 @@ const acquireProtocolWorker = (input: {
       callerAgentCard: input.agentCard,
       pinnedSenderCards: input.pinnedSenderCards,
       signingAuthority: input.environment.bootstrap.signingAuthority,
-      outbox: input.environment.store,
       callbacks: makeWorkerCallbacks(
         {
           agentCard: input.agentCard,
@@ -289,6 +294,7 @@ const acquireProtocolWorker = (input: {
       ),
     })
     .pipe(
+      Effect.provideService(SqlClient.SqlClient, input.environment.sql),
       Effect.provideService(Registry, input.environment.registry),
       Effect.provideService(Router, input.environment.router),
       Effect.mapError(mapWorkerInitializationError),
@@ -313,11 +319,11 @@ const acquireProtocolEngine = (
       registrySignerPublicKey:
         environment.bootstrap.configuration.registrySignerPublicKey,
       registry: environment.registry,
-      store: environment.store,
       routerWorker: worker,
       reportStorageFault: (error) => reportStorageFault(environment, error),
     })
     .pipe(
+      Effect.provideService(SqlClient.SqlClient, environment.sql),
       Scope.extend(environment.daemonScope),
       Effect.mapError(mapEngineInitializationError),
     );
@@ -335,7 +341,6 @@ const makeProtocolCollectives = (
   engine: EndpointEngine,
 ): Effect.Effect<CollectiveOperations, EndpointStoreError> => {
   return makeCollectiveOperations({
-    store: environment.store,
     observeMessage: (msgId) => engine.observeMessage(msgId),
     prepareMessage: (input) => engine.prepare(input),
     acceptMessage: (prepared, hold) => engine.accept(prepared, hold),
@@ -344,7 +349,7 @@ const makeProtocolCollectives = (
     sendMessage: (input) => engine.send(input),
     emit,
     scope: environment.daemonScope,
-  });
+  }).pipe(Effect.provideService(SqlClient.SqlClient, environment.sql));
 };
 
 /**
@@ -380,7 +385,10 @@ export const acquireProtocol = (
       hooks.emit,
       agentCard,
       engine,
-    ).pipe(Effect.mapError(() => activationFailure("persistence")));
+    ).pipe(
+      Effect.provideService(SqlClient.SqlClient, environment.sql),
+      Effect.mapError(() => activationFailure("persistence")),
+    );
     hooks.retain({
       agentCard,
       worker,

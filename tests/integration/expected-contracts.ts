@@ -6,9 +6,6 @@ export const registrationResultKind = "registered";
 /** The daemon status tool reports this kind when its persisted identity is active. */
 export const registeredDaemonStatus = "active";
 
-/** Daemon read_conversation marks an anchor with this kind after Router recovery. */
-export const completedReanchorKind = "completed_reanchor";
-
 /** Daemon startup reports this phase when its persisted state or identity row refuses this binary. */
 export const storageStartupPhase = "storage";
 

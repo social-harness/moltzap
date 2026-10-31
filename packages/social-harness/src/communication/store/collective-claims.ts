@@ -1,11 +1,10 @@
 /** @file Retains a collective operation’s identity and reserves its request, answer and closing messages. */
 
-import type { DatabaseSync } from "node:sqlite";
-
-import { Schema } from "effect";
-
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect, Schema } from "effect";
 import {
   copyBytes,
+  EndpointStoreError,
   mintDeliveryToken,
   readBytes,
   readOptionalBytes,
@@ -14,6 +13,7 @@ import {
   requireEqual,
   requireSameBytes,
   requireText,
+  storeOperation,
   StoreSignal,
 } from "./database/index.js";
 import { readStoredIdentity } from "./rows/index.js";
@@ -25,89 +25,99 @@ import {
   type StoredCollectiveOperation,
   type StoreMutation,
 } from "./types.js";
-
 interface OriginIdentity {
   readonly creatorAgentId: string;
   readonly conversationId?: string;
 }
-
 /** The claimed slot and its intent commit together, with its protocol identity. */
 export function bindCollectiveMessageInTransaction(
-  database: DatabaseSync,
   binding: CollectiveMessageBinding,
   intent: MessageIntent,
-): StoreMutation {
-  requireText(binding.operationId);
-  requireText(binding.destination);
-  if (binding.operation !== undefined) {
-    requireEqual(binding.operation.operationId, binding.operationId);
-    retainCollectiveInTransaction(database, binding.operation);
-  }
-  const operation = findCollective(database, binding.operationId);
-  if (operation === undefined) {
-    throw new StoreSignal("not-found");
-  }
-  const prior = database
-    .prepare(`
+): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    requireText(binding.operationId);
+    requireText(binding.destination);
+    if (binding.operation !== undefined) {
+      requireEqual(binding.operation.operationId, binding.operationId);
+      yield* retainCollectiveInTransaction(binding.operation);
+    }
+    const operation = yield* findCollective(binding.operationId);
+    if (operation === undefined) {
+      return yield* new EndpointStoreError({ reason: "not-found" });
+    }
+    const prior = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+      `
     SELECT author_agent_id, msg_id, destination FROM collective_messages
     WHERE operation_id = ? AND role = ? AND (role <> 'request' OR destination = ?)
-  `)
-    .get(binding.operationId, binding.role, binding.destination);
-  if (prior !== undefined) {
-    requireEqual(readText(prior, "author_agent_id"), intent.authorAgentId);
-    requireEqual(readText(prior, "msg_id"), intent.msgId);
-    requireEqual(readText(prior, "destination"), binding.destination);
-    return "existing";
-  }
-  requireMessageState(database, binding, intent, operation);
-  database
-    .prepare(`
+  `,
+      [binding.operationId, binding.role, binding.destination],
+    ))[0];
+    if (prior !== undefined) {
+      requireEqual(readText(prior, "author_agent_id"), intent.authorAgentId);
+      requireEqual(readText(prior, "msg_id"), intent.msgId);
+      requireEqual(readText(prior, "destination"), binding.destination);
+      return "existing";
+    }
+    yield* requireMessageState(binding, intent, operation);
+    yield* database.unsafe<Readonly<Record<string, unknown>>>(
+      `
     INSERT INTO collective_messages (operation_id, role, destination, author_agent_id, msg_id)
     VALUES (?, ?, ?, ?, ?)
-  `)
-    .run(
-      binding.operationId,
-      binding.role,
-      binding.destination,
-      intent.authorAgentId,
-      intent.msgId,
+  `,
+      [
+        binding.operationId,
+        binding.role,
+        binding.destination,
+        intent.authorAgentId,
+        intent.msgId,
+      ],
     );
-  return "inserted";
+    return "inserted";
+  }).pipe(
+    storeOperation,
+    Effect.withSpan("bindCollectiveMessageInTransaction"),
+  );
 }
-
 /**
  * Retain one exact origin/request binding in the caller's transaction. Remote
  * identities come from certified records; a peer cannot replace a local
  * operation or a different request that happens to name the same id.
  */
 export function retainCollectiveInTransaction(
-  database: DatabaseSync,
   input: CollectiveOperationInput,
-): StoreMutation {
-  requireText(input.operationId);
-  requireBytes(input.canonicalRequest);
-  requireBytes(input.canonicalDescriptor);
-  const origin = requireOrigin(database, input);
-  const prior = findCollective(database, input.operationId);
-  if (prior !== undefined) {
-    requireSameOperation(input, prior, origin);
-    return "existing";
-  }
-  insertCollective(database, input, origin);
-  return "inserted";
+): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    requireText(input.operationId);
+    requireBytes(input.canonicalRequest);
+    requireBytes(input.canonicalDescriptor);
+    const origin = yield* requireOrigin(input);
+    const prior = yield* findCollective(input.operationId);
+    if (prior !== undefined) {
+      requireSameOperation(input, prior, origin);
+      return "existing";
+    }
+    yield* insertCollective(input, origin);
+    return "inserted";
+  }).pipe(storeOperation, Effect.withSpan("retainCollectiveInTransaction"));
 }
-
 /** The decoded immutable descriptor and its current terminal phase. */
 export function findCollective(
-  database: DatabaseSync,
   operationId: string,
-): StoredCollectiveOperation | undefined {
-  const row = database
-    .prepare("SELECT * FROM collective_operations WHERE operation_id = ?")
-    .get(operationId);
-  return row === undefined ? undefined : readCollective(row);
+): Effect.Effect<
+  StoredCollectiveOperation | undefined,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const row = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+      "SELECT * FROM collective_operations WHERE operation_id = ?",
+      [operationId],
+    ))[0];
+    return row === undefined ? undefined : readCollective(row);
+  }).pipe(storeOperation, Effect.withSpan("findCollective"));
 }
-
 /** Private row decoding preserves the closed lifecycle vocabulary. */
 export function readCollective(
   row: Readonly<Record<string, unknown>>,
@@ -135,38 +145,47 @@ export function readCollective(
     ),
   };
 }
-
-function requireOrigin(
-  database: DatabaseSync,
-  input: CollectiveOperationInput,
-): { readonly creatorAgentId: string; readonly conversationId?: string } {
-  const identity = readStoredIdentity(database);
-  if (identity === undefined) {
-    throw new StoreSignal("not-found");
-  }
-  if (input.origin.kind === "local") {
-    return { creatorAgentId: identity.agentId };
-  }
-  const row = database
-    .prepare(`
+function requireOrigin(input: CollectiveOperationInput): Effect.Effect<
+  {
+    readonly creatorAgentId: string;
+    readonly conversationId?: string;
+  },
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const identity = yield* readStoredIdentity();
+    if (identity === undefined) {
+      return yield* new EndpointStoreError({ reason: "not-found" });
+    }
+    if (input.origin.kind === "local") {
+      return { creatorAgentId: identity.agentId };
+    }
+    const row = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+      `
     SELECT r.author_agent_id, c.conversation_id, d.canonical_message
     FROM certified_records c
     JOIN staged_records r USING (conversation_id, record_hash)
     JOIN pending_deliveries d USING (conversation_id, record_hash)
     WHERE c.record_hash = ?
-  `)
-    .get(input.origin.recordHash);
-  if (row === undefined) {
-    throw new StoreSignal("not-found");
-  }
-  const creatorAgentId = readText(row, "author_agent_id");
-  if (identity.agentId === creatorAgentId) {
-    throw new StoreSignal("conflict");
-  }
-  requireSameBytes(readBytes(row, "canonical_message"), input.canonicalRequest);
-  return { creatorAgentId, conversationId: readText(row, "conversation_id") };
+  `,
+      [input.origin.recordHash],
+    ))[0];
+    if (row === undefined) {
+      return yield* new EndpointStoreError({ reason: "not-found" });
+    }
+    const creatorAgentId = readText(row, "author_agent_id");
+    if (identity.agentId === creatorAgentId) {
+      return yield* new EndpointStoreError({ reason: "conflict" });
+    }
+    requireSameBytes(
+      readBytes(row, "canonical_message"),
+      input.canonicalRequest,
+    );
+    return { creatorAgentId, conversationId: readText(row, "conversation_id") };
+  }).pipe(storeOperation);
 }
-
 function requireSameOperation(
   input: CollectiveOperationInput,
   prior: StoredCollectiveOperation,
@@ -181,69 +200,74 @@ function requireSameOperation(
     requireEqual(prior.origin.recordHash, input.origin.recordHash);
   }
 }
-
 function insertCollective(
-  database: DatabaseSync,
   input: CollectiveOperationInput,
   origin: OriginIdentity,
-): void {
-  database
-    .prepare(`
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    yield* database.unsafe<Readonly<Record<string, unknown>>>(
+      `
     INSERT INTO collective_operations
       (operation_id, creator_agent_id, origin, request_conversation_id,
        request_record_hash, canonical_request,
        canonical_descriptor, delivery_token)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `)
-    .run(
-      input.operationId,
-      origin.creatorAgentId,
-      input.origin.kind,
-      origin.conversationId ?? null,
-      input.origin.kind === "remote" ? input.origin.recordHash : null,
-      copyBytes(input.canonicalRequest),
-      copyBytes(input.canonicalDescriptor),
-      mintDeliveryToken(
-        (token) =>
-          database
-            .prepare(`
+  `,
+      [
+        input.operationId,
+        origin.creatorAgentId,
+        input.origin.kind,
+        origin.conversationId ?? null,
+        input.origin.kind === "remote" ? input.origin.recordHash : null,
+        copyBytes(input.canonicalRequest),
+        copyBytes(input.canonicalDescriptor),
+        yield* mintDeliveryToken((token) =>
+          Effect.gen(function* () {
+            return (
+              (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+                `
       SELECT 1 AS retained FROM collective_operations WHERE delivery_token = ?
       UNION ALL SELECT 1 FROM pending_deliveries WHERE delivery_token = ?
       LIMIT 1
-    `)
-            .get(token, token) !== undefined,
-      ),
+    `,
+                [token, token],
+              ))[0] !== undefined
+            );
+          }),
+        ),
+      ],
     );
+  }).pipe(storeOperation);
 }
-
 function requireMessageState(
-  database: DatabaseSync,
   binding: CollectiveMessageBinding,
   intent: MessageIntent,
   operation: StoredCollectiveOperation,
-): void {
-  if (
-    binding.role === "request" &&
-    database
-      .prepare(
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    if (
+      binding.role === "request" &&
+      (yield* database.unsafe<Readonly<Record<string, unknown>>>(
         "SELECT 1 FROM collective_refusals WHERE operation_id = ? AND destination = ?",
-      )
-      .get(binding.operationId, binding.destination) !== undefined
-  ) {
-    throw new StoreSignal("conflict");
-  }
-  if (binding.role === "response") {
-    requireRemoteRequest(operation, intent.conversationId);
-  } else {
-    requireEqual(operation.origin.kind, "local");
-    requireEqual(operation.creatorAgentId, intent.authorAgentId);
-  }
-  requireEqual(
-    operation.phase,
-    binding.role === "close" ? "finalizing" : "collecting",
-  );
+        [binding.operationId, binding.destination],
+      ))[0] !== undefined
+    ) {
+      return yield* new EndpointStoreError({ reason: "conflict" });
+    }
+    if (binding.role === "response") {
+      requireRemoteRequest(operation, intent.conversationId);
+    } else {
+      requireEqual(operation.origin.kind, "local");
+      requireEqual(operation.creatorAgentId, intent.authorAgentId);
+    }
+    requireEqual(
+      operation.phase,
+      binding.role === "close" ? "finalizing" : "collecting",
+    );
+  }).pipe(storeOperation);
 }
-
 function requireRemoteRequest(
   operation: StoredCollectiveOperation,
   conversationId: string,
@@ -253,7 +277,6 @@ function requireRemoteRequest(
   }
   requireEqual(operation.origin.conversationId, conversationId);
 }
-
 function readOrigin(
   row: Readonly<Record<string, unknown>>,
 ): StoredCollectiveOperation["origin"] {

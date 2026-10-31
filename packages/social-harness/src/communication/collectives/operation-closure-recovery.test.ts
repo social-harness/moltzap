@@ -1,5 +1,6 @@
 /** @file Signed all-gather completion survives interruption at each retained transition. */
 
+import { SqlClient } from "@effect/sql";
 import { scoped as it } from "@effect/vitest";
 import {
   Deferred,
@@ -29,12 +30,13 @@ import {
   makeCollectiveOperations,
 } from "../../__tests__/collective-send.js";
 import {
+  openTestDatabase,
+  type TestDatabase,
+} from "../../__tests__/communication-test-database.js";
+import {
   engineFixture,
   type Fixture,
-} from "../../__tests__/firewall-runtime-fixtures.js";
-import { withDaemonStore } from "../../__tests__/store-schema-fixtures.js";
-import { type DaemonStore, openDaemonStore } from "../../daemon/store.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
+} from "../../__tests__/conversation-fixtures.js";
 import {
   AgentAddress,
   type CertifiedRecord,
@@ -74,12 +76,10 @@ it.each(closureCheckpoints)(
 );
 
 function closurePorts(
-  store: DaemonStore,
   engine: EndpointEngine,
   scope: Scope.Scope,
 ): Omit<CollectivePorts, "emit"> {
   return {
-    store,
     self: testAgentView(self),
     scope,
     sendMessage: engine.send,
@@ -96,32 +96,34 @@ function interruptClosure(
   checkpoint: ClosureCheckpoint,
 ) {
   return Effect.gen(function* () {
-    const store = yield* openDaemonStore(subject.directory, {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
+    const store = yield* openTestDatabase(subject.directory);
     const engine = yield* resumeEngine(subject, store);
     const paused = yield* Deferred.make<undefined>();
     const barrier = Deferred.succeed(paused, undefined).pipe(
       Effect.zipRight(Effect.never),
     );
-    const layer = yield* makeCollectiveOperations({
-      ...closurePorts(store, engine, yield* Scope.Scope),
-      sendMessage: (input) =>
-        checkpoint === "before-bind" && input.collective?.role === "close"
-          ? barrier
-          : engine.send(input),
-      emit: () => barrier,
-    });
+    const layer = yield* store.run(
+      makeCollectiveOperations({
+        ...closurePorts(engine, yield* Scope.Scope),
+        sendMessage: (input) =>
+          checkpoint === "before-bind" && input.collective?.role === "close"
+            ? barrier
+            : engine.send(input),
+        emit: () => barrier,
+      }),
+    );
     const fixture = { subject, store, engine, layer };
     const { operationId, answer } = yield* requestWithOneDecline(fixture, head);
     yield* reachClosureCheckpoint(fixture, checkpoint, paused, answer);
     const operation = yield* Effect.fromNullable(
-      yield* store.readCollectiveOperation(operationId),
+      yield* store.run(store.store.readCollectiveOperation(operationId)),
     );
-    const [close] = yield* store.readCollectiveMessages({
-      operationId,
-      role: "close",
-    });
+    const [close] = yield* store.run(
+      store.store.readCollectiveMessages({
+        operationId,
+        role: "close",
+      }),
+    );
     expect(operation.phase).toBe(
       checkpoint === "before-deadline" ? "collecting" : "finalizing",
     );
@@ -134,7 +136,7 @@ type InterruptedClosure = Effect.Effect.Success<
 >;
 interface ClosureFixture {
   readonly subject: Fixture;
-  readonly store: DaemonStore;
+  readonly store: TestDatabase;
   readonly engine: EndpointEngine;
   readonly layer: CollectiveOperations;
 }
@@ -156,7 +158,7 @@ function requestWithOneDecline(fixture: ClosureFixture, head: CertifiedRecord) {
       })
       .pipe(Effect.fork);
     yield* untilLive(
-      store.readCollectiveMessages().pipe(
+      store.run(store.store.readCollectiveMessages()).pipe(
         Effect.map((messages) =>
           messages.some((message) => message.role === "request"),
         ),
@@ -219,15 +221,13 @@ function reachClosureCheckpoint(
 
 function recoverClosure(subject: Fixture, interrupted: InterruptedClosure) {
   return Effect.gen(function* () {
-    const store = yield* openDaemonStore(subject.directory, {
-      liveWireVersions: LIVE_WIRE_VERSIONS,
-    });
+    const store = yield* openTestDatabase(subject.directory);
     const engine = yield* resumeEngine(subject, store);
     const emitted = yield* Deferred.make<InboundItem>();
     yield* makeCollectiveOperations({
-      ...closurePorts(store, engine, yield* Scope.Scope),
+      ...closurePorts(engine, yield* Scope.Scope),
       emit: retainingEmitter(store, emitted),
-    });
+    }).pipe(Effect.provideService(SqlClient.SqlClient, store.sql));
     yield* waitForClose(store);
     const close = yield* boundIntent(store, "close");
     const metadata = yield* verifyRecoveredClose(close, interrupted);
@@ -246,7 +246,9 @@ function recoverClosure(subject: Fixture, interrupted: InterruptedClosure) {
       ],
     });
     const operation = yield* Effect.fromNullable(
-      yield* store.readCollectiveOperation(interrupted.operation.operationId),
+      yield* store.run(
+        store.store.readCollectiveOperation(interrupted.operation.operationId),
+      ),
     );
     if (interrupted.operation.canonicalSelection !== undefined) {
       expect(operation.canonicalSelection).toEqual(
@@ -291,34 +293,35 @@ function verifyCompletedRestart(
   interrupted: InterruptedClosure,
   recovered: Effect.Effect.Success<ReturnType<typeof recoverClosure>>,
 ) {
-  return withDaemonStore(subject.directory, (store) =>
-    Effect.gen(function* () {
-      const engine = yield* resumeEngine(subject, store);
-      yield* makeCollectiveOperations({
-        ...closurePorts(store, engine, yield* Scope.Scope),
-        emit: () =>
-          Effect.dieMessage("a completed result cannot be emitted twice"),
-      });
-      const [operation] = yield* store.readCollectiveOperations();
-      expect(operation?.deliveryToken).toBe(
-        interrupted.operation.deliveryToken,
-      );
-      expect(operation?.canonicalSelection).toEqual(recovered.selection);
-      expect(operation).toMatchObject({ phase: "completed" });
-      expect(yield* boundIntent(store, "close")).toEqual(recovered.close);
-      expect(
-        yield* store.readCollectiveMessages({
+  return Effect.gen(function* () {
+    const store = yield* openTestDatabase(subject.directory);
+    const engine = yield* resumeEngine(subject, store);
+    yield* makeCollectiveOperations({
+      ...closurePorts(engine, yield* Scope.Scope),
+      emit: () =>
+        Effect.dieMessage("a completed result cannot be emitted twice"),
+    }).pipe(Effect.provideService(SqlClient.SqlClient, store.sql));
+    const [operation] = yield* store.run(
+      store.store.readCollectiveOperations(),
+    );
+    expect(operation?.deliveryToken).toBe(interrupted.operation.deliveryToken);
+    expect(operation?.canonicalSelection).toEqual(recovered.selection);
+    expect(operation).toMatchObject({ phase: "completed" });
+    expect(yield* boundIntent(store, "close")).toEqual(recovered.close);
+    expect(
+      yield* store.run(
+        store.store.readCollectiveMessages({
           operationId: interrupted.operation.operationId,
           role: "close",
         }),
-      ).toHaveLength(1);
-      const { items: inbox } = yield* store.readInbox();
-      expect(inbox).toHaveLength(1);
-      const item = yield* Effect.fromNullable(inbox[0]);
-      expect(item.deliveryToken).toBe(interrupted.operation.deliveryToken);
-      expect(
-        yield* decodeRuntimeValue(InboundItem, item.canonicalItem),
-      ).toEqual(recovered.result);
-    }).pipe(Effect.scoped),
-  );
+      ),
+    ).toHaveLength(1);
+    const { items: inbox } = yield* store.run(store.store.readInbox());
+    expect(inbox).toHaveLength(1);
+    const item = yield* Effect.fromNullable(inbox[0]);
+    expect(item.deliveryToken).toBe(interrupted.operation.deliveryToken);
+    expect(yield* decodeRuntimeValue(InboundItem, item.canonicalItem)).toEqual(
+      recovered.result,
+    );
+  }).pipe(Effect.scoped);
 }

@@ -75,6 +75,7 @@ function prepareDaemonMount(fixture: DaemonProcessFixture) {
       await chmod(directory, 0o755);
       await chmod(fixture.agentPrivateKeyFile, 0o644);
       await chmod(fixture.admissionCredentialFile, 0o644);
+      await chmod(fixture.mcpCredentialFile, 0o644);
     },
     catch: (cause) => processTestError("could not prepare daemon mount", cause),
   });

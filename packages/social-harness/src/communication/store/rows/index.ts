@@ -1,9 +1,15 @@
 /** @file Detached endpoint state used by store mutations and recovery reads. */
 
-import type { DatabaseSync } from "node:sqlite";
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
 import type { IdentityBinding } from "../types.js";
-import { readBytes, readText } from "../database/index.js";
 
+import {
+  type EndpointStoreError,
+  readBytes,
+  readText,
+  storeOperation,
+} from "../database/index.js";
 /** First-candidate locks are selected against one durable predecessor. */
 export {
   findProposalLock,
@@ -28,25 +34,27 @@ export {
   readRecoveredReanchor,
   requireSameReanchor,
 } from "./reanchors.js";
-
 /**
  * Reads the optional singleton identity binding.
  *
- * @param database Exclusively owned endpoint database.
  * @returns The detached identity binding when one is committed.
  */
-export function readStoredIdentity(
-  database: DatabaseSync,
-): IdentityBinding | undefined {
-  const row = database
-    .prepare(
+export function readStoredIdentity(): Effect.Effect<
+  IdentityBinding | undefined,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const row = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "SELECT agent_id, canonical_agent_card FROM identity_binding WHERE singleton = 1",
-    )
-    .get();
-  return row === undefined
-    ? undefined
-    : Object.freeze({
-        agentId: readText(row, "agent_id"),
-        canonicalAgentCard: readBytes(row, "canonical_agent_card"),
-      });
+      [],
+    ))[0];
+    return row === undefined
+      ? undefined
+      : Object.freeze({
+          agentId: readText(row, "agent_id"),
+          canonicalAgentCard: readBytes(row, "canonical_agent_card"),
+        });
+  }).pipe(storeOperation, Effect.withSpan("readStoredIdentity"));
 }

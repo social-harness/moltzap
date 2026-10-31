@@ -14,6 +14,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import {
   DeliveryToken,
@@ -25,8 +26,6 @@ import {
   HARNESS_CONSUMER_META_KEY,
   INBOX_ITEM_EVENT,
 } from "../../host-protocol/names.js";
-import { LIVE_WIRE_VERSIONS } from "../../identity/wire-version.js";
-import { openDaemonStore } from "../store.js";
 import { makeHarnessPollEvents } from "./poll.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- External protocol codes, closed lifecycle errors and retained inbox counts are conformance expectations. */
@@ -42,9 +41,7 @@ const item = (text: string) =>
     error: text,
   });
 const acquireFixture = Effect.gen(function* () {
-  const store = yield* openDaemonStore(stateDirectory(), {
-    liveWireVersions: LIVE_WIRE_VERSIONS,
-  });
+  const store = yield* openInboxFixture(stateDirectory());
   const gate = yield* Effect.makeSemaphore(1);
   const poll = yield* makeHarnessPollEvents(store, gate);
   const add = (byte: number, text?: string) =>
@@ -269,7 +266,7 @@ const fencesRestart = () =>
     }),
   );
 
-const rejectsMissingOrMalformedBinding = (metadata: unknown, code: number) =>
+const rejectsMalformedBinding = (metadata: unknown, code: number) =>
   run(
     Effect.gen(function* () {
       const fixture = yield* acquireFixture;
@@ -364,7 +361,7 @@ const ignoresAcknowledgedReplayRows = () =>
     }),
   );
 
-const permitsUnboundOwnerDiagnostics = () =>
+const permitsUnboundInboxReads = () =>
   run(
     Effect.gen(function* () {
       const fixture = yield* acquireFixture;
@@ -374,7 +371,7 @@ const permitsUnboundOwnerDiagnostics = () =>
         fixture.gate.release(1),
       );
       const inbox = yield* fixture.poll
-        .nativeOperation({}, fixture.store.readInbox(), false)
+        .nativeOperation({}, fixture.store.readInbox())
         .pipe(Effect.timeout("2 seconds"));
       expect(inbox.items.map((entry) => entry.deliveryToken)).toEqual([
         token(1),
@@ -476,8 +473,8 @@ const serializesReceiptAndRevocation = () =>
 
 describe("polling replay and receipt races", () => {
   it(
-    "keeps unbound owner diagnostics independent of the consumer gate",
-    permitsUnboundOwnerDiagnostics,
+    "keeps unbound inbox inspection independent of the consumer gate",
+    permitsUnboundInboxReads,
   );
   it(
     "skips acknowledged arrivals without forcing unread recovery",
@@ -525,10 +522,8 @@ describe("draft polling and native receipt lifecycle", () => {
     "fences old generations after daemon restart while retaining unread work",
     fencesRestart,
   );
-  it("rejects missing metadata before a receipt operation runs", () =>
-    rejectsMissingOrMalformedBinding({}, -32012));
   it("rejects malformed metadata before a receipt operation runs", () =>
-    rejectsMissingOrMalformedBinding(
+    rejectsMalformedBinding(
       { [HARNESS_CONSUMER_META_KEY]: { generation: "not-a-generation" } },
       -32602,
     ));

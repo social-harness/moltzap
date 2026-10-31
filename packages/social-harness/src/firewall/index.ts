@@ -1,5 +1,6 @@
-/** @file One firewall owns active rules, checks, edits and retained owner queries. */
+/** @file Active policy, authorized edits and checks over captured message batches. */
 
+import * as SqlClient from "@effect/sql/SqlClient";
 import { Clock, Effect, Schedule, Schema, Struct } from "effect";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -15,15 +16,16 @@ import { exactStruct } from "../encoding/exact.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../encoding/limits.js";
 import { AgentView } from "../identity/cards.js";
 import {
+  captureInput,
   captureRegistration,
+  checkCapturedMessage,
   type CheckedGuidance,
-  checkMessage,
   type DecisionProvider,
   DecisionProviderError,
   decodeFrozen,
   ENDPOINT_SENDER,
   type FirewallCheck,
-  Message,
+  type Message,
   MessageContext,
   type MessageMiddleware,
   projectFeedback,
@@ -37,14 +39,13 @@ import {
   firewallConfigurationSchema,
   type FirewallInstallation,
   FirewallPolicyError,
-  type FirewallPolicyOperations,
   FirewallSettings,
   type LoadedMessagePolicy,
   MAXIMUM_BEHAVIOR_BYTES,
   MAXIMUM_EDITABLE_RULES,
-  type PolicyAuthority,
   type PolicyProblem,
   policyReadSchema,
+  type policyUpdateResultSchema,
   policyUpdateSchema,
   PrivateCheckTrace,
   TextPolicySettings,
@@ -54,13 +55,12 @@ import { makeJevDecisionProvider } from "./jev.js";
 import {
   type FirewallActivation,
   type FirewallCompletion,
-  type FirewallLocalAdmission,
-  type FirewallStore,
-  readDecisions,
+  readFirewallPolicy,
   withoutTraces,
+  writeFirewallPolicy,
 } from "./store/index.js";
 
-/** Fixed code and provider resources live for the process; owner tools edit only text rules. */
+/** Code checks and provider resources remain fixed while text rules can change. */
 export interface FirewallOptions {
   readonly mode: "guidance" | "enforcement";
   readonly incoming: readonly MessageMiddleware[];
@@ -87,42 +87,37 @@ export interface PreparedFirewallCheck {
   readonly agents: readonly AgentView[];
 }
 
-/** The caller commits the completion with the message's delivery disposition. */
+/** A completed assessment includes the evidence needed to retain its decision. */
 export interface CheckedMessage {
   readonly completion: FirewallCompletion;
   readonly result: FirewallCheck;
   readonly guidance?: CheckedGuidance;
 }
 
-/** Checks capture active rules locally; one batch keeps the same rules for all its messages. */
+/** Checks capture one policy for all supplied messages. */
 export interface Firewall {
   readonly configuration: FirewallConfiguration;
-  readonly policy: FirewallPolicyOperations;
+  /** Returns fixed and editable rules with the active policy revision. */
+  readonly readPolicy: () => Effect.Effect<
+    typeof policyReadSchema.Type,
+    FirewallPolicyError
+  >;
+  /** Saves and activates the requested change. Failure preserves the active policy. */
+  readonly updatePolicy: (
+    request: typeof policyUpdateSchema.Type,
+  ) => Effect.Effect<typeof policyUpdateResultSchema.Type, FirewallPolicyError>;
+  /** Returns completed assessments in input order. The caller saves their decisions. */
   readonly check: (
-    input: PreparedFirewallCheck,
-  ) => Effect.Effect<CheckedMessage, EndpointStoreError>;
-  readonly checkMany: (
     inputs: readonly PreparedFirewallCheck[],
   ) => Effect.Effect<readonly CheckedMessage[], EndpointStoreError>;
-  readonly recordEndpoint: (
-    input: PreparedFirewallCheck & { readonly message: Message },
-  ) => Effect.Effect<
-    NonNullable<FirewallLocalAdmission["deterministic"]>,
-    EndpointStoreError
-  >;
 }
 
 type FixedRules = typeof policyReadSchema.fields.fixedRules.Type;
-const textId = "org.social-harness/text";
 const storedPolicyFormat = "org.social-harness/text-rules/v1";
-const ownedRulesSchema = policyReadSchema.fields.rules.pipe(
-  Schema.maxItems(MAXIMUM_EDITABLE_RULES),
-);
 const storedPolicySchema = exactStruct({
   format: Schema.Literal(storedPolicyFormat),
-  rules: ownedRulesSchema,
+  rules: editableDocumentSchema,
 });
-type OwnedRule = (typeof ownedRulesSchema.Type)[number];
 const persistenceFailure = () =>
   new FirewallPolicyError({ reason: "persistence-failed" });
 type PolicyEditPath = NonNullable<FirewallPolicyError["path"]>;
@@ -132,36 +127,31 @@ const invalidRule = (
 ) => new FirewallPolicyError({ reason: "invalid-rule", problem, ...at });
 
 /** Construction validates the complete policy before seeding a missing document. */
-export const makeFirewall = Effect.fn("makeFirewall")(function* (
+export function makeFirewall(
   source: FirewallOptions | LoadedMessagePolicy,
-  store: FirewallStore,
-): Effect.fn.Return<Firewall, FirewallPolicyError> {
-  const options =
-    "policy" in source ? yield* configuredOptions(source) : source;
-  const captured = yield* captureOptions(options).pipe(
-    Effect.catchTags({
-      CheckInputError: () =>
-        Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
-      ParseError: () =>
-        Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
-    }),
-    Effect.catchAllDefect(() =>
-      Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
-    ),
-  );
-  const state = yield* initializeRules(captured, store);
-  const edits = yield* Effect.makeSemaphore(1);
-  const permits = yield* Effect.makeSemaphore(
-    captured.configuration.maximumConcurrentChecks,
-  );
-  return firewallOperations(captured, state, store, {
-    permits,
-    policy: policyOperations(captured, state, store, edits),
-  });
-});
-
-function initializeRules(captured: CapturedOptions, store: FirewallStore) {
+): Effect.Effect<Firewall, FirewallPolicyError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const { captured, fixed, active } = yield* initialPolicy(source);
+    return yield* liveFirewall(sql, captured, fixed, active);
+  }).pipe(Effect.withSpan("makeFirewall"));
+}
+
+function initialPolicy(source: FirewallOptions | LoadedMessagePolicy) {
+  return Effect.gen(function* () {
+    const options =
+      "policy" in source ? yield* configuredOptions(source) : source;
+    const captured = yield* captureOptions(options).pipe(
+      Effect.catchTags({
+        CheckInputError: () =>
+          Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
+        ParseError: () =>
+          Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
+      }),
+      Effect.catchAllDefect(() =>
+        Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
+      ),
+    );
     const fixed = yield* decodeFrozen(
       policyReadSchema.fields.fixedRules,
       fixedRules(captured),
@@ -170,21 +160,35 @@ function initializeRules(captured: CapturedOptions, store: FirewallStore) {
         Effect.fail(new FirewallPolicyError({ reason: "build-failed" })),
       ),
     );
-    const fixedRuleIds = fixed.map((rule) => rule.id);
-    const stored = yield* store
-      .readFirewallPolicy()
-      .pipe(Effect.mapError(persistenceFailure));
-    const loadedRules =
+    const { stored, rules } = yield* loadRules(captured);
+    yield* validateIds(
+      rules,
+      fixed.map((rule) => rule.id),
+    );
+    const active = yield* buildPolicy(captured, rules);
+    if (stored === undefined) {
+      yield* persistRules(rules);
+    }
+    return { captured, fixed, active };
+  });
+}
+
+function loadRules(options: CapturedOptions) {
+  return Effect.gen(function* () {
+    const stored = yield* readFirewallPolicy().pipe(
+      Effect.catchTag("EndpointStoreError", () =>
+        Effect.fail(persistenceFailure()),
+      ),
+    );
+    const selected =
       stored === undefined
-        ? (captured.text?.initialRules ?? []).map((rule) => ({
-            ...Struct.omit(rule),
-            owner: "owner" as const,
-          }))
-        : yield* decodeRuntimeValue(storedPolicySchema, stored).pipe(
-            Effect.map((value) => value.rules),
-            Effect.mapError(persistenceFailure),
-          );
-    const rules = yield* decodeFrozen(ownedRulesSchema, loadedRules).pipe(
+        ? (options.text?.initialRules ?? [])
+        : (yield* decodeRuntimeValue(storedPolicySchema, stored).pipe(
+            Effect.catchTag("EndpointStoreError", () =>
+              Effect.fail(persistenceFailure()),
+            ),
+          )).rules;
+    const rules = yield* decodeFrozen(editableDocumentSchema, selected).pipe(
       Effect.catchTag("ParseError", () =>
         Effect.fail(
           new FirewallPolicyError({
@@ -194,81 +198,112 @@ function initializeRules(captured: CapturedOptions, store: FirewallStore) {
         ),
       ),
     );
-    yield* validateIds(rules, fixedRuleIds);
-    const active = yield* buildPolicy(captured, rules);
-    const state: PolicyState = {
-      rules,
-      active,
-      fixedRuleIds,
-      fixedRules: fixed,
-    };
-    if (stored === undefined) {
-      yield* persistRules(store, rules);
-    }
-    return state;
+    return { stored, rules };
   });
 }
 
-function policyOperations(
-  captured: CapturedOptions,
-  state: PolicyState,
-  store: FirewallStore,
-  edits: Effect.Semaphore,
-): FirewallPolicyOperations {
-  const policy: FirewallPolicyOperations = {
-    read: () =>
-      Effect.sync(() => ({
-        rules: state.rules,
-        fixedRules: state.fixedRules,
-        activeRevision: state.active.configurationDigest,
-      })),
-    update: (request, authority) =>
-      edits.withPermits(1)(
-        updatePolicy(captured, store, state, { request, authority }),
-      ),
-    decisions: (request) =>
-      readDecisions(store, request, textId).pipe(
-        Effect.mapError(persistenceFailure),
-      ),
-  };
-  return policy;
+function liveFirewall(
+  sql: SqlClient.SqlClient,
+  options: CapturedOptions,
+  fixed: FixedRules,
+  initial: ActiveRules,
+) {
+  return Effect.gen(function* () {
+    let active = initial;
+    const fixedIds = fixed.map((rule) => rule.id);
+    const edits = yield* Effect.makeSemaphore(1);
+    const permits = yield* Effect.makeSemaphore(
+      options.configuration.maximumConcurrentChecks,
+    );
+    function activate(replacement: ActiveRules) {
+      active = replacement;
+    }
+    function updatePolicy(request: typeof policyUpdateSchema.Type) {
+      return edits.withPermits(1)(
+        Effect.gen(function* () {
+          const change = yield* preparePolicyChange(
+            options,
+            active.editableRules,
+            fixedIds,
+            request,
+          );
+          return yield* activatePolicy(sql, change, activate);
+        }),
+      );
+    }
+    const firewall: Firewall = {
+      configuration: options.configuration,
+      readPolicy: () =>
+        Effect.sync(() => ({
+          rules: active.editableRules,
+          fixedRules: fixed,
+          activeRevision: active.configurationDigest,
+        })),
+      updatePolicy,
+      check: (inputs) =>
+        Effect.suspend(() => checkBatch(options, active, permits, inputs)),
+    };
+    return Object.freeze(firewall);
+  });
 }
 
-function firewallOperations(
-  captured: CapturedOptions,
-  state: PolicyState,
-  store: FirewallStore,
-  resources: {
-    readonly permits: Effect.Semaphore;
-    readonly policy: FirewallPolicyOperations;
-  },
-): Firewall {
-  const firewall: Firewall = {
-    configuration: captured.configuration,
-    policy: resources.policy,
-    check: (input) =>
-      Effect.suspend(() => {
-        const current = state.active;
-        return resources.permits.withPermits(1)(
-          assess(captured, current, store, input),
-        );
-      }),
-    checkMany: (inputs) =>
-      Effect.suspend(() => {
-        const current = state.active;
-        return Effect.forEach(
-          inputs,
-          (input) =>
-            resources.permits.withPermits(1)(
-              assess(captured, current, store, input),
-            ),
-          { concurrency: captured.configuration.maximumConcurrentChecks },
-        );
-      }),
-    recordEndpoint: (input) =>
-      Effect.suspend(() => endpointRecord(captured, state.active, input)),
-  };
-  return Object.freeze(firewall);
+function checkBatch(
+  options: CapturedOptions,
+  policy: ActiveRules,
+  permits: Effect.Semaphore,
+  inputs: readonly PreparedFirewallCheck[],
+) {
+  return Effect.forEach(
+    inputs,
+    (input) => permits.withPermits(1)(assess(options, policy, input)),
+    {
+      concurrency: options.configuration.maximumConcurrentChecks,
+    },
+  );
+}
+
+function preparePolicyChange(
+  options: CapturedOptions,
+  rules: readonly TextRule[],
+  fixedIds: readonly string[],
+  request: typeof policyUpdateSchema.Type,
+) {
+  return Effect.gen(function* () {
+    const change = yield* decodeFrozen(policyUpdateSchema, request).pipe(
+      Effect.catchTag("ParseError", () => Effect.fail(invalidRule("schema"))),
+      Effect.flatMap(resolvedChange),
+    );
+    const next = yield* editedRules(rules, fixedIds, change);
+    const replacement = yield* buildPolicy(options, next);
+    yield* approveRuleChange();
+    return { change, rules: next, replacement };
+  });
+}
+
+/** Persistence and the sole active-policy assignment complete in one interruption boundary. */
+function activatePolicy(
+  sql: SqlClient.SqlClient,
+  prepared: Effect.Effect.Success<ReturnType<typeof preparePolicyChange>>,
+  activate: (replacement: ActiveRules) => void,
+) {
+  return Effect.uninterruptible(
+    Effect.gen(function* () {
+      const { rules, replacement, change } = prepared;
+      yield* persistRules(rules, {
+        time: yield* Clock.currentTimeMillis,
+        activeRevision: replacement.configurationDigest,
+        addedRuleIds: change.add.map((rule) => rule.id),
+        removedRuleIds: change.remove,
+      });
+      activate(replacement);
+      return { activeRevision: replacement.configurationDigest };
+    }),
+  ).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+}
+
+/** Approval remains permissive until the host's human-confirmation boundary is implemented. */
+function approveRuleChange(): Effect.Effect<void, FirewallPolicyError> {
+  return Effect.void;
 }
 
 function configuredOptions(loaded: LoadedMessagePolicy) {
@@ -373,7 +408,7 @@ function captureText(selected: NonNullable<FirewallOptions["text"]>) {
 }
 type CapturedOptions = Effect.Effect.Success<ReturnType<typeof captureOptions>>;
 
-function buildPolicy(options: CapturedOptions, rules: readonly OwnedRule[]) {
+function buildPolicy(options: CapturedOptions, rules: readonly TextRule[]) {
   return Effect.gen(function* () {
     const text = yield* textRules(options, rules);
     yield* validateChecks({
@@ -388,6 +423,7 @@ function buildPolicy(options: CapturedOptions, rules: readonly OwnedRule[]) {
     );
     return {
       metadata,
+      editableRules: rules,
       configurationDigest: yield* digest(metadata),
       ...Struct.omit(text, "provider", "textSettings"),
     };
@@ -403,11 +439,11 @@ function buildPolicy(options: CapturedOptions, rules: readonly OwnedRule[]) {
     ),
   );
 }
-function textRules(options: CapturedOptions, rules: readonly OwnedRule[]) {
+function textRules(options: CapturedOptions, rules: readonly TextRule[]) {
   return Effect.gen(function* () {
     const fixed = options.text?.fixedRules ?? [];
     const settings = options.text?.settings;
-    const documents = [...fixed, ...rules.map(Struct.omit("owner"))];
+    const documents = [...fixed, ...rules];
     if (documents.length > 0 && options.text === undefined) {
       return yield* new FirewallPolicyError({ reason: "not-configured" });
     }
@@ -418,9 +454,6 @@ function textRules(options: CapturedOptions, rules: readonly OwnedRule[]) {
         settings: settings ?? null,
       }),
       fixedRuleIds: fixed.map((rule) => rule.id),
-      runtimeRuleIds: rules
-        .filter((rule) => rule.owner === "runtime")
-        .map((rule) => rule.id),
       textSettings: settings,
       provider: options.text?.provider,
     };
@@ -460,13 +493,6 @@ function installationMetadata(
   return metadata;
 }
 type ActiveRules = Effect.Effect.Success<ReturnType<typeof buildPolicy>>;
-interface PolicyState {
-  rules: readonly OwnedRule[];
-  readonly fixedRuleIds: readonly string[];
-  readonly fixedRules: FixedRules;
-  active: ActiveRules;
-}
-
 function digest(value: unknown) {
   return encodeRuntimeValue(value).pipe(
     Effect.map((bytes) => createHash("sha256").update(bytes).digest("hex")),
@@ -521,13 +547,14 @@ function validateIds(
 }
 
 function persistRules(
-  store: FirewallStore,
-  rules: readonly OwnedRule[],
+  rules: readonly TextRule[],
   activation?: FirewallActivation,
 ) {
   return encodeRuntimeValue({ format: storedPolicyFormat, rules }).pipe(
-    Effect.flatMap((bytes) => store.writeFirewallPolicy(bytes, activation)),
-    Effect.mapError(persistenceFailure),
+    Effect.flatMap((bytes) => writeFirewallPolicy(bytes, activation)),
+    Effect.catchTag("EndpointStoreError", () =>
+      Effect.fail(persistenceFailure()),
+    ),
   );
 }
 
@@ -565,123 +592,57 @@ function behaviorRule(text: string, path: PolicyEditPath) {
  * document keeps or the edit adds twice, or more rules than the limit.
  */
 function editedRules(
-  rules: readonly OwnedRule[],
+  rules: readonly TextRule[],
   fixedRuleIds: readonly string[],
   { add, remove }: RuleChange,
-  authority: PolicyAuthority,
 ) {
   return Effect.gen(function* () {
-    yield* Effect.forEach(
-      remove,
-      (ruleId, index) =>
-        removable(rules, fixedRuleIds, { ruleId, index, authority }),
-      { concurrency: 1, discard: true },
-    );
-    const kept = rules.filter((rule) => !remove.includes(rule.id));
-    yield* Effect.forEach(
-      add,
-      (rule, index) =>
-        addable([...kept, ...add.slice(0, index)], fixedRuleIds, rule, index),
-      { concurrency: 1, discard: true },
-    );
+    const kept = yield* rulesAfterRemovals(rules, fixedRuleIds, remove);
+    const ids = new Set(kept.map((rule) => rule.id));
+    for (const [index, rule] of add.entries()) {
+      const path: PolicyEditPath = ["add", index];
+      if (fixedRuleIds.includes(rule.id)) {
+        return yield* new FirewallPolicyError({
+          reason: "fixed-rule",
+          ruleId: rule.id,
+          path,
+        });
+      }
+      if (ids.has(rule.id)) {
+        return yield* invalidRule("duplicate-id", { ruleId: rule.id, path });
+      }
+      ids.add(rule.id);
+    }
     if (kept.length + add.length > MAXIMUM_EDITABLE_RULES) {
       return yield* invalidRule("editable-limit");
     }
-    return yield* decodeFrozen(ownedRulesSchema, [
-      ...kept,
-      ...add.map((rule) => ({ ...rule, owner: authority })),
-    ]).pipe(Effect.mapError(() => invalidRule("schema")));
+    return yield* decodeFrozen(editableDocumentSchema, [...kept, ...add]).pipe(
+      Effect.mapError(() => invalidRule("schema")),
+    );
   });
 }
 
-function removable(
-  rules: readonly OwnedRule[],
+function rulesAfterRemovals(
+  rules: readonly TextRule[],
   fixedRuleIds: readonly string[],
-  {
-    ruleId,
-    index,
-    authority,
-  }: {
-    readonly ruleId: string;
-    readonly index: number;
-    readonly authority: PolicyAuthority;
-  },
-) {
-  const path: PolicyEditPath = ["remove", index];
-  if (fixedRuleIds.includes(ruleId)) {
-    return Effect.fail(
-      new FirewallPolicyError({ reason: "fixed-rule", ruleId, path }),
-    );
-  }
-  const rule = rules.find((entry) => entry.id === ruleId);
-  if (rule?.owner === "owner" && authority === "runtime") {
-    return Effect.fail(
-      new FirewallPolicyError({ reason: "owner-rule", ruleId, path }),
-    );
-  }
-  return rule !== undefined
-    ? Effect.void
-    : Effect.fail(invalidRule("unknown-id", { path, ruleId }));
-}
-
-function addable(
-  before: readonly TextRule[],
-  fixedRuleIds: readonly string[],
-  rule: TextRule,
-  index: number,
-) {
-  const path: PolicyEditPath = ["add", index];
-  if (fixedRuleIds.includes(rule.id)) {
-    return Effect.fail(
-      new FirewallPolicyError({ reason: "fixed-rule", ruleId: rule.id, path }),
-    );
-  }
-  return before.some(({ id }) => id === rule.id)
-    ? Effect.fail(invalidRule("duplicate-id", { path, ruleId: rule.id }))
-    : Effect.void;
-}
-
-function updatePolicy(
-  captured: CapturedOptions,
-  store: FirewallStore,
-  state: PolicyState,
-  {
-    request,
-    authority,
-  }: {
-    readonly request: typeof policyUpdateSchema.Type;
-    readonly authority: PolicyAuthority;
-  },
+  remove: readonly string[],
 ) {
   return Effect.gen(function* () {
-    const change = yield* decodeFrozen(policyUpdateSchema, request).pipe(
-      Effect.mapError(() => invalidRule("schema")),
-      Effect.flatMap((decoded) => resolvedChange(decoded)),
-    );
-    const next = yield* editedRules(
-      state.rules,
-      state.fixedRuleIds,
-      change,
-      authority,
-    );
-    const replacement = yield* buildPolicy(captured, next);
-    return yield* Effect.uninterruptible(
-      persistRules(store, next, {
-        time: yield* Clock.currentTimeMillis,
-        activeRevision: replacement.configurationDigest,
-        addedRuleIds: change.add.map((rule) => rule.id),
-        removedRuleIds: change.remove,
-      }).pipe(
-        Effect.zipRight(
-          Effect.sync(() => {
-            state.active = replacement;
-            state.rules = next;
-            return { activeRevision: replacement.configurationDigest };
-          }),
-        ),
-      ),
-    );
-  }).pipe(Effect.withSpan("updateFirewallPolicy"));
+    for (const [index, ruleId] of remove.entries()) {
+      const path: PolicyEditPath = ["remove", index];
+      if (fixedRuleIds.includes(ruleId)) {
+        return yield* new FirewallPolicyError({
+          reason: "fixed-rule",
+          ruleId,
+          path,
+        });
+      }
+      if (!rules.some((rule) => rule.id === ruleId)) {
+        return yield* invalidRule("unknown-id", { ruleId, path });
+      }
+    }
+    return rules.filter((rule) => !remove.includes(rule.id));
+  });
 }
 
 /** Only transient transport, rate-limit and server failures share the stage's bounded retry window. */
@@ -711,51 +672,53 @@ function isTransient(error: DecisionProviderError): boolean {
   );
 }
 
-/** The retained input and the evaluator receive the same captured message and evidence. */
+/** The evaluator and retained decision receive the same detached message and context. */
 function capturePrepared(
   configuration: FirewallConfiguration,
   input: PreparedFirewallCheck,
 ) {
   return Effect.gen(function* () {
-    const context = yield* decodeFrozen(MessageContext, {
+    const context = {
       ...Struct.omit(input.context),
       facts: configuration.facts,
-    });
-    const message =
+    };
+    const evidence =
       input.message === undefined
-        ? undefined
-        : yield* decodeFrozen(Message, input.message);
-    const agents = yield* decodeFrozen(Schema.Array(AgentView), input.agents);
+        ? {
+            event: undefined,
+            context: yield* decodeFrozen(MessageContext, context),
+          }
+        : yield* captureInput(
+            { direction: input.direction, message: input.message },
+            context,
+          );
     return {
       direction: input.direction,
       canonicalCandidate: input.canonicalCandidate.slice(),
-      context,
-      agents,
-      ...(message === undefined ? {} : { message }),
+      evidence,
+      agents: yield* decodeFrozen(Schema.Array(AgentView), input.agents),
     };
   }).pipe(
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
-    ),
+    Effect.catchTags({
+      CheckInputError: () =>
+        Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
+      ParseError: () =>
+        Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
+    }),
   );
 }
 
-/** Recording starts before inference; the daemon commits the returned disposition with delivery. */
+type CapturedCheck = Effect.Effect.Success<ReturnType<typeof capturePrepared>>;
+
+/** Completed checks carry the exact policy and evidence that delivery commits. */
 function assess(
   options: CapturedOptions,
   active: ActiveRules,
-  store: FirewallStore,
   requested: PreparedFirewallCheck,
 ) {
   return Effect.gen(function* () {
     const input = yield* capturePrepared(options.configuration, requested);
     const checkId = mintCheckId();
-    yield* store.beginFirewallAttempt({
-      checkId,
-      direction: input.direction,
-      canonicalCandidate: input.canonicalCandidate,
-      canonicalInput: yield* retainedInput(active, input),
-    });
     const assessed = yield* evaluateMessage(options, active, input).pipe(
       markRetries("firewall-check", input.direction, (exit) =>
         exitOutcome(exit, "checked"),
@@ -772,6 +735,9 @@ function assess(
       result: projection.result,
       completion: {
         checkId,
+        direction: input.direction,
+        canonicalCandidate: input.canonicalCandidate,
+        canonicalInput: yield* retainedInput(active, input),
         admit,
         canonicalResult: yield* encodeRuntimeValue(
           withoutTraces(projection.result),
@@ -787,61 +753,38 @@ function assess(
 function evaluateMessage(
   options: CapturedOptions,
   active: ActiveRules,
-  input: PreparedFirewallCheck,
+  input: CapturedCheck,
 ) {
-  return input.message === undefined
+  const evidence = input.evidence;
+  return evidence.event === undefined
     ? Effect.succeed(unavailable())
-    : checkMessage({
-        event: { direction: input.direction, message: input.message },
-        context: input.context,
-        code: options[input.direction],
-        rules: active.rules,
-        settings: options.settings,
-        revision: active.revision,
-        fixedRuleIds: active.fixedRuleIds,
-        runtimeRuleIds: active.runtimeRuleIds,
-        ...(options.text === undefined
-          ? {}
-          : {
-              textSettings: options.text.settings,
-              provider: options.text.provider,
-            }),
-      }).pipe(
+    : checkCapturedMessage(
+        {
+          code: options[input.direction],
+          rules: active.rules,
+          settings: options.settings,
+          revision: active.revision,
+          fixedRuleIds: active.fixedRuleIds,
+          ...(options.text === undefined
+            ? {}
+            : {
+                textSettings: options.text.settings,
+                provider: options.text.provider,
+              }),
+        },
+        evidence,
+      ).pipe(
         Effect.catchTag("CheckInputError", () => Effect.succeed(unavailable())),
       );
 }
 
-/** Endpoint-authored local items retain an audit in the caller's atomic publication transaction. */
-function endpointRecord(
-  options: CapturedOptions,
-  active: ActiveRules,
-  requested: PreparedFirewallCheck & { readonly message: Message },
-) {
-  return Effect.gen(function* () {
-    const input = yield* capturePrepared(options.configuration, requested);
-    return {
-      checkId: mintCheckId(),
-      direction: input.direction,
-      canonicalCandidate: input.canonicalCandidate,
-      canonicalInput: yield* retainedInput(active, input),
-      canonicalResult: yield* encodeRuntimeValue({
-        judgment: "allow",
-        reason: "eligible",
-        feedback: [],
-        guidance: [],
-        checks: [],
-      }),
-    } satisfies NonNullable<FirewallLocalAdmission["deterministic"]>;
-  });
-}
-
-function retainedInput(active: ActiveRules, input: PreparedFirewallCheck) {
+function retainedInput(active: ActiveRules, input: CapturedCheck) {
   return encodeRuntimeValue({
     configurationDigest: active.configurationDigest,
     installation: active.metadata,
-    context: input.context,
+    context: input.evidence.context,
     agents: input.agents,
-    message: input.message ?? null,
+    message: input.evidence.event?.message ?? null,
   });
 }
 
@@ -864,7 +807,7 @@ function unavailable(): FirewallCheck {
 /** Registered advice includes only the message references already visible to this agent. */
 function guidanceProjection(
   result: FirewallCheck,
-  input: PreparedFirewallCheck,
+  input: CapturedCheck,
   capture: {
     readonly mode: "guidance" | "enforcement";
     readonly checkId: string;
@@ -900,18 +843,20 @@ function guidanceProjection(
 
 function guidanceSubjects(
   selected: ReadonlySet<string>,
-  input: PreparedFirewallCheck,
+  input: CapturedCheck,
 ): CheckedGuidance["subjects"] {
   const agents = new Map<string, AgentView>(
     input.agents.map((agent) => [agent.agentId, agent]),
   );
-  const available = input.context.history.filter(
+  const available = input.evidence.context.history.filter(
     (entry) => entry.visibility === "runtime" && entry.admission === "admitted",
   );
+  const message = input.evidence.event?.message;
   const subjects = new Map(
-    [...available, ...(input.message === undefined ? [] : [input.message])].map(
-      (entry) => [entry.id, entry],
-    ),
+    [...available, ...(message === undefined ? [] : [message])].map((entry) => [
+      entry.id,
+      entry,
+    ]),
   );
   return [...subjects.values()]
     .filter((entry) => selected.has(entry.id))
@@ -934,7 +879,6 @@ function guidanceSubjects(
 /** The firewall's supported offline and managed callers share these check contracts. */
 export {
   CheckInputError,
-  checkMessage,
   type DecisionProvider,
   DecisionProviderError,
   type DecisionRequest,

@@ -1,23 +1,32 @@
 /** @file Checks queued incoming items and records whether the host may receive them. */
 
+import * as SqlClient from "@effect/sql/SqlClient";
 import { Cause, Clock, Deferred, Effect, Queue, type Scope } from "effect";
-import type {
-  FirewallInboxEntry,
-  FirewallStore,
-} from "../../firewall/store/index.js";
 import {
   decodeRuntimeValue,
   type DeliveryToken,
   encodeRuntimeValue,
-  type EndpointStoreError,
+  EndpointStoreError,
 } from "../../communication/store/index.js";
+import {
+  type FirewallInboxEntry,
+  readNextPendingMessages,
+} from "../../firewall/store/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
+import {
+  retireFirewallItem,
+  saveMessageDecision,
+  saveResultDecision,
+} from "../store.js";
+import {
+  type FirewallEnvironment,
+  prepareIncomingCheck,
+} from "./firewall-context.js";
 import { checkLocalItem } from "./local-results.js";
-import { type FirewallEnvironment, prepareIncomingCheck } from "./message.js";
 
 /** What the admission worker reads and changes in one service's delivery. */
 export interface AdmissionContext {
-  readonly store: FirewallStore;
+  readonly sql: SqlClient.SqlClient;
   /**
    * Make a committed disposition current in delivery: an admitted item joins
    * the local items, a withheld one is forgotten.
@@ -42,9 +51,9 @@ export interface AdmissionContext {
 
 /**
  * Run the worker until the service scope closes or a check fails: on each
- * wake, start a check for every queued frontier whose conversation is idle,
+ * wake, start the next pending check in each idle conversation,
  * up to the firewall's concurrency bound, and publish after each commit.
- * @param input The service's store, collective layer and worker bookkeeping.
+ * @param input The service's SQL client, local attribution and worker bookkeeping.
  * @param publish Runs after each committed disposition, so subscribers see it.
  * @returns Never succeeds; fails with the first store error a check returns.
  */
@@ -53,18 +62,22 @@ export function runAdmission(
   publish: Effect.Effect<void>,
 ): Effect.Effect<never, EndpointStoreError> {
   return Queue.take(input.admissionWake).pipe(
-    Effect.zipRight(drainAdmission(input, publish)),
+    Effect.zipRight(checkPendingMessages(input, publish)),
     Effect.forever,
     Effect.raceFirst(Deferred.await(input.admissionFailure)),
+    Effect.provideService(SqlClient.SqlClient, input.sql),
   );
 }
-function drainAdmission(input: AdmissionContext, publish: Effect.Effect<void>) {
+function checkPendingMessages(
+  input: AdmissionContext,
+  publish: Effect.Effect<void>,
+) {
   return Effect.gen(function* () {
     const environment = input.firewallEnvironment?.();
     if (environment === undefined) {
       return;
     }
-    const entries = yield* input.store.readFirewallFrontiers();
+    const entries = yield* readNextPendingMessages();
     for (const entry of entries) {
       if (
         input.activeConversations.size >=
@@ -76,7 +89,7 @@ function drainAdmission(input: AdmissionContext, publish: Effect.Effect<void>) {
         continue;
       }
       input.activeConversations.add(entry.conversation);
-      yield* admitItem(input, environment, entry).pipe(
+      yield* checkPendingMessage(input, environment, entry).pipe(
         Effect.zipRight(publish),
         Effect.catchAllCause((cause) =>
           Cause.isInterruptedOnly(cause)
@@ -99,7 +112,7 @@ function drainAdmission(input: AdmissionContext, publish: Effect.Effect<void>) {
  * A request that expires before assessment retires without checking; expiry
  * during assessment withholds host presentation while preserving its result.
  */
-function admitItem(
+function checkPendingMessage(
   input: AdmissionContext,
   environment: FirewallEnvironment,
   entry: FirewallInboxEntry,
@@ -108,21 +121,21 @@ function admitItem(
     const item = yield* decodeRuntimeValue(InboundItem, entry.canonicalItem);
     switch (item.kind) {
       case "multicast":
-        return yield* admitRecordItem(input, environment, entry, item);
+        return yield* checkMessage(input, environment, entry, item);
       case "collectiveRequest": {
         if ((yield* Clock.currentTimeMillis) >= item.deadlineAt) {
-          yield* input.store.retireFirewallItem(entry.deliveryToken);
+          yield* retireFirewallItem(entry.deliveryToken);
           return yield* input.showDisposition(
             entry.deliveryToken,
             item,
             "withheld",
           );
         }
-        return yield* admitRecordItem(input, environment, entry, item);
+        return yield* checkMessage(input, environment, entry, item);
       }
       case "collectiveResult":
       case "operationFailed":
-        return yield* admitLocalItem(input, environment, entry, item);
+        return yield* checkResult(input, environment, entry, item);
       default: {
         const exhaustive: never = item;
         return exhaustive;
@@ -131,7 +144,7 @@ function admitItem(
   });
 }
 
-function admitRecordItem(
+function checkMessage(
   input: AdmissionContext,
   environment: FirewallEnvironment,
   entry: FirewallInboxEntry,
@@ -141,13 +154,15 @@ function admitRecordItem(
   >,
 ) {
   return Effect.gen(function* () {
-    const checked = yield* prepareIncomingCheck(environment, entry).pipe(
-      Effect.flatMap((prepared) => environment.firewall.check(prepared)),
-    );
+    const prepared = yield* prepareIncomingCheck(environment, entry);
+    const [checked] = yield* environment.firewall.check([prepared]);
+    if (checked === undefined) {
+      return yield* new EndpointStoreError({ reason: "corrupt" });
+    }
     const expired =
       item.kind === "collectiveRequest" &&
       (yield* Clock.currentTimeMillis) >= item.deadlineAt;
-    const disposition = yield* input.store.admitFirewallItem(
+    const disposition = yield* saveMessageDecision(
       {
         deliveryToken: entry.deliveryToken,
         canonicalItem: entry.canonicalItem,
@@ -161,7 +176,7 @@ function admitRecordItem(
   });
 }
 
-function admitLocalItem(
+function checkResult(
   input: AdmissionContext,
   environment: FirewallEnvironment,
   entry: FirewallInboxEntry,
@@ -172,21 +187,19 @@ function admitLocalItem(
 ) {
   return checkLocalItem(environment, { entry, item }).pipe(
     Effect.flatMap((admission) =>
-      input.store
-        .admitFirewallLocalItem(admission)
-        .pipe(
-          Effect.flatMap((disposition) =>
-            decodeRuntimeValue(InboundItem, admission.item.canonicalItem).pipe(
-              Effect.flatMap((projected) =>
-                input.showDisposition(
-                  entry.deliveryToken,
-                  projected,
-                  disposition,
-                ),
+      saveResultDecision(admission).pipe(
+        Effect.flatMap((disposition) =>
+          decodeRuntimeValue(InboundItem, admission.item.canonicalItem).pipe(
+            Effect.flatMap((projected) =>
+              input.showDisposition(
+                entry.deliveryToken,
+                projected,
+                disposition,
               ),
             ),
           ),
         ),
+      ),
     ),
   );
 }

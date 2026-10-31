@@ -1,12 +1,11 @@
 /** @file Collective recovery, immutable completion selection, and terminal publication. */
 
-import type { DatabaseSync } from "node:sqlite";
-
+import * as SqlClient from "@effect/sql/SqlClient";
+import { Effect } from "effect";
 import type {
   CollectiveAnswerReference,
   CollectiveOperationInput,
   CollectiveRequestRefusal,
-  EndpointStore,
   StoredCollectiveMessage,
   StoredCollectiveOperation,
   StoreMutation,
@@ -19,6 +18,7 @@ import {
 } from "./collective-claims.js";
 import {
   copyBytes,
+  EndpointStoreError,
   readBytes,
   readOptionalText,
   readText,
@@ -26,249 +26,275 @@ import {
   requireEqual,
   requireSameBytes,
   requireText,
+  storeOperation,
   StoreSignal,
   transaction,
 } from "./database/index.js";
-
 /** Unchecked local operations and verified remote requests retain their exact descriptor. */
 export function putCollectiveOperation(
-  database: DatabaseSync,
   input: CollectiveOperationInput,
-): StoreMutation {
-  return transaction(database, () =>
-    retainCollectiveInTransaction(database, input),
-  );
+): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
+  return transaction(retainCollectiveInTransaction(input)).pipe(storeOperation);
 }
-
 /** Open and terminal operations are retained across ordinary process restarts. */
-export function readCollectiveOperations(
-  database: DatabaseSync,
-): readonly StoredCollectiveOperation[] {
-  return database
-    .prepare("SELECT * FROM collective_operations ORDER BY rowid")
-    .all()
-    .map(readCollective);
+export function readCollectiveOperations(): Effect.Effect<
+  readonly StoredCollectiveOperation[],
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    return (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+      "SELECT * FROM collective_operations ORDER BY rowid",
+      [],
+    )).map(readCollective);
+  }).pipe(storeOperation, Effect.withSpan("readCollectiveOperations"));
 }
-
 /** Read the one operation whose phase or delivery identity a live transition needs. */
 export function readCollectiveOperation(
-  database: DatabaseSync,
   operationId: string,
-): StoredCollectiveOperation | undefined {
-  return findCollective(database, operationId);
+): Effect.Effect<
+  StoredCollectiveOperation | undefined,
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return findCollective(operationId).pipe(storeOperation);
 }
-
 /** Recovery reads all claims; live callers select one operation and, when known, its message role. */
-export function readCollectiveMessages(
-  database: DatabaseSync,
-  query?: Parameters<EndpointStore["readCollectiveMessages"]>[0],
-): readonly StoredCollectiveMessage[] {
-  const conditions: string[] = [];
-  const values: string[] = [];
-  if (query !== undefined) {
-    conditions.push("c.operation_id = ?");
-    values.push(query.operationId);
-    if (query.role !== undefined) {
-      conditions.push("c.role = ?");
-      values.push(query.role);
+export function readCollectiveMessages(query?: {
+  readonly operationId: string;
+  readonly role?: "request" | "response" | "close";
+}): Effect.Effect<
+  readonly StoredCollectiveMessage[],
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const conditions: string[] = [];
+    const values: string[] = [];
+    if (query !== undefined) {
+      conditions.push("c.operation_id = ?");
+      values.push(query.operationId);
+      if (query.role !== undefined) {
+        conditions.push("c.role = ?");
+        values.push(query.role);
+      }
     }
-  }
-  const where =
-    conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`;
-  return database
-    .prepare(`
+    const where =
+      conditions.length === 0 ? "" : `WHERE ${conditions.join(" AND ")}`;
+    return (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+      `
     SELECT c.operation_id, c.role, c.destination, p.* FROM collective_messages c
     JOIN message_intents p USING (author_agent_id, msg_id) ${where} ORDER BY c.rowid
-  `)
-    .all(...values)
-    .map(readCollectiveMessage);
+  `,
+      [...values],
+    )).map(readCollectiveMessage);
+  }).pipe(storeOperation, Effect.withSpan("readCollectiveMessages"));
 }
-
 /** Freeze counted record references before a close or local result can be published. */
 export function finalizeCollectiveOperation(
-  database: DatabaseSync,
   operationId: string,
   canonicalSelection: Uint8Array,
-): StoreMutation {
-  requireText(operationId);
-  requireBytes(canonicalSelection);
-  return transaction(database, () => {
-    const operation = findCollective(database, operationId);
-    if (operation === undefined) {
-      throw new StoreSignal("not-found");
-    }
-    if (operation.canonicalSelection !== undefined) {
-      requireSameBytes(operation.canonicalSelection, canonicalSelection);
-      return "existing";
-    }
-    requireEqual(operation.phase, "collecting");
-    database
-      .prepare(`
+): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    requireText(operationId);
+    requireBytes(canonicalSelection);
+    return yield* transaction(
+      Effect.gen(function* () {
+        const operation = yield* findCollective(operationId);
+        if (operation === undefined) {
+          return yield* new EndpointStoreError({ reason: "not-found" });
+        }
+        if (operation.canonicalSelection !== undefined) {
+          requireSameBytes(operation.canonicalSelection, canonicalSelection);
+          return "existing";
+        }
+        requireEqual(operation.phase, "collecting");
+        yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          `
       UPDATE collective_operations SET phase = 'finalizing', canonical_selection = ?
       WHERE operation_id = ?
-    `)
-      .run(copyBytes(canonicalSelection), operationId);
-    return "inserted";
-  });
+    `,
+          [copyBytes(canonicalSelection), operationId],
+        );
+        return "inserted";
+      }),
+    );
+  }).pipe(storeOperation, Effect.withSpan("finalizeCollectiveOperation"));
 }
-
 /** Retain the first counted answer while the operation still collects. */
 export function recordCollectiveAnswer(
-  database: DatabaseSync,
   answer: CollectiveAnswerReference,
-): string | undefined {
-  return transaction(database, () => {
-    const operation = findCollective(database, answer.operationId);
-    if (operation?.phase !== "collecting") {
-      return undefined;
-    }
-    const prior = database
-      .prepare(
-        "SELECT record_hash FROM collective_answers WHERE operation_id = ? AND member = ?",
-      )
-      .get(answer.operationId, answer.member);
-    if (prior !== undefined) {
-      return readText(prior, "record_hash");
-    }
-    const record = database
-      .prepare(
-        "SELECT conversation_id FROM certified_records WHERE record_hash = ?",
-      )
-      .get(answer.recordHash);
-    if (record === undefined) {
-      throw new StoreSignal("not-found");
-    }
-    database
-      .prepare(
-        "INSERT INTO collective_answers (operation_id, member, conversation_id, record_hash) VALUES (?, ?, ?, ?)",
-      )
-      .run(
-        answer.operationId,
-        answer.member,
-        readText(record, "conversation_id"),
-        answer.recordHash,
-      );
-    return answer.recordHash;
-  });
+): Effect.Effect<string | undefined, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    return yield* transaction(
+      Effect.gen(function* () {
+        const operation = yield* findCollective(answer.operationId);
+        if (operation?.phase !== "collecting") {
+          return undefined;
+        }
+        const prior = (yield* database.unsafe<
+          Readonly<Record<string, unknown>>
+        >(
+          "SELECT record_hash FROM collective_answers WHERE operation_id = ? AND member = ?",
+          [answer.operationId, answer.member],
+        ))[0];
+        if (prior !== undefined) {
+          return readText(prior, "record_hash");
+        }
+        const record = (yield* database.unsafe<
+          Readonly<Record<string, unknown>>
+        >(
+          "SELECT conversation_id FROM certified_records WHERE record_hash = ?",
+          [answer.recordHash],
+        ))[0];
+        if (record === undefined) {
+          return yield* new EndpointStoreError({ reason: "not-found" });
+        }
+        yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          "INSERT INTO collective_answers (operation_id, member, conversation_id, record_hash) VALUES (?, ?, ?, ?)",
+          [
+            answer.operationId,
+            answer.member,
+            readText(record, "conversation_id"),
+            answer.recordHash,
+          ],
+        );
+        return answer.recordHash;
+      }),
+    );
+  }).pipe(storeOperation, Effect.withSpan("recordCollectiveAnswer"));
 }
-
 /** Stable answer references survive loss of the classifier's memory. */
-export function readCollectiveAnswers(
-  database: DatabaseSync,
-): readonly CollectiveAnswerReference[] {
-  return database
-    .prepare(
+export function readCollectiveAnswers(): Effect.Effect<
+  readonly CollectiveAnswerReference[],
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    return (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "SELECT operation_id, member, record_hash FROM collective_answers ORDER BY rowid",
-    )
-    .all()
-    .map((row) => ({
+      [],
+    )).map((row) => ({
       operationId: readText(row, "operation_id"),
       member: readText(row, "member"),
       recordHash: readText(row, "record_hash"),
     }));
+  }).pipe(storeOperation, Effect.withSpan("readCollectiveAnswers"));
 }
-
 /** Confirmed pre-bind failures never turn into a new request on restart. */
 export function recordCollectiveRefusal(
-  database: DatabaseSync,
   refusal: CollectiveRequestRefusal,
-): void {
-  transaction(database, () => {
-    const operation = findCollective(database, refusal.operationId);
-    if (operation?.phase !== "collecting") {
-      return;
-    }
-    const bound = database
-      .prepare(
-        "SELECT 1 FROM collective_messages WHERE operation_id = ? AND role = 'request' AND destination = ?",
-      )
-      .get(refusal.operationId, refusal.destination);
-    if (bound !== undefined) {
-      throw new StoreSignal("conflict");
-    }
-    const prior = database
-      .prepare(
-        "SELECT canonical_refusal FROM collective_refusals WHERE operation_id = ? AND destination = ?",
-      )
-      .get(refusal.operationId, refusal.destination);
-    if (prior !== undefined) {
-      requireSameBytes(
-        readBytes(prior, "canonical_refusal"),
-        refusal.canonicalRefusal,
-      );
-      return;
-    }
-    database
-      .prepare(
-        "INSERT INTO collective_refusals (operation_id, destination, canonical_refusal) VALUES (?, ?, ?)",
-      )
-      .run(
-        refusal.operationId,
-        refusal.destination,
-        copyBytes(refusal.canonicalRefusal),
-      );
-  });
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    yield* transaction(
+      Effect.gen(function* () {
+        const operation = yield* findCollective(refusal.operationId);
+        if (operation?.phase !== "collecting") {
+          return;
+        }
+        const bound = (yield* database.unsafe<
+          Readonly<Record<string, unknown>>
+        >(
+          "SELECT 1 FROM collective_messages WHERE operation_id = ? AND role = 'request' AND destination = ?",
+          [refusal.operationId, refusal.destination],
+        ))[0];
+        if (bound !== undefined) {
+          return yield* new EndpointStoreError({ reason: "conflict" });
+        }
+        const prior = (yield* database.unsafe<
+          Readonly<Record<string, unknown>>
+        >(
+          "SELECT canonical_refusal FROM collective_refusals WHERE operation_id = ? AND destination = ?",
+          [refusal.operationId, refusal.destination],
+        ))[0];
+        if (prior !== undefined) {
+          requireSameBytes(
+            readBytes(prior, "canonical_refusal"),
+            refusal.canonicalRefusal,
+          );
+          return;
+        }
+        yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          "INSERT INTO collective_refusals (operation_id, destination, canonical_refusal) VALUES (?, ?, ?)",
+          [
+            refusal.operationId,
+            refusal.destination,
+            copyBytes(refusal.canonicalRefusal),
+          ],
+        );
+      }),
+    );
+  }).pipe(storeOperation, Effect.withSpan("recordCollectiveRefusal"));
 }
-
 /** Only unbound request destinations can have retained refusals. */
-export function readCollectiveRefusals(
-  database: DatabaseSync,
-): readonly CollectiveRequestRefusal[] {
-  return database
-    .prepare(
+export function readCollectiveRefusals(): Effect.Effect<
+  readonly CollectiveRequestRefusal[],
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    return (yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "SELECT operation_id, destination, canonical_refusal FROM collective_refusals ORDER BY rowid",
-    )
-    .all()
-    .map((row) => ({
+      [],
+    )).map((row) => ({
       operationId: readText(row, "operation_id"),
       destination: readText(row, "destination"),
       canonicalRefusal: readBytes(row, "canonical_refusal"),
     }));
+  }).pipe(storeOperation, Effect.withSpan("readCollectiveRefusals"));
 }
-
 /** A refused invocation or invalid remote close ends without inventing an inbox item. */
 export function retireCollectiveOperation(
-  database: DatabaseSync,
   operationId: string,
   canonicalSelection: Uint8Array,
-): void {
-  transaction(database, () => {
-    const operation = findCollective(database, operationId);
-    if (operation === undefined) {
-      throw new StoreSignal("not-found");
-    }
-    if (operation.canonicalSelection !== undefined) {
-      requireSameBytes(operation.canonicalSelection, canonicalSelection);
-    }
-    database
-      .prepare(
-        "UPDATE collective_operations SET phase = 'completed', canonical_selection = ? WHERE operation_id = ?",
-      )
-      .run(copyBytes(canonicalSelection), operationId);
-  });
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    yield* transaction(
+      Effect.gen(function* () {
+        const operation = yield* findCollective(operationId);
+        if (operation === undefined) {
+          return yield* new EndpointStoreError({ reason: "not-found" });
+        }
+        if (operation.canonicalSelection !== undefined) {
+          requireSameBytes(operation.canonicalSelection, canonicalSelection);
+        }
+        yield* database.unsafe<Readonly<Record<string, unknown>>>(
+          "UPDATE collective_operations SET phase = 'completed', canonical_selection = ? WHERE operation_id = ?",
+          [copyBytes(canonicalSelection), operationId],
+        );
+      }),
+    );
+  }).pipe(storeOperation, Effect.withSpan("retireCollectiveOperation"));
 }
-
 /** Completes protocol custody in the caller's terminal-publication transaction. */
 export function completeCollectiveDelivery(
-  database: DatabaseSync,
   operationId: string,
   deliveryToken: string,
-): void {
-  const operation = findCollective(database, operationId);
-  if (operation === undefined) {
-    throw new StoreSignal("not-found");
-  }
-  if (operation.phase === "collecting") {
-    throw new StoreSignal("conflict");
-  }
-  requireEqual(operation.deliveryToken, deliveryToken);
-  database
-    .prepare(
+): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    const operation = yield* findCollective(operationId);
+    if (operation === undefined) {
+      return yield* new EndpointStoreError({ reason: "not-found" });
+    }
+    if (operation.phase === "collecting") {
+      return yield* new EndpointStoreError({ reason: "conflict" });
+    }
+    requireEqual(operation.deliveryToken, deliveryToken);
+    yield* database.unsafe<Readonly<Record<string, unknown>>>(
       "UPDATE collective_operations SET phase = 'completed' WHERE operation_id = ?",
-    )
-    .run(operationId);
+      [operationId],
+    );
+  }).pipe(storeOperation, Effect.withSpan("completeCollectiveDelivery"));
 }
-
 function readCollectiveMessage(
   row: Readonly<Record<string, unknown>>,
 ): StoredCollectiveMessage {
