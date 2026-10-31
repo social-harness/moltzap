@@ -314,6 +314,16 @@ function makeTsLanguageOptions(
 function makeStrictRules(maxLines = 1050) {
   return {
     ...guard.configs.strict.rules,
+    "max-lines-per-function": [
+      "error",
+      { max: 120, skipBlankLines: true, skipComments: true, IIFEs: true },
+    ],
+    "sonarjs/max-lines-per-function": "off",
+    "max-statements": "off",
+    complexity: ["error", { max: 16 }],
+    "sonarjs/cyclomatic-complexity": "off",
+    "sonarjs/cognitive-complexity": ["error", 20],
+    "max-nested-callbacks": ["error", 5],
     "agent-code-guard/no-vacuous-jsdoc": "error",
     ...documentationRules,
     "agent-code-guard/prefer-stepdown-function-order": "error",

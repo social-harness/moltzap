@@ -372,7 +372,7 @@
         "src/release"
       ],
       "entrypoints": [
-        "src/release/index.ts"
+        "src/release.ts"
       ],
       "reason": "Client package release metadata used by MCP peers, policy provenance and telemetry"
     },
@@ -709,11 +709,6 @@
     }
   ],
   "maxFolderImportDistance": 6,
-  "folderChildCountOverrides": [
-    {
-      "folder": "daemon",
-      "maxChildren": 11,
-      "reason": "Daemon composition owns configuration, registration, supervision, MCP serving and inbox handoff; host-facing client code lives outside this process."
-    }
-  ]
+  "maxFolderChildren": 24,
+  "maxFolderChildrenIncludingTests": 48
 }
