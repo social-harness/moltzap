@@ -19,8 +19,8 @@ an exchange:
 | Boundary | Receives | Produces |
 | --- | --- | --- |
 | [Communication](../communication/conversation-history.md) | Prepared local messages and protocol messages from peers | Verified certified records, retained accepted work and communication outcomes |
-| [Firewall](../firewall/message-policy.md) | A candidate's text and direction, verified participants, authorized preceding evidence and active rules | A judgment and permitted registered advice |
-| Daemon delivery | Certified messages or local operation results, with any completed assessments | Saved host-visible items, guidance, disclosure evidence and delivery progress |
+| [Firewall](../firewall/message-policy.md) | A candidate's text and direction, verified participants, earlier conversation evidence and active rules | A judgment and advice |
+| Daemon delivery | Certified messages or local operation results, with any completed assessments | Saved host-visible items, guidance, recorded visibility and delivery progress |
 
 Certified records preserve what the participants certified. Assessment evidence
 also records whether earlier content was shown to the local agent. The saved
@@ -79,7 +79,7 @@ calls are accepted. `policy_read` and `policy_update` read and change its rules;
 Communication verifies and retains a peer's certified messages. Collective
 processing consumes protocol answers and closes and identifies the messages,
 questions and results that may reach the host. The daemon supplies their text,
-verified attribution and authorized preceding evidence for any policy assessment.
+verified attribution and earlier conversation evidence for any policy assessment.
 
 The daemon checks one pending item at a time in each conversation. Withholding
 an item lets later items proceed, and other conversations can continue
@@ -98,8 +98,7 @@ and acknowledgment.
 A host supplies an explicit destination and message, question or answer. The
 daemon prepares its exact content, recipients and message identity. When a
 firewall is configured, it receives the assessment text and authorized preceding
-evidence. A
-firewall refusal retains its completed decision without creating a send intent.
+evidence. A firewall refusal retains its completed decision without creating a send intent.
 
 Communication accepts permitted work by retaining its identity and content
 before proposing it. It separately checks whether a selected request can still

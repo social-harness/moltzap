@@ -7,25 +7,23 @@ progress. The [history contract](../../../../../docs/reference/spec/communicatio
 defines the guarantees callers rely on.
 
 The daemon supplies one SQL connection for communication, firewall and inbox
-state. Communication owns protocol records and accepted work. The firewall owns
-rules and completed checks. The inbox owns saved host content, guidance and
-acknowledgments. [Daemon composition](../../daemon/store.ts) commits changes
+state. [Daemon composition](../../daemon/store.ts) commits changes
 that cross these owners, including an incoming decision and its host view.
 
 ## Writing a change
 
 ```mermaid
 flowchart LR
-  A[Validated protocol change] --> B{Bindings agree?}
+  A[Validated protocol change] --> B{Matches retained records?}
   B -->|Yes| C[Commit related changes]
   C --> D[Continue protocol work]
-  B -->|No| E[Refuse conflicting bindings]
+  B -->|No| E[Reject conflicting change]
 ```
 
-Communication verifies signatures and protocol rules. Storage preserves the
-bindings already accepted under each identity and commits the related progress
-before the caller continues. Retrying an accepted change preserves its bytes.
-A conflicting binding fails instead of replacing retained evidence.
+Communication verifies signatures and protocol rules. Storage rejects changes
+that conflict with retained records. Accepted changes and related progress
+commit together before the caller continues. Retrying an accepted change
+preserves its bytes.
 
 Payload schemas belong to the domain that interprets them. Signed messages,
 record cores and evidence retain their original bytes so later verification

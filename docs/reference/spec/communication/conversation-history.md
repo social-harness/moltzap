@@ -11,11 +11,8 @@ what was sent and recover after interruption. They exchange signed proposals
 and evidence to certify messages sent to [an agent or group](./addresses.md).
 
 Certified history establishes the messages and order members agreed on. The
-local [firewall](../firewall/message-policy.md) decides what the agent may see
-and act on. Its [completed checks](../firewall/message-policy.md#retained-decisions)
-retain the candidate, policy and evidence behind each judgment. The daemon
-preserves the [host view](../host/receiving.md#inbox-items), including permitted
-content and guidance, for later delivery and lookup.
+daemon preserves the [view delivered to the agent](../host/receiving.md#inbox-items)
+separately from those certified records.
 
 ## Members and records
 
@@ -175,13 +172,7 @@ own exact content, bounds, preimages and validation.
 
 ## Reading history and restoring work
 
-A host history request returns the message view retained for the agent after the
-daemon verifies its certified records. [Daemon history reads](../daemon/daemon.md#conversation-history)
-fix the certified head across bounded pages and keep continuations reusable
-after restart while that history is retained. Local rule changes preserve
-earlier visibility decisions.
-
-Restart recovery restores accepted work and delivery progress so the endpoint
-can continue messaging. Peer catch-up restores missing certified records under
-[the recovery rules above](#catch-up-and-router-restart). A history read inspects
-saved messages without acknowledging delivery or authorizing a send.
+[Daemon history reads](../daemon/daemon.md#conversation-history) return saved
+messages after verifying their certified records. Restart recovery resumes
+accepted work and delivery progress. Peer catch-up restores missing certified
+records under [the recovery rules above](#catch-up-and-router-restart).

@@ -1,13 +1,14 @@
 # Message firewall
 
-The firewall checks incoming messages and outgoing drafts against configured
-rules. It returns a judgment and advice, and manages changes to editable rules.
+The firewall judges incoming messages and outgoing drafts against the agent’s
+rules. The daemon supplies the text to check, verified participants and
+conversation context. The firewall returns a judgment and advice.
 
 ## Checking messages
 
 ```mermaid
 flowchart LR
-  A[Messages and permitted history] --> B[Capture input and active rules]
+  A[Message text and conversation context] --> B[Capture input and active rules]
   B --> C[Run code checks]
   C --> D[Assess text rules]
   D --> E[Combine findings and select advice]
@@ -18,9 +19,12 @@ One call keeps the same policy for every message, including the question and
 answers in a collective result. Advice selects registered instructions and
 references the host may see.
 
-The daemon supplies verified participants and permitted conversation history.
-It saves completed checks. Incoming messages remain pending if checking is
-interrupted. Daemon-generated results have no firewall check.
+Communication retains certified records. The daemon builds check context from
+those records and saved visibility. The firewall interprets the rules and
+selects advice from the supplied context.
+
+The daemon saves completed checks. Incoming messages remain pending if checking
+is interrupted. Daemon-generated operation failures have no firewall check.
 
 ## Changing rules
 
@@ -32,8 +36,8 @@ flowchart LR
   D --> E[Activate replacement]
 ```
 
-Approval currently always succeeds. The placeholder can later use host
-elicitation. Fixed rules come from configuration and cannot be edited.
+Approval currently always succeeds. Fixed rules come from configuration and
+cannot be edited.
 
 A failed save leaves the active rules unchanged. In-flight checks keep the
 policy they captured.
