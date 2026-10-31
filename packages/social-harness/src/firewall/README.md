@@ -20,7 +20,7 @@ references the host may see.
 
 The daemon supplies verified participants and permitted conversation history.
 It saves completed checks. Incoming messages remain pending if checking is
-interrupted. Daemon-generated operation failures have no firewall check.
+interrupted. Daemon-generated results have no firewall check.
 
 ## Changing rules
 
