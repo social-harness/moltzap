@@ -8,15 +8,9 @@ import { join } from "node:path";
 import { expect } from "vitest";
 import { testAgentView } from "../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../__tests__/collective-id-fixtures.js";
-import {
-  stateDirectory,
-  withDaemonStore,
-} from "../__tests__/store-schema-fixtures.js";
+import { conversationIdentityFixture } from "../__tests__/conversation-fixtures.js";
+import { makeHostMessagingFixture } from "../__tests__/host-messaging-fixtures.js";
 import { HistoryExportRecord, SendInput } from "../index.js";
-import {
-  hiddenFeatureRefusal,
-  makeHostDelivery,
-} from "./inbox/host-delivery.js";
 import {
   makeHistoryExport,
   noHistoryExport,
@@ -86,25 +80,22 @@ function refusedSend(
   },
   historyExport?: string,
 ) {
-  return withDaemonStore(stateDirectory(), () =>
-    Effect.gen(function* () {
-      const delivery = yield* makeHostDelivery({
-        scope: yield* Effect.scope,
-        collectives: hiddenSendDispatcher,
-        experiments: {
-          hideGroups: experiments.hideGroups ?? false,
-          hideCollectives: experiments.hideCollectives ?? false,
-        },
-        historyExport:
-          historyExport === undefined
-            ? noHistoryExport
-            : yield* makeHistoryExport(historyExport).pipe(
-                Effect.provide(NodeFileSystem.layer),
-              ),
-      });
-      return yield* delivery.operations.send({ input }).pipe(Effect.flip);
-    }),
-  );
+  return Effect.gen(function* () {
+    const subject = yield* conversationIdentityFixture;
+    const runtime = yield* makeHostMessagingFixture(subject, {
+      experiments: {
+        hideGroups: experiments.hideGroups ?? false,
+        hideCollectives: experiments.hideCollectives ?? false,
+      },
+      historyExport:
+        historyExport === undefined
+          ? noHistoryExport
+          : yield* makeHistoryExport(historyExport).pipe(
+              Effect.provide(NodeFileSystem.layer),
+            ),
+    });
+    return yield* runtime.messaging.send({ input }).pipe(Effect.flip);
+  });
 }
 
 it.each(sends)("refuses hidden $name", ({ input, feature }) =>
@@ -116,10 +107,12 @@ it.each(sends)("refuses hidden $name", ({ input, feature }) =>
         hideCollectives: feature === "collectives",
       },
     );
-    expect(error).toMatchObject({
-      reason: "content-invalid",
-      message: hiddenFeatureRefusal(feature).message,
-    });
+    expect(error).toMatchObject({ reason: "content-invalid" });
+    expect(error.message).toContain(
+      feature === "groups"
+        ? "Send to an agent address"
+        : "Send a plain message",
+    );
   }),
 );
 
@@ -134,7 +127,8 @@ it("reports the group restriction when both capabilities are hidden", () =>
       hideGroups: true,
       hideCollectives: true,
     });
-    expect(error.message).toBe(hiddenFeatureRefusal("groups").message);
+    // eslint-disable-next-line agent-code-guard/no-hardcoded-assertion-literals -- This integration case verifies which conflicting capability restriction is presented.
+    expect(error.message).toContain("Group addresses are unavailable");
   }));
 
 it("saves a hidden send's refusal in the traffic log", () =>
@@ -164,11 +158,3 @@ it("saves a hidden send's refusal in the traffic log", () =>
       ]),
     );
   }).pipe(Effect.provide(NodeFileSystem.layer)));
-
-function hiddenSendDispatcher() {
-  return { prepare: rejectHiddenDispatch, accept: rejectHiddenDispatch };
-}
-
-function rejectHiddenDispatch() {
-  return Effect.dieMessage("hidden sends must not reach dispatch");
-}

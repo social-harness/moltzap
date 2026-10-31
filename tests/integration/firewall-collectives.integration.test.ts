@@ -221,7 +221,7 @@ function expectIncomingGatherWithheld({
     });
     expect(yield* nextItem(guided)).toMatchObject({
       kind: "collectiveRequest",
-      operationId: withheld.operationId,
+      message: { content: { operationId: withheld.operationId } },
     });
     yield* accept(guided, requester.address, withheld.operationId, {
       slot: "mon",
@@ -255,10 +255,10 @@ function expectGatherAnswerWithheld({
     });
     expect(yield* nextItem(strict)).toMatchObject({
       kind: "collectiveRequest",
-      operationId: answered.operationId,
+      message: { content: { operationId: answered.operationId } },
     });
     expect(yield* nextItem(guided)).toMatchObject({
-      operationId: answered.operationId,
+      message: { content: { operationId: answered.operationId } },
     });
     yield* accept(guided, requester.address, answered.operationId, {
       slot: "mon",
@@ -295,10 +295,10 @@ function expectGuidedGatherAdvice({
       deadline: ANSWERED_DEADLINE_SECONDS,
     });
     expect(yield* nextItem(requester)).toMatchObject({
-      operationId: advised.operationId,
+      message: { content: { operationId: advised.operationId } },
     });
     expect(yield* nextItem(strict)).toMatchObject({
-      operationId: advised.operationId,
+      message: { content: { operationId: advised.operationId } },
     });
     yield* accept(requester, guided.address, advised.operationId, {
       slot: "mon",
@@ -353,10 +353,10 @@ function expectUnsettledGatherAdvice({
     });
     expect(unsettled.guidance?.instructions).toEqual([uncertainAdvice]);
     expect(yield* nextItem(guided)).toMatchObject({
-      operationId: unsettled.operationId,
+      message: { content: { operationId: unsettled.operationId } },
     });
     expect(yield* nextItem(strict)).toMatchObject({
-      operationId: unsettled.operationId,
+      message: { content: { operationId: unsettled.operationId } },
     });
     yield* accept(guided, requester.address, unsettled.operationId, {
       slot: "mon",
@@ -400,7 +400,7 @@ function expectAllGatherQuestionWithheld(scenario: AllGatherScenario) {
     });
     expect(yield* nextItem(guided)).toMatchObject({
       kind: "collectiveRequest",
-      operationId: withheld.operationId,
+      message: { content: { operationId: withheld.operationId } },
     });
     yield* accept(guided, group, withheld.operationId, { slot: "mon" });
     expect(
@@ -453,7 +453,7 @@ function answerAllGatherWithPrivateContent({
     for (const member of members) {
       expect(yield* nextItem(member)).toMatchObject({
         kind: "collectiveRequest",
-        operationId: answered.operationId,
+        message: { content: { operationId: answered.operationId } },
       });
     }
     yield* accept(guided, group, answered.operationId, {

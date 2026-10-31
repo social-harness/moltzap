@@ -3,8 +3,9 @@
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Effect, Schema } from "effect";
 
-import type { ItemProjection } from "../../firewall/store/types.js";
+import type { MessageReference } from "../../communication/message.js";
 import type { InboxSummary } from "../../host-protocol/operations.js";
+import type { ItemProjection } from "./types.js";
 import {
   EndpointStoreError,
   readBytes,
@@ -18,13 +19,13 @@ import {
   StoreSignal,
   transaction,
 } from "../../communication/store/database/index.js";
-import { retirePendingDelivery } from "../../communication/store/queues/peer-deliveries.js";
 import {
   DeliveryToken,
   type StoreMutation,
 } from "../../communication/store/types.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
 // safer-arch-ignore file-implicit-boundary-module: Daemon publication and host delivery share inbox operations within the caller’s SQL transaction.
+import { createIncomingTables } from "./pending.js";
 const MAXIMUM_PAGE_ITEMS = 50;
 interface InboxBounds {
   readonly after?: number;
@@ -68,15 +69,6 @@ export interface EventStore {
     state: Uint8Array,
   ) => Effect.Effect<void, EndpointStoreError>;
 }
-/** The terminal payload and protocol custody settle with its local publication. */
-export interface CollectiveDelivery {
-  readonly operationId: string;
-  readonly deliveryToken: DeliveryToken;
-  readonly canonicalItem: Uint8Array;
-  readonly conversation: string;
-  readonly canonicalProvenance?: Uint8Array;
-  readonly firewall: boolean;
-}
 /** Called only inside the daemon's initial schema transaction. */
 export function createInboxTables() {
   return Effect.gen(function* () {
@@ -100,6 +92,7 @@ export function createInboxTables() {
       .filter((part) => part.length > 0)) {
       yield* sql.unsafe<Readonly<Record<string, unknown>>>(statement);
     }
+    yield* createIncomingTables();
   }).pipe(storeOperation, Effect.withSpan("createInboxTables"));
 }
 /** Retained bytes remain readable after handoff or request-context retirement. */
@@ -159,7 +152,7 @@ export function putInboxItem(
     return "inserted";
   }).pipe(storeOperation, Effect.withSpan("putInboxItem"));
 }
-/** Acknowledgment preserves the immutable host binding and retires its raw delivery. */
+/** Acknowledgment preserves the immutable host binding after the host accepts it. */
 export function retireItem(
   deliveryToken: DeliveryToken,
 ): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
@@ -176,7 +169,6 @@ export function retireItem(
       "UPDATE runtime_inbox SET acknowledged = 1 WHERE delivery_token = ?",
       [deliveryToken],
     );
-    yield* retirePendingDelivery(deliveryToken);
   }).pipe(storeOperation, Effect.withSpan("retireItem"));
 }
 /** Receipt retirement and callback progress commit together across crashes. */
@@ -294,12 +286,20 @@ export function writeEventState(
     );
   }).pipe(storeOperation, Effect.withSpan("writeEventState"));
 }
-/** Returns only retained permitted views, including acknowledged messages and admitted answers. */
+/** Reply authority follows text that the host has actually been shown. */
+export function isMessageVisible(message: MessageReference) {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const row = (yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      "SELECT admitted FROM message_visibility WHERE author_agent_id=? AND msg_id=?",
+      [message.authorAgentId, message.msgId],
+    ))[0];
+    return row !== undefined && readInteger(row, "admitted") === 1;
+  }).pipe(storeOperation, Effect.withSpan("isMessageVisible"));
+}
+/** Saved host projections remain available after acknowledgment and later assessments. */
 export function readHistoryViews(
-  records: ReadonlyArray<{
-    readonly conversationId: string;
-    readonly recordHash: string;
-  }>,
+  messages: readonly MessageReference[],
 ): Effect.Effect<
   readonly HistoryView[],
   EndpointStoreError,
@@ -308,21 +308,17 @@ export function readHistoryViews(
   return Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const views: HistoryView[] = [];
-    for (const record of records) {
-      const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
-        `SELECT i.canonical_item,i.canonical_guidance FROM runtime_inbox i JOIN pending_deliveries d USING(delivery_token) WHERE d.conversation_id=? AND d.record_hash=?
- UNION ALL SELECT i.canonical_item,i.canonical_guidance FROM runtime_inbox i JOIN firewall_answers a USING(delivery_token) WHERE a.conversation_id=? AND a.record_hash=? AND a.admitted=1 LIMIT 1`,
-        [
-          record.conversationId,
-          record.recordHash,
-          record.conversationId,
-          record.recordHash,
-        ],
-      );
-      const row = rows[0];
+    for (const message of messages) {
+      const row = (yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+        "SELECT i.delivery_token,i.canonical_item,i.canonical_guidance FROM message_visibility v JOIN runtime_inbox i USING(delivery_token) WHERE v.author_agent_id=? AND v.msg_id=?",
+        [message.authorAgentId, message.msgId],
+      ))[0];
       if (row !== undefined) {
         views.push({
-          recordHash: record.recordHash,
+          message,
+          deliveryToken: yield* Schema.decodeUnknown(DeliveryToken)(
+            readText(row, "delivery_token"),
+          ),
           canonicalItem: readBytes(row, "canonical_item"),
           ...guidanceBytes(row),
         });
@@ -401,9 +397,10 @@ function guidanceBytes(
   const value = readOptionalBytes(row, "canonical_guidance");
   return value === undefined ? {} : { canonicalGuidance: value };
 }
-/** A saved host view corresponding to a record in an internally verified history page. */
+/** A saved permitted projection of the same authored message. */
 export interface HistoryView {
-  readonly recordHash: string;
+  readonly message: MessageReference;
+  readonly deliveryToken: DeliveryToken;
   readonly canonicalItem: Uint8Array;
   readonly canonicalGuidance?: Uint8Array;
 }

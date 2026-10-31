@@ -37,7 +37,7 @@ import {
 } from "./rows/index.js";
 const HISTORY_PAGE_SIZE = 50;
 const historySelect = `
-  SELECT staged.conversation_id, staged.record_hash,
+  SELECT certified.rowid AS sequence, staged.conversation_id, staged.record_hash,
          staged.previous_record_hash, staged.membership_hash,
          staged.anchor_hash, staged.action_hash, staged.author_agent_id,
          staged.msg_id, staged.canonical_record_core
@@ -137,9 +137,80 @@ export function readStoredConversation(
               }),
             ).toString("base64url")
           : null;
-      return { records, continuation };
+      return {
+        records,
+        memberships: yield* readMemberships(conversationId),
+        anchors: yield* readAnchors(conversationId, [
+          ...new Set(records.map((record) => record.anchorHash)),
+        ]),
+        authoredRecordHashes: yield* readAuthoredRecordHashes(records),
+        continuation,
+      };
     }),
   ).pipe(Effect.withSpan("readStoredConversation"));
+}
+/** Recent certified rows and their verification dependencies share the caller's snapshot. */
+export function readRecentConversation(input: {
+  readonly conversationId: string;
+  readonly maximumRecords: number;
+  readonly candidateRecordHash?: string;
+}) {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      historySelect +
+        " WHERE certified.conversation_id=? AND certified.record_hash<>? ORDER BY certified.ordinal DESC LIMIT ?",
+      [
+        input.conversationId,
+        input.candidateRecordHash ?? "",
+        input.maximumRecords + 1,
+      ],
+    );
+    const candidateRows =
+      input.candidateRecordHash === undefined
+        ? []
+        : yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+            historySelect +
+              " WHERE certified.conversation_id=? AND certified.record_hash=?",
+            [input.conversationId, input.candidateRecordHash],
+          );
+    const records = yield* Effect.forEach(
+      [...rows, ...candidateRows],
+      readCertifiedRecord,
+      { concurrency: 1 },
+    );
+    return {
+      records,
+      memberships: yield* readMemberships(input.conversationId),
+      anchors: yield* readAnchors(
+        input.conversationId,
+        records.map((record) => record.anchorHash),
+      ),
+      positions: [...rows, ...candidateRows].map((row) => ({
+        recordHash: readText(row, "record_hash"),
+        sequence: readInteger(row, "sequence"),
+      })),
+    };
+  }).pipe(storeOperation, Effect.withSpan("readRecentConversation"));
+}
+/** Protocol startup needs each retained membership, including conversations without a certified head. */
+export function readMemberships(
+  conversationId?: string,
+): Effect.Effect<
+  readonly StoredMembership[],
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    return Object.freeze(
+      (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+        `SELECT conversation_id, membership_hash, canonical_membership
+         FROM memberships ${conversationId === undefined ? "" : "WHERE conversation_id = ?"} ORDER BY conversation_id`,
+        [...(conversationId === undefined ? [] : [conversationId])],
+      )).map(readMembership),
+    );
+  }).pipe(storeOperation, Effect.withSpan("readMemberships"));
 }
 function readPositions(conversationId?: string) {
   return Effect.gen(function* () {
@@ -187,45 +258,39 @@ function readMessageIntents(
     );
   }).pipe(storeOperation);
 }
-function readMemberships(
-  conversationId?: string,
-): Effect.Effect<
-  readonly StoredMembership[],
-  EndpointStoreError,
-  SqlClient.SqlClient
-> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    return Object.freeze(
-      (yield* database.unsafe<Readonly<Record<string, unknown>>>(
-        `SELECT conversation_id, membership_hash, canonical_membership
-         FROM memberships ${conversationId === undefined ? "" : "WHERE conversation_id = ?"} ORDER BY conversation_id`,
-        [...(conversationId === undefined ? [] : [conversationId])],
-      )).map((row) =>
-        Object.freeze({
-          conversationId: readText(row, "conversation_id"),
-          membershipHash: readText(row, "membership_hash"),
-          canonicalMembership: readBytes(row, "canonical_membership"),
-        }),
-      ),
-    );
-  }).pipe(storeOperation);
+function readMembership(
+  row: Readonly<Record<string, unknown>>,
+): StoredMembership {
+  return Object.freeze({
+    conversationId: readText(row, "conversation_id"),
+    membershipHash: readText(row, "membership_hash"),
+    canonicalMembership: readBytes(row, "canonical_membership"),
+  });
 }
 function readAnchors(
   conversationId?: string,
+  anchorHashes?: readonly string[],
 ): Effect.Effect<
   readonly StoredAnchor[],
   EndpointStoreError,
   SqlClient.SqlClient
 > {
   return Effect.gen(function* () {
+    if (anchorHashes?.length === 0) {
+      return Object.freeze([]);
+    }
     const database = yield* SqlClient.SqlClient;
     return Object.freeze(
       (yield* database.unsafe<Readonly<Record<string, unknown>>>(
         `SELECT conversation_id, anchor_hash, previous_anchor_hash,
                 selected_record_hash, canonical_anchor
-         FROM anchors ${conversationId === undefined ? "" : "WHERE conversation_id = ?"} ORDER BY conversation_id, rowid`,
-        [...(conversationId === undefined ? [] : [conversationId])],
+         FROM anchors WHERE ${conversationId === undefined ? "1" : "conversation_id = ?"}
+         ${anchorHashes === undefined ? "" : `AND anchor_hash IN (${anchorHashes.map(() => "?").join(", ")})`}
+         ORDER BY conversation_id, rowid`,
+        [
+          ...(conversationId === undefined ? [] : [conversationId]),
+          ...(anchorHashes ?? []),
+        ],
       )).map((row) => {
         const previousAnchorHash = readOptionalText(
           row,
@@ -244,6 +309,31 @@ function readAnchors(
         });
       }),
     );
+  }).pipe(storeOperation);
+}
+
+function readAuthoredRecordHashes(records: readonly CertifiedRecord[]) {
+  return Effect.gen(function* () {
+    if (records.length === 0) {
+      return Object.freeze([]);
+    }
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      `WITH page(author_agent_id, msg_id, record_hash) AS (
+         VALUES ${records.map(() => "(?, ?, ?)").join(", ")}
+       )
+       SELECT page.record_hash FROM page
+       JOIN message_intents AS intent
+         ON intent.author_agent_id = page.author_agent_id
+        AND intent.msg_id = page.msg_id
+        AND intent.completed_record_hash = page.record_hash`,
+      records.flatMap((record) => [
+        record.authorAgentId,
+        record.msgId,
+        record.recordHash,
+      ]),
+    );
+    return Object.freeze(rows.map((row) => readText(row, "record_hash")));
   }).pipe(storeOperation);
 }
 function readEvidence(conversationId?: string) {

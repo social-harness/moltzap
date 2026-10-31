@@ -164,8 +164,26 @@ export function appendCertifiedMessage(
   }).pipe(Effect.orDie, Effect.withSpan("appendCertifiedMessage"));
 }
 
+/**
+ * Sign one evidence statement as `identity` and encode it as the JWS
+ * representation a certificate carries.
+ * @param identity The member who signs.
+ * @param statement The evidence statement it signs.
+ * @returns The encoded signer message.
+ */
+export function signEvidence(
+  identity: SigningIdentity,
+  statement: EvidenceStatement,
+) {
+  return signEvidenceMessage({
+    statement,
+    agentCard: identity.card,
+    signingAuthority: identity.authority,
+  }).pipe(Effect.flatMap((message) => Schema.encode(SignedMessage)(message)));
+}
+
 /** Certify the exact retained intent so recovery tests never replace an uncertain message. */
-export function appendCertifiedIntent(
+function appendCertifiedIntent(
   endpoint: HistoryEndpoint,
   previous: CertifiedRecord,
   intent: MessageIntent,
@@ -182,7 +200,7 @@ export function appendCertifiedIntent(
 }
 
 /** Build a genuine certificate without advancing the receiving engine's store. */
-export function buildCertifiedMessage(
+function buildCertifiedMessage(
   endpoint: Pick<HistoryEndpoint, "local" | "remote" | "membership">,
   previous: CertifiedRecord,
   intent: MessageIntent,
@@ -215,24 +233,6 @@ export function buildCertifiedMessage(
     });
     return record;
   }).pipe(Effect.orDie, Effect.withSpan("buildCertifiedMessage"));
-}
-
-/**
- * Sign one evidence statement as `identity` and encode it as the JWS
- * representation a certificate carries.
- * @param identity The member who signs.
- * @param statement The evidence statement it signs.
- * @returns The encoded signer message.
- */
-export function signEvidence(
-  identity: SigningIdentity,
-  statement: EvidenceStatement,
-) {
-  return signEvidenceMessage({
-    statement,
-    agentCard: identity.card,
-    signingAuthority: identity.authority,
-  }).pipe(Effect.flatMap((message) => Schema.encode(SignedMessage)(message)));
 }
 
 function storeCertifiedMessage(

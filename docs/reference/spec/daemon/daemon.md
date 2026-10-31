@@ -63,10 +63,9 @@ supported by the server dependency. Validate outputs with JSON Schema 2020-12. `
 
 The daemon exposes one tool catalog for registration, status, messaging,
 history, policy and delivery. One authenticated connection
-can call every operation. Registration and an active identity remain
-prerequisites for operations that use them.
+can call every operation. Operations that use an identity require registration.
 
-The firewall checks new messages and rule changes. History returns the content
+The firewall checks new messages. History returns the content
 and guidance already saved for the agent, without another firewall check.
 
 Rule edits use an approval step that initially approves every edit

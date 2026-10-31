@@ -3,10 +3,6 @@
   "maxFolderCycles": 1,
   "facadeFiles": [
     {
-      "file": "communication/store/collective-claims.ts",
-      "reason": "Atomic collective identity and message claims shared by store transactions"
-    },
-    {
       "file": "encoding/exact.ts",
       "reason": "Closed struct decoding shared by host-loaded value schemas"
     },
@@ -45,6 +41,14 @@
     {
       "file": "identity/index.ts",
       "reason": "Identity request authentication and immutable Registry resolution"
+    },
+    {
+      "file": "identity/local.ts",
+      "reason": "Local identity service and scoped registration"
+    },
+    {
+      "file": "identity/local-store.ts",
+      "reason": "Single owner of the saved identity binding used during recovery"
     },
     {
       "file": "identity/signing/http-signature.ts",
@@ -103,16 +107,12 @@
       "reason": "Store value schemas hosts read without loading the SQLite store"
     },
     {
-      "file": "communication/conversations/address.ts",
-      "reason": "Registry resolution of a validated address, read without loading the engine"
-    },
-    {
       "file": "communication/conversations/errors.ts",
       "reason": "Closed send, listen, and acknowledgment errors, read without loading the engine"
     },
     {
-      "file": "communication/conversations/message.ts",
-      "reason": "Inbound message schemas, read without loading the engine"
+      "file": "communication/message.ts",
+      "reason": "Shared message values, read without loading the engine"
     },
     {
       "file": "communication/collectives/contracts.ts",
@@ -161,30 +161,6 @@
     {
       "file": "communication/conversations/engine-context.ts",
       "reason": "Private context and phase ports for one conversation engine; phase implementations share its acquired state"
-    },
-    {
-      "file": "communication/collectives/all-gather.ts",
-      "reason": "Request and close lifetime used by the collective sender and its recovery"
-    },
-    {
-      "file": "communication/collectives/persistence.ts",
-      "reason": "Collective transition writes and fault handling shared by live operations and recovery"
-    },
-    {
-      "file": "communication/collectives/received-request.ts",
-      "reason": "One request and response-claim contract shared by classification, answering and recovery"
-    },
-    {
-      "file": "communication/collectives/request-sends.ts",
-      "reason": "Retained request-post progress shared by gather sending and recovery"
-    },
-    {
-      "file": "communication/collectives/state.ts",
-      "reason": "Private collective state and injected runtime ports used by each operation phase"
-    },
-    {
-      "file": "communication/collectives/shared-answers.ts",
-      "reason": "First-answer selection and close state shared by receipt, response completion and replay"
     },
     {
       "file": "communication/collectives/validation.ts",
@@ -243,14 +219,6 @@
       "reason": "Host send result schemas independent of protocol execution"
     },
     {
-      "file": "daemon/inbox/host-delivery.ts",
-      "reason": "Host delivery declares its persistence requirements and coordinates sends and inbox handoff"
-    },
-    {
-      "file": "communication/collectives/prepared.ts",
-      "reason": "Exact operation data shared by preparation, assessment projection and acceptance"
-    },
-    {
       "file": "firewall/check.ts",
       "reason": "Message assessment and the safe result contracts consumed by host presentation"
     },
@@ -268,11 +236,59 @@
     },
     {
       "file": "communication/store/queues/outbound.ts",
-      "reason": "Outbox writes share the caller’s SQL transaction with protocol state changes"
+      "reason": "Outbox writes share the caller\u2019s SQL transaction with protocol state changes"
     },
     {
       "file": "daemon/inbox/firewall-context.ts",
       "reason": "The daemon prepares messages and permitted history for incoming, outgoing and collective checks"
+    },
+    {
+      "file": "communication/collectives/model.ts",
+      "reason": "Captured questions and saved result source Messages"
+    },
+    {
+      "file": "daemon/inbox/pending.ts",
+      "reason": "Host-owned incoming queue and Message visibility"
+    },
+    {
+      "file": "daemon/inbox/types.ts",
+      "reason": "Host queue and assessment history values"
+    },
+    {
+      "file": "daemon/inbox/inbox.ts",
+      "reason": "Host inbox decoding and local delivery token creation"
+    },
+    {
+      "file": "host-protocol/daemon-tools.ts",
+      "reason": "Identity management and host history request/result schemas"
+    },
+    {
+      "file": "daemon/messaging/inbox.ts",
+      "reason": "Host inbox operations share export and acknowledgment with MCP delivery"
+    },
+    {
+      "file": "communication/store/runtime-codec.ts",
+      "reason": "Canonical schema serialization shared by protocol and host persistence"
+    },
+    {
+      "file": "daemon/inbox/history.ts",
+      "reason": "Bounded lookup of saved local results independently of communication Messages"
+    },
+    {
+      "file": "communication/collectives/operations.ts",
+      "reason": "Shared lifecycle and exact Message custody for a collective operation"
+    },
+    {
+      "file": "communication/collectives/results.ts",
+      "reason": "Freezes outcomes and hands off durable collective results"
+    },
+    {
+      "file": "host-protocol/address.ts",
+      "reason": "Canonical host destination grammar before identity resolution"
+    },
+    {
+      "file": "communication/collectives/receive.ts",
+      "reason": "Interprets verified Messages into collective requests, answers and closes"
     }
   ],
   "compositionRoots": [
@@ -332,7 +348,9 @@
         "src/identity/signing/http-errors.ts",
         "src/identity/registry/index.ts",
         "src/identity/bounded-cache.ts",
-        "src/identity/registry/contract.ts"
+        "src/identity/registry/contract.ts",
+        "src/identity/local.ts",
+        "src/identity/local-store.ts"
       ],
       "reason": "Identity, request authentication and immutable Registry resolution"
     },
@@ -411,9 +429,7 @@
       ],
       "entrypoints": [
         "src/communication/conversations/index.ts",
-        "src/communication/conversations/address.ts",
-        "src/communication/conversations/errors.ts",
-        "src/communication/conversations/message.ts"
+        "src/communication/conversations/errors.ts"
       ],
       "reason": "Addressed send, FIRST_MESSAGE and MESSAGE certification, and recovery"
     },
@@ -427,7 +443,8 @@
         "src/communication/collectives/contracts.ts",
         "src/communication/collectives/inbound.ts",
         "src/communication/collectives/message-text.ts",
-        "src/communication/collectives/render.ts"
+        "src/communication/collectives/render.ts",
+        "src/communication/collectives/model.ts"
       ],
       "reason": "Gather and all_gather carried in posts"
     },
@@ -444,7 +461,9 @@
         "src/host-protocol/items.ts",
         "src/host-protocol/render.ts",
         "src/host-protocol/send-result.ts",
-        "src/host-protocol/advice.ts"
+        "src/host-protocol/advice.ts",
+        "src/host-protocol/daemon-tools.ts",
+        "src/host-protocol/address.ts"
       ],
       "reason": "The loopback MCP tools, events and results both peers speak"
     },
@@ -480,12 +499,15 @@
         "src/daemon/inbox"
       ],
       "entrypoints": [
-        "src/daemon/inbox/index.ts",
         "src/daemon/inbox/host-traffic-log.ts",
         "src/daemon/inbox/store.ts",
         "src/daemon/inbox/evidence.ts",
         "src/daemon/inbox/firewall-context.ts",
-        "src/daemon/inbox/incoming-worker.ts"
+        "src/daemon/inbox/incoming-worker.ts",
+        "src/daemon/inbox/inbox.ts",
+        "src/daemon/inbox/pending.ts",
+        "src/daemon/inbox/types.ts",
+        "src/daemon/inbox/history.ts"
       ],
       "reason": "The admitted host inbox, delivery handoff and host traffic log"
     },
@@ -518,6 +540,27 @@
         "src/daemon/launcher/index.ts"
       ],
       "reason": "The daemon launcher: chooses, verifies and installs the release each start runs, then starts its sharnessd as a child process"
+    },
+    {
+      "name": "communication",
+      "roots": [
+        "src/communication"
+      ],
+      "entrypoints": [
+        "src/communication/index.ts",
+        "src/communication/service/index.ts"
+      ],
+      "reason": "Reliable Message service owns Router workers and protocol recovery"
+    },
+    {
+      "name": "messages",
+      "roots": [
+        "src/communication/message.ts"
+      ],
+      "entrypoints": [
+        "src/communication/message.ts"
+      ],
+      "reason": "Shared Messages, participants and references"
     }
   ],
   "layers": [
@@ -564,6 +607,13 @@
       "reason": "Gather and all_gather carried in posts"
     },
     {
+      "name": "communication",
+      "folders": [
+        "communication/service"
+      ],
+      "reason": "Reliable Message service owns Router and certification workers"
+    },
+    {
       "name": "conversations",
       "folders": [
         "communication/conversations"
@@ -583,6 +633,13 @@
         "communication/store"
       ],
       "reason": "Protocol persistence: certified history, immutable message claims, outbox and pending peer deliveries"
+    },
+    {
+      "name": "messages",
+      "folders": [
+        "communication"
+      ],
+      "reason": "Shared Message values depend only on identity and content values"
     },
     {
       "name": "records",
@@ -630,7 +687,7 @@
   "publicTypePackages": [
     {
       "package": "@effect/sql",
-      "reason": "The firewall acquires the daemon’s shared SqlClient through its Effect environment"
+      "reason": "The firewall acquires the daemon\u2019s shared SqlClient through its Effect environment"
     },
     {
       "package": "effect",

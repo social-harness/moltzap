@@ -29,13 +29,12 @@ unchanged across replay and restart. Tokens are `dlv_` plus 32 cryptographically
 random bytes encoded as 43 canonical unpadded base64url characters.
 Acknowledgments survive for the state-directory lifetime.
 
-## Delivery projection
+## Messages
 
-Messages carry `msgId`, content, sender and conversation address, without
-collective protocol metadata. Adapters translate the daemon's conversation address into their host's destination
-format. The delivery retains the complete group membership.
-Retained `AgentView` identities contain verified ids, names and principals. Replay
-needs no Registry lookup.
+Messages identify their author and recipients and carry content without collective
+protocol metadata. Adapters derive a direct reply destination from the author
+or a group destination from all participants. Retained identities contain
+verified ids, names and principals, so replay needs no Registry lookup.
 
 Authors receive no self-copy. Remote messages follow local commit order,
 preserving conversation order. Catch-up adds missing deliveries. Gather results

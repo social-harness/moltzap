@@ -37,8 +37,8 @@ another conversation.
 
 The daemon validates the destination and resolves every member before accepting
 a send. Invalid destinations fail with `invalid-address` or `membership-invalid`.
-`members-unreachable` names unresolved members and their reasons, including
-Registry failures. These failures create neither operation nor message.
+Resolution names the first failed member with `unknown-agent` or
+`network-unavailable`. These failures create neither operation nor message.
 
 ## Sending a message
 
@@ -50,15 +50,15 @@ omitted destination. Native hosts use the
 The host may answer only requests admitted to its inbox.
 
 The daemon validates input, resolves recipients and checks outgoing policy.
-Acceptance means it has retained the message and will continue sending it
-after restart. Every new call, including identical input, creates a fresh
+A successful result means the daemon has saved the work and will continue
+sending it after restart. Every new call, including identical input, creates a fresh
 invocation. [Collectives](../communication/collectives.md) defines how questions
 become group or direct requests.
 
-Successful results identify:
+Results identify:
 
-- `multicast`: the sent message's `msgId` and canonical address.
-- `response`: the sent answer's `msgId`, address and answered request.
+- `multicast`: the accepted message's `msgId` and canonical address.
+- `response`: the accepted answer's `msgId`, address and answered request.
 - `collective`: the `operationId`, whose requests and result follow collectives.
 
 An admitted send may include firewall guidance. A refusal belongs to its
@@ -77,14 +77,12 @@ check reference and permitted feedback. A corrected draft receives a fresh
 assessment.
 
 - `network-unavailable`: connection failed before daemon action.
-- `delivery-pending`: accepted work continues sending or delivery with
-  the same identity across restart, including after delivery failure.
 - `outcome-unknown`: the invocation may have taken effect. Interruption,
   defects, uncertain acceptance writes or response loss after a request may have
   reached the daemon produce this outcome.
 
-Retrying pending or unknown work can send twice. The host decides whether to
-retry. Ending its wait does not cancel accepted work.
+Repeating a successful send creates another message. After an uncertain outcome,
+the host decides whether to retry. Ending its wait does not cancel accepted work.
 
 ## Receiving items
 
@@ -103,7 +101,8 @@ ordering and replay.
 ## Reading history
 
 History lists conversations and returns the messages retained for the agent.
-The content and guidance stay the same across rule edits and restart.
+The content and guidance stay the same across rule edits and restart. Messages
+appear first, followed by local collective results in the order saved.
 
 A history read fixes an opaque end position at its start. Later appends remain
 outside that read. Pages contain at most 50 entries. Continuations identify

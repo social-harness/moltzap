@@ -22,9 +22,9 @@ import {
   encodeCanonical,
   representationFailure,
 } from "../../../encoding/canonical-json.js";
-import { compareAscii } from "../../../encoding/identifier.js";
-import { type AgentView, agentViewOf } from "../../../identity/cards.js";
+import { agentViewOf } from "../../../identity/cards.js";
 import { SignedMessage } from "../../../identity/envelope/signed-message.js";
+import { Message, messageFromIntent } from "../../message.js";
 import {
   type ActionCertifiedRecord,
   type AnchorHash,
@@ -34,12 +34,6 @@ import {
   type RecordCore,
   RecordCore as RecordCoreSchema,
 } from "../../records/index.js";
-import { agentAddressOf } from "../../records/values.js";
-import { renderGroupAddress } from "../address.js";
-import {
-  InboundMessage,
-  type InboundMessage as InboundMessageValue,
-} from "../message.js";
 import {
   actionCertifiedRecord,
   type CertificateSignatures,
@@ -231,66 +225,6 @@ export const storedCertifiedRecord = (
     return { ...staged, actionEvidence, durabilityEvidence };
   }).pipe(Effect.withSpan("storedCertifiedRecord"));
 
-const projectGroupMessage = (
-  conversation: EngineConversation,
-  intent: RecordCore["action"]["messageIntent"],
-  sender: AgentView,
-): Effect.Effect<InboundMessageValue, ClientRepresentationError> =>
-  Effect.gen(function* () {
-    const group = yield* renderGroupAddress(
-      conversation.membership.members.map((member) => member.agentName),
-    ).pipe(Effect.mapError(representationFailure));
-    const members = conversation.membership.members
-      .map(agentViewOf)
-      .sort((left, right) => compareAscii(left.agentName, right.agentName));
-    const first = members[0];
-    const second = members[1];
-    const third = members[2];
-    if (first === undefined || second === undefined || third === undefined) {
-      return yield* Effect.fail(representationFailure());
-    }
-    return {
-      kind: "group",
-      msgId: intent.msgId,
-      address: group.address,
-      sender,
-      members: [first, second, third, ...members.slice(3)],
-      content: intent.content,
-    };
-  });
-
-/**
- * Project one remote record to its exact host-visible addressed message.
- * @param conversation Verified local conversation state and member cards.
- * @param record Complete remote-authored certified record.
- * @returns Canonical direct or group message for pending Client delivery.
- */
-const projectInboundMessage = (
-  conversation: EngineConversation,
-  record: CertifiedRecord,
-): Effect.Effect<InboundMessageValue, ClientRepresentationError> =>
-  Effect.gen(function* () {
-    const intent = record.actionCertifiedRecord.recordCore.action.messageIntent;
-    const author = conversation.membership.members.find(
-      (member) => member.agentId === intent.authorAgentId,
-    );
-    if (author === undefined) {
-      return yield* Effect.fail(representationFailure());
-    }
-    const sender = agentViewOf(author);
-    if (conversation.membership.members.length === 2) {
-      const directMessage: InboundMessageValue = {
-        kind: "direct",
-        msgId: intent.msgId,
-        address: agentAddressOf(sender),
-        sender,
-        content: intent.content,
-      };
-      return directMessage;
-    }
-    return yield* projectGroupMessage(conversation, intent, sender);
-  }).pipe(Effect.withSpan("projectInboundMessage"));
-
 /**
  * Encode the remote projection atomically retained during promotion.
  * @param conversation The verified conversation the record belongs to.
@@ -304,7 +238,11 @@ export const inboundDelivery = (
   record: CertifiedRecord,
   recipientAgentId: AgentId,
 ): Effect.Effect<InboundDeliveryInput, ClientRepresentationError> =>
-  projectInboundMessage(conversation, record).pipe(
-    Effect.flatMap((message) => encodeCanonical(InboundMessage, message)),
+  messageFromIntent(
+    conversation.membership.members.map(agentViewOf),
+    record.actionCertifiedRecord.recordCore.action.messageIntent,
+  ).pipe(
+    Effect.mapError(representationFailure),
+    Effect.flatMap((message) => encodeCanonical(Message, message)),
     Effect.map((canonicalMessage) => ({ recipientAgentId, canonicalMessage })),
   );

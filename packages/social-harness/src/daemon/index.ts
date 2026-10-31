@@ -19,13 +19,19 @@ import {
   policyInstallationError,
 } from "../firewall/config.js";
 import {
-  makeFirewall,
+  Firewall,
   type FirewallOptions as ManagedFirewallOptions,
 } from "../firewall/index.js";
 import { registrationAdmissionRefusalMessage } from "../host-protocol/index.js";
+import {
+  Identity,
+  type IdentityError,
+  localIdentityLayer,
+} from "../identity/local.js";
 import { Registry } from "../identity/registry/index.js";
 import { wireVersions } from "../identity/wire-version.js";
 import {
+  type DaemonBootstrap,
   DaemonConfigurationError,
   type DaemonProcessConfiguration,
 } from "./bootstrap.js";
@@ -36,17 +42,18 @@ import {
 } from "./configuration.js";
 import { readCredential } from "./credentials.js";
 import { type DaemonRuntimeError, runDaemonRuntime } from "./lifecycle.js";
-import {
-  type DaemonRegistrationPersistenceError,
-  type DaemonRegistrationRepresentationError,
-  readDaemonRegistrationState,
-  requireAdmission,
-  requireAdmissionToCreate,
-} from "./registration/index.js";
 import { inspectEndpointStore, layer as storageLayer } from "./store.js";
 import { spanExport } from "./telemetry.js";
 
 // safer-arch-ignore no-large-public-surface: Daemon process composition, firewall installation and the actual Registry and Router client tags with their operation values share the trusted service embedding boundary.
+// safer-arch-ignore require-curated-public-facade: The supported service subpath exposes daemon composition and its Identity, Firewall, Registry and Router service contracts.
+
+/** Local registration, saved identity and remote agent resolution. */
+export {
+  Identity,
+  IdentityError,
+  RegistrationError,
+} from "../identity/local.js";
 
 const REGISTRY_REQUEST_TIMEOUT = Duration.seconds(30);
 const ROUTER_SEND_TIMEOUT = Duration.seconds(30);
@@ -62,11 +69,11 @@ export {
   type DecisionRequest,
   type DecisionResponse,
   decodeMessagePolicy,
-  type Firewall,
+  Firewall,
+  type FirewallOperations,
   type FirewallOptions,
   type FirewallSettings,
   loadMessagePolicy,
-  makeFirewall,
   type Message,
   type MessageContext,
   type MessageMiddleware,
@@ -135,49 +142,55 @@ export namespace Daemon {
       const configuration = yield* loadDaemonProcessConfiguration.pipe(
         Effect.mapError(configurationFailure),
       );
-      const { loaded, options } = yield* configuredFirewall(
-        configuration,
-        composed,
-      );
+      const configured = yield* configuredFirewall(configuration, composed);
       const bootstrap = yield* loadDaemonBootstrap(configuration).pipe(
         Effect.mapError(configurationFailure),
       );
       const opening = yield* inspectEndpointStore(
         configuration.stateDirectory,
       ).pipe(Effect.mapError(storageFailure));
-      yield* requireAdmissionToCreate(opening, bootstrap).pipe(
-        Effect.mapError(configurationFailure),
-      );
-      const persistence = yield* Layer.build(
-        storageLayer({
-          stateDirectory: configuration.stateDirectory,
-          liveWireVersions: yield* liveWireVersions,
-        }),
-      ).pipe(Effect.mapError(storageFailure));
-      return yield* Effect.gen(function* () {
-        const firewall =
-          options === undefined
-            ? undefined
-            : yield* makeFirewall(options).pipe(
-                Effect.mapError((cause) => installFailure(cause, loaded)),
-              );
-        const registration = yield* readDaemonRegistrationState({
-          bootstrap,
-        }).pipe(Effect.mapError(storageFailure));
-        yield* requireAdmission(registration, bootstrap).pipe(
+      if (opening === "create") {
+        yield* bootstrap.admissionCredential.pipe(
           Effect.mapError(configurationFailure),
         );
-        const network = yield* Layer.build(networkLayer(configuration));
-        return yield* runDaemonRuntime({
-          bootstrap,
-          registration,
-          firewall,
-        }).pipe(
-          Effect.provide(network),
-          Effect.mapError(runtimeStartupFailure),
-        );
-      }).pipe(Effect.provide(persistence));
+      }
+      const persistence = storageLayer({
+        stateDirectory: configuration.stateDirectory,
+        liveWireVersions: yield* liveWireVersions,
+      }).pipe(Layer.mapError(storageFailure));
+      const network = networkLayer(configuration);
+      const identity = localIdentityLayer({
+        registrySignerPublicKey: configuration.registrySignerPublicKey,
+        agentPublicKey: bootstrap.agentPublicKey,
+        signingAuthority: bootstrap.signingAuthority,
+        admissionCredential: bootstrap.admissionCredential,
+      }).pipe(Layer.mapError(storageFailure));
+      const policy = Firewall.layer(configured.options).pipe(
+        Layer.mapError((cause) => installFailure(cause, configured.loaded)),
+      );
+      const services = Layer.mergeAll(identity, policy).pipe(
+        Layer.provideMerge(network),
+        Layer.provideMerge(persistence),
+      );
+      return yield* serve(bootstrap).pipe(Effect.provide(services));
     }).pipe(Effect.withSpan("Daemon.layer"));
+
+  function serve(bootstrap: DaemonBootstrap) {
+    return Effect.gen(function* () {
+      const identity = yield* Identity;
+      if (
+        (yield* identity.me().pipe(Effect.mapError(storageFailure))).kind ===
+        "unregistered"
+      ) {
+        yield* bootstrap.admissionCredential.pipe(
+          Effect.mapError(configurationFailure),
+        );
+      }
+      return yield* runDaemonRuntime({ bootstrap }).pipe(
+        Effect.mapError(runtimeStartupFailure),
+      );
+    });
+  }
 
   /**
    * The opt-in span export each composition is built inside, so it closes
@@ -294,15 +307,10 @@ export namespace Daemon {
   } satisfies Record<EndpointStoreError["reason"], StartupError["reason"]>;
 
   function storageFailure(
-    error:
-      | EndpointStoreError
-      | OutboxTooOldError
-      | DaemonRegistrationPersistenceError
-      | DaemonRegistrationRepresentationError,
+    error: EndpointStoreError | OutboxTooOldError | IdentityError,
   ): StartupError {
     switch (error._tag) {
-      case "DaemonRegistrationPersistenceError":
-      case "DaemonRegistrationRepresentationError":
+      case "IdentityError":
         return new StartupError({ phase: "storage" });
       case "OutboxTooOldError":
         return new StartupError({ phase: "storage", reason: "outbox-too-old" });

@@ -2,11 +2,10 @@
 
 import type { McpHttpHandler } from "@modelcontextprotocol/server";
 import { Effect, Redacted } from "effect";
-import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
-import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
-import { makeHarnessMcpHttpHandler } from "../daemon/mcp/tools.js";
+import { makeHarnessMcpHttpHandler } from "../daemon/mcp/index.js";
+import { Identity } from "../identity/local.js";
 import { openInboxFixture } from "./inbox-fixture.js";
-import { loopbackMcpEndpoint } from "./mcp-http-fixtures.js";
+import { loopbackMcpEndpoint, mcpIdentity } from "./mcp-http-fixtures.js";
 import { stateDirectory } from "./store-schema-fixtures.js";
 
 /** Bearer credential accepted only by the local fixture. */
@@ -22,30 +21,26 @@ export const nativePollFixture = Effect.fn("nativePollFixture")(function* (
   beforeBootstrap?: Effect.Effect<void>,
 ) {
   const store = yield* openInboxFixture(stateDirectory());
-  const delivery = yield* makeHostDelivery({
-    scope: yield* Effect.scope,
-    collectives: () => ({ prepare: unused, accept: unused }),
-    historyExport: noHistoryExport,
-  }).pipe(store.run);
   const handler = yield* makeHarnessMcpHttpHandler({
     implementation: { name: "native-receiver-test", version: "1" },
     credential: nativeCredential,
     eventStore: {
-      ...delivery.eventStore,
+      ...store,
       readInboxSummary: () =>
         (beforeBootstrap ?? Effect.void).pipe(
-          Effect.andThen(delivery.eventStore.readInboxSummary()),
+          Effect.andThen(store.readInboxSummary()),
         ),
     },
     operations: {
-      ...delivery.operations,
-      protocolActive: () => true,
+      ...store.operations,
+      send: unused,
+      readInboxSummary: store.readInboxSummary,
       readStatus: unused,
       register: unused,
       searchConversations: unused,
       readConversation: unused,
     },
-  });
+  }).pipe(Effect.provideService(Identity, mcpIdentity()));
   return {
     store,
     handler,

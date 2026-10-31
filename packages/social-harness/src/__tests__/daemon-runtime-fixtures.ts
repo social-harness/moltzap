@@ -1,63 +1,63 @@
-/** @file Verified identity and durable-message fixtures for daemon runtime tests. */
+/** @file Verified agent identities and public daemon configuration for runtime tests. */
 
-import { Effect, Redacted, Schema } from "effect";
+import { NodeHttpServer } from "@effect/platform-node";
+import {
+  Client,
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
+import {
+  Duration,
+  Effect,
+  Redacted,
+  Schedule,
+  Schema,
+  type Scope,
+} from "effect";
 import { generateKeyPairSync } from "node:crypto";
+// eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer.make requires a native server factory for the loopback listener.
+import { createServer } from "node:http";
 import type { DaemonBootstrap } from "../daemon/bootstrap.js";
-import {
-  type EnginePendingMessage,
-  makeEndpointEngine,
-} from "../communication/conversations/index.js";
-import { InboundMessage } from "../communication/conversations/message.js";
-import { RecordHash } from "../communication/records/index.js";
-import { makeRouterWorker, Router } from "../communication/router/index.js";
-import { DeliveryToken } from "../communication/store/index.js";
-import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
-import {
-  type DaemonRuntimeDependencies,
-  runDaemonRuntime,
-} from "../daemon/lifecycle.js";
-import { makeHarnessMcpHttpHandler } from "../daemon/mcp/tools.js";
+import { Router } from "../communication/router/index.js";
+import { runDaemonRuntime } from "../daemon/lifecycle.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
+import { Firewall } from "../firewall/index.js";
 import { managementRegisterRequestSchema } from "../host-protocol/index.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
+import { saveLocalIdentity } from "../identity/local-store.js";
+import { localIdentityLayer } from "../identity/local.js";
 import { Registry } from "../identity/registry/index.js";
 import {
-  digest,
   identifier,
   issueTestCard,
   makeTestAuthority,
   type RegistryKeyPair,
-  testAgentView,
 } from "./agent-card-fixtures.js";
-import { mcpTestCredential } from "./mcp-http-fixtures.js";
+import { mcpTestCredential, mcpTestHeaders } from "./mcp-http-fixtures.js";
 import {
   emptyBatch,
   pollCursor,
   routerInstanceId,
 } from "./router-worker-fixtures.js";
 
-/** Binds the daemon bootstrap to the signed identity used by its pending message. */
+/** One signing authority owns a verified local identity and trusted peer cards. */
 export interface Fixture {
   readonly bootstrap: DaemonBootstrap;
   readonly localCard: VerifiedAgentCard;
   readonly peerCards: readonly VerifiedAgentCard[];
   readonly canonicalLocalCard: Uint8Array;
   readonly registerRequest: typeof managementRegisterRequestSchema.Type;
-  readonly pending: EnginePendingMessage;
 }
 
-const makePendingMessage = Effect.all({
-  deliveryToken: Schema.decodeUnknown(DeliveryToken)(digest("dlv_", 4)),
-  recordHash: Schema.decodeUnknown(RecordHash)(digest("rch_", 6)),
-  message: Schema.decodeUnknown(InboundMessage)({
-    kind: "direct",
-    msgId: digest("msg_", 5),
-    address: "agent:bob",
-    sender: testAgentView("agent:bob"),
-    content: [{ type: "text", text: "certified" }],
-  }),
-});
+const availablePort = Effect.scoped(
+  NodeHttpServer.make(createServer, { port: 0, host: "127.0.0.1" }).pipe(
+    Effect.flatMap((server) =>
+      server.address._tag === "TcpAddress"
+        ? Effect.succeed(server.address.port)
+        : Effect.dieMessage("Expected a TCP listener"),
+    ),
+  ),
+);
 
 const makePeerCards = (registryKeys: RegistryKeyPair) =>
   Effect.forEach(
@@ -74,7 +74,7 @@ const makePeerCards = (registryKeys: RegistryKeyPair) =>
     { concurrency: 1 },
   );
 
-/** Supplies a verified local identity and one certified pending delivery. */
+/** Supplies a verified local identity, trusted peers and an available loopback port. */
 export const makeFixture = Effect.gen(function* () {
   const registryKeys = generateKeyPairSync("ed25519");
   const registrySignerPublicKey = yield* Schema.decodeUnknown(Ed25519PublicKey)(
@@ -90,7 +90,7 @@ export const makeFixture = Effect.gen(function* () {
   const bootstrap: DaemonBootstrap = Object.freeze({
     configuration: {
       stateDirectory: "/var/lib/social-harness",
-      mcpPort: 4319,
+      mcpPort: yield* availablePort,
       mcpCredentialFile: Redacted.make("/run/secrets/mcp-credential"),
       registryOrigin: new URL("https://registry.example"),
       registrySignerPublicKey,
@@ -118,54 +118,94 @@ export const makeFixture = Effect.gen(function* () {
     peerCards: yield* makePeerCards(registryKeys),
     canonicalLocalCard: yield* encodeCanonical(AgentCard, localCard),
     registerRequest,
-    pending: yield* makePendingMessage,
   } satisfies Fixture;
 }).pipe(Effect.orDie, Effect.withSpan("makeFixture"));
 
-/** Process edges stay real while tests choose the listener's address or failure. */
-export const runtimeDependencies = (
-  acquireListener: DaemonRuntimeDependencies["acquireListener"],
-): DaemonRuntimeDependencies => ({
-  makeEngine: makeEndpointEngine,
-  makeWorker: makeRouterWorker,
-  makeHandler: makeHarnessMcpHttpHandler,
-  makeHistoryExport: () => Effect.succeed(noHistoryExport),
-  acquireListener,
-});
-
 /** A registered runtime uses real protocol state with a quiet, reachable Router. */
-export const runRegisteredFixture = (
-  fixture: Fixture,
-  dependencies: DaemonRuntimeDependencies,
-) =>
-  runDaemonRuntime(
-    {
-      bootstrap: fixture.bootstrap,
-      registration: { kind: "active", agentCard: fixture.localCard },
-    },
-    dependencies,
-  ).pipe(
-    Effect.provideService(Registry, {
-      register: () =>
-        Effect.dieMessage("Registered fixture attempted registration"),
-      lookup: (request) => {
-        const card = fixture.peerCards.find((peer) =>
-          "agentName" in request
-            ? peer.agentName === request.agentName
-            : peer.agentId === request.agentId,
-        );
-        return Effect.succeed(
-          card === undefined
-            ? { kind: "not_found" as const }
-            : { kind: "found" as const, agentCard: card },
-        );
-      },
-    }),
-    Effect.provideService(Router, {
-      poll: (call) =>
-        call.request.pollCursor === undefined
-          ? Effect.succeed(emptyBatch(routerInstanceId(21), pollCursor(24)))
-          : Effect.never,
-      send: () => Effect.never,
-    }),
+export const runRegisteredFixture = (fixture: Fixture) =>
+  saveLocalIdentity(fixture.localCard).pipe(
+    Effect.zipRight(
+      runDaemonRuntime({
+        bootstrap: fixture.bootstrap,
+      }).pipe(
+        Effect.provide(identityLayerFor(fixture.bootstrap)),
+        Effect.provide(Firewall.layer()),
+        Effect.provideService(Registry, {
+          register: () =>
+            Effect.dieMessage("Registered fixture attempted registration"),
+          lookup: (request) => {
+            const card = fixture.peerCards.find((peer) =>
+              "agentName" in request
+                ? peer.agentName === request.agentName
+                : peer.agentId === request.agentId,
+            );
+            return Effect.succeed(
+              card === undefined
+                ? { kind: "not_found" as const }
+                : { kind: "found" as const, agentCard: card },
+            );
+          },
+        }),
+        Effect.provideService(Router, {
+          poll: (call) =>
+            call.request.pollCursor === undefined
+              ? Effect.succeed(emptyBatch(routerInstanceId(21), pollCursor(24)))
+              : Effect.never,
+          send: () => Effect.never,
+        }),
+      ),
+    ),
   );
+
+/** Tests compose the same saved identity service as the production daemon. */
+export function identityLayerFor(bootstrap: DaemonBootstrap) {
+  return localIdentityLayer({
+    registrySignerPublicKey: bootstrap.configuration.registrySignerPublicKey,
+    agentPublicKey: bootstrap.agentPublicKey,
+    signingAuthority: bootstrap.signingAuthority,
+    admissionCredential: bootstrap.admissionCredential,
+  });
+}
+
+/** Startup can initialize persistence before its configured listener accepts MCP connections. */
+export function acquireDaemonClient(
+  fixture: Fixture,
+): Effect.Effect<Client, unknown, Scope.Scope> {
+  return Effect.acquireRelease(
+    connectDaemonClient(fixture).pipe(
+      Effect.retry(
+        Schedule.spaced(Duration.millis(25)).pipe(
+          Schedule.intersect(Schedule.recurs(400)),
+        ),
+      ),
+    ),
+    (client) => Effect.tryPromise(() => client.close()).pipe(Effect.ignore),
+  );
+}
+
+function connectDaemonClient(fixture: Fixture) {
+  return Effect.gen(function* () {
+    const client = new Client(
+      { name: "daemon-runtime-test", version: "1" },
+      {
+        capabilities: {},
+        versionNegotiation: { mode: { pin: "2026-07-28" } },
+      },
+    );
+    yield* Effect.tryPromise(() =>
+      client.connect(
+        new StreamableHTTPClientTransport(
+          new URL(
+            `http://127.0.0.1:${fixture.bootstrap.configuration.mcpPort}/mcp`,
+          ),
+          { requestInit: { headers: mcpTestHeaders } },
+        ),
+      ),
+    ).pipe(
+      Effect.tapError(() =>
+        Effect.tryPromise(() => client.close()).pipe(Effect.ignore),
+      ),
+    );
+    return client;
+  });
+}

@@ -1,7 +1,7 @@
 /** @file Classified delivery, stable token bindings, and acknowledgment durability. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Effect, Array as EffectArray, Schema, Scope } from "effect";
+import { Effect, Array as EffectArray, Schema } from "effect";
 import { describe, expect } from "vitest";
 import type { HarnessMessageReadyEvent } from "../../host-protocol/operations.js";
 import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
@@ -9,21 +9,16 @@ import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js
 import { openTestDatabase } from "../../__tests__/communication-test-database.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import {
-  pendingMessage,
-  publishEveryMessage,
-  recordAcknowledgments,
-  takeEvery,
-} from "../../__tests__/pending-delivery-fixtures.js";
-import {
   stateDirectory,
   withDaemonStore,
 } from "../../__tests__/store-schema-fixtures.js";
+import { Message } from "../../communication/message.js";
 import {
   DeliveryToken,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
-import { makeHostDelivery } from "./host-delivery.js";
+import { makeInboxOperations } from "../messaging/inbox.js";
 import { noHistoryExport } from "./host-traffic-log.js";
 import { persistInboxItem, readRuntimeInbox } from "./inbox.js";
 
@@ -37,28 +32,32 @@ const failure = Schema.decodeUnknownSync(InboundItem)({
   to: "agent:bob",
   error: "request unavailable",
 });
-const requestConversation = "group:alice,bob,carol";
 const request = Schema.decodeUnknownSync(InboundItem)({
   kind: "collectiveRequest",
-  op: "all_gather",
-  operationId: collectiveOperationId(testAgentView("agent:alice").agentId, 2),
-  msgId: digest("msg_", 2),
-  from: testAgentView("agent:bob"),
-  to: requestConversation,
-  question: "Answer independently",
-  requestedSchema: {
-    type: "object",
-    properties: { answer: { type: "string" } },
-    required: ["answer"],
+  message: {
+    msgId: digest("msg_", 2),
+    author: testAgentView("agent:bob"),
+    recipients: ["alice", "bob", "carol"]
+      .map(testAgentView)
+      .filter(
+        (member) => member.agentId !== testAgentView("agent:bob").agentId,
+      ),
+    content: {
+      op: "all_gather",
+      operationId: collectiveOperationId(
+        testAgentView("agent:alice").agentId,
+        2,
+      ),
+      question: "Answer independently",
+      requestedSchema: {
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+      },
+      deadlineAt: 4_000_000_000_000,
+    },
   },
-  deadlineAt: 4_000_000_000_000,
 });
-
-/** A collective layer this file's deliveries never send through. */
-const unusedCollectives = {
-  prepare: () => Effect.dieMessage("unexpected send"),
-  accept: () => Effect.dieMessage("unexpected send"),
-};
 
 const preservesTokenBindings = () => {
   const path = stateDirectory();
@@ -170,15 +169,23 @@ const commitsReceiptAtomically = () => {
   });
 };
 
-it("replays the admitted envelope across restart and retains it after acknowledgment", () => {
+it("retains an admitted envelope and guidance after acknowledgment and a store restart", () => {
   const path = stateDirectory();
-  const guidance = localGuidance(1);
-  const pending = pendingMessage(1);
-  const item: InboundItem = { kind: "multicast", message: pending.message };
-  const event = { deliveryToken: pending.deliveryToken, item, guidance };
+  const message = Schema.decodeUnknownSync(Message)({
+    msgId: digest("msg_", 1),
+    author: testAgentView("agent:bob"),
+    recipients: [testAgentView("agent:alice")],
+    content: [{ type: "text", text: "Retained content" }],
+  });
+  const item: InboundItem = { kind: "multicast", message };
+  const event: HarnessMessageReadyEvent = {
+    deliveryToken: token(1),
+    item,
+    guidance: localGuidance(1),
+  };
   return Effect.gen(function* () {
     const canonicalItem = yield* encodeRuntimeValue(item);
-    const canonicalGuidance = yield* encodeRuntimeValue(guidance);
+    const canonicalGuidance = yield* encodeRuntimeValue(event.guidance);
     yield* withDaemonStore(path, (store) =>
       store.putInboxItem({
         deliveryToken: event.deliveryToken,
@@ -187,33 +194,17 @@ it("replays the admitted envelope across restart and retains it after acknowledg
       }),
     );
     const database = yield* openTestDatabase(path);
-    const delivery = yield* makeHostDelivery({
-      historyExport: noHistoryExport,
-      collectives: () => unusedCollectives,
-      scope: yield* Scope.Scope,
-    }).pipe(database.run);
-    const published: HarnessMessageReadyEvent[] = [];
-    const pass = () => ({
-      readPending: Effect.succeed([pending]),
-      engine: recordAcknowledgments([]),
-      classify: publishEveryMessage,
-      handler: takeEvery(published),
+    const operations = yield* makeInboxOperations(
+      database.sql,
+      noHistoryExport,
+    );
+    expect(yield* operations.listInbox({})).toEqual({ items: [event] });
+    yield* operations.acknowledgeDelivery(event.deliveryToken);
+    expect(yield* operations.listInbox({})).toEqual({ items: [] });
+    expect(yield* operations.getInboxItem(event.deliveryToken)).toEqual({
+      item,
+      guidance: event.guidance,
     });
-    yield* delivery.runPass(pass);
-    expect(published).toEqual([event]);
-    expect(yield* delivery.operations.readInbox({})).toEqual({
-      items: [event],
-    });
-    yield* delivery.operations.acknowledgeDelivery(event.deliveryToken);
-    yield* delivery.detach;
-    yield* delivery.runPass(pass);
-    expect(published).toEqual([event]);
-    expect(yield* delivery.operations.readInbox({})).toEqual({ items: [] });
-    expect(
-      yield* delivery.operations.readEvent({
-        eventId: event.deliveryToken,
-      }),
-    ).toEqual({ item, guidance });
   });
 });
 

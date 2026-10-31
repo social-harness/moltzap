@@ -2,10 +2,8 @@
 
 import type * as SqlClient from "@effect/sql/SqlClient";
 import { Deferred, Duration, Effect, Exit, Schedule, Schema } from "effect";
-import type { MessageAddressInput } from "../records/values.js";
 import type { RouterWorkerUnavailableError } from "../router/index.js";
 import type {
-  CollectiveMessageBinding,
   ConversationFoundation,
   EndpointStoreError,
   MessageIntent as StoredMessageIntent,
@@ -16,15 +14,16 @@ import type {
   EngineOutboxError,
   EngineRuntime,
 } from "./engine-context.js";
+import { encodeCanonical, sameBytes } from "../../encoding/canonical-json.js";
 import {
-  decodeCanonical,
-  encodeCanonical,
-} from "../../encoding/canonical-json.js";
-import { AgentCard, type VerifiedAgentCard } from "../../identity/cards.js";
+  AgentCard,
+  agentViewOf,
+  type VerifiedAgentCard,
+} from "../../identity/cards.js";
+import { Message, messageFromIntent, messageMembers } from "../message.js";
 import {
   type ActionCore,
   type ActionHash,
-  Content,
   deriveConversationId,
   hashAction,
   hashAnchor,
@@ -33,18 +32,13 @@ import {
   MembershipDescriptor as MembershipDescriptorSchema,
   type MessageIntent,
   MessageIntent as MessageIntentSchema,
-  mintMsgId,
   type MsgId,
   type RecordHash,
   type VerifiedMembership,
   verifyMembershipDescriptor,
 } from "../records/index.js";
+import { compareAgentIds } from "../records/values.js";
 import * as Store from "../store/index.js";
-import {
-  prepareMessageAddress,
-  type RecipientResolutionError,
-  resolveMessageAddress,
-} from "./address.js";
 import { SendError } from "./errors.js";
 import { anchorHashAtHead } from "./history/index.js";
 import { markRetries, type RetryOutcome } from "./retry-markers.js";
@@ -53,20 +47,9 @@ import {
   pendingRecoveryFence,
 } from "./router-recovery/index.js";
 
-// safer-arch-ignore no-fat-orchestrator: Prepared sends and durable acceptance form one operation whose dependencies come from the conversation engine.
+// safer-arch-ignore no-fat-orchestrator: Immutable intent acceptance and protocol proposal share the engine gate and durable conversation binding.
 
-/**
- * One message the engine certifies: its address and its complete content. The
- * collective layer above the engine builds the content, so the engine never
- * reads the collective part.
- */
-export interface EngineSendInput {
-  readonly to: MessageAddressInput;
-  readonly content: Content;
-  readonly collective?: CollectiveMessageBinding;
-}
-
-/** A locally certified message: its minted identity and its stored record's hash. */
+/** Certification records the caller's original message identity. */
 export interface EngineSentMessage {
   readonly msgId: MsgId;
   readonly recordHash: RecordHash;
@@ -98,7 +81,7 @@ function failBind(
 
 const sendReasonByStoreReason = {
   closed: "persistence-failed",
-  conflict: "persistence-failed",
+  conflict: "message-conflict",
   corrupt: "persistence-failed",
   incompatible: "persistence-failed",
   "invalid-continuation": "persistence-failed",
@@ -130,98 +113,103 @@ const representationFailure = (): SendError =>
  */
 const ROUTER_ATTACH_TIMEOUT = Duration.seconds(45);
 
-type ResolvedAddress = Effect.Effect.Success<
-  ReturnType<typeof resolveMessageAddress>
->;
-
-/** The conversation id a resolved address's members derive, in AgentId order. */
-const conversationIdOf = (resolved: ResolvedAddress) => {
-  const [first, second, ...rest] = resolved.memberCards;
-  return deriveConversationId([
-    first.agentId,
-    second.agentId,
-    ...rest.map((card) => card.agentId),
+const conversationIdOf = (
+  cards: readonly [
+    VerifiedAgentCard,
+    VerifiedAgentCard,
+    ...VerifiedAgentCard[],
+  ],
+) =>
+  deriveConversationId([
+    cards[0].agentId,
+    cards[1].agentId,
+    ...cards.slice(2).map((card) => card.agentId),
   ]).pipe(Effect.mapError(representationFailure));
-};
 
-/** The first canonical member’s signed card fixes the foundation version for every peer. */
-const membershipFor = (runtime: EngineRuntime, resolved: ResolvedAddress) =>
+const membershipFor = (
+  runtime: EngineRuntime,
+  cards: readonly [
+    VerifiedAgentCard,
+    VerifiedAgentCard,
+    ...VerifiedAgentCard[],
+  ],
+) =>
   Effect.gen(function* () {
-    const conversationId = yield* conversationIdOf(resolved);
+    const conversationId = yield* conversationIdOf(cards);
     const stored = runtime.conversations.get(conversationId);
     if (stored !== undefined) {
       return stored.membership;
     }
-    const [firstMember] = resolved.memberCards;
-    const encodedCards = yield* Effect.forEach(
-      resolved.memberCards,
-      (card) => Schema.encode(AgentCard)(card),
-      { concurrency: 1 },
-    ).pipe(Effect.mapError(representationFailure));
     const descriptor = yield* Schema.decodeUnknown(MembershipDescriptorSchema)({
-      sharnessVersion: AgentCard.wireVersion(firstMember),
+      sharnessVersion: AgentCard.wireVersion(cards[0]),
       kind: "membership_descriptor",
       conversationId,
-      members: encodedCards,
+      members: yield* Effect.forEach(
+        cards,
+        (card) => Schema.encode(AgentCard)(card),
+        { concurrency: 1 },
+      ).pipe(Effect.catchTag("ParseError", representationFailure)),
     }).pipe(Effect.mapError(representationFailure));
-    const membership = yield* verifyMembershipDescriptor(
+    return yield* verifyMembershipDescriptor(
       descriptor,
       runtime.input.registrySignerPublicKey,
     ).pipe(Effect.mapError(representationFailure));
-    return membership;
   });
 
-const resolveCards = (runtime: EngineRuntime, to: MessageAddressInput) =>
-  resolveMessageAddress({
-    localAgentCard: runtime.input.localAgentCard,
-    registry: runtime.input.registry,
-    to,
+function resolveMembership(runtime: EngineRuntime, message: Message) {
+  return Effect.gen(function* () {
+    const members = messageMembers(message);
+    const cards = yield* Effect.forEach(
+      members,
+      (member) => resolveMemberCard(runtime, member),
+      { concurrency: 1 },
+    );
+    cards.sort((left, right) => compareAgentIds(left.agentId, right.agentId));
+    const [first, second, ...rest] = cards;
+    if (first === undefined || second === undefined) {
+      return yield* new SendError({ reason: "membership-invalid" });
+    }
+    return yield* membershipFor(runtime, [first, second, ...rest]);
   });
-
-/**
- * Resolve an address to its members' Registry cards without sending, failing
- * with the `SendError` a send to the same address would fail with.
- */
-export const resolveAddress = (
-  runtime: EngineRuntime,
-  to: MessageAddressInput,
-): Effect.Effect<void, SendError> =>
-  resolveCards(runtime, to).pipe(Effect.asVoid);
-
-/**
- * An address resolved without sending: its canonical spelling, its members'
- * verified cards in AgentId order, and the conversation a send uses
- * in, which need not exist yet.
- */
-export interface ResolvedConversation {
-  readonly address: MessageAddressInput;
-  readonly conversationId: string;
-  readonly memberCards: readonly VerifiedAgentCard[];
 }
 
-/**
- * Resolve an address to the conversation a send uses, failing as
- * that send would fail.
- */
-export const resolveConversation = (
-  runtime: EngineRuntime,
-  to: MessageAddressInput,
-): Effect.Effect<ResolvedConversation, SendError> =>
-  Effect.gen(function* () {
-    const resolved = yield* resolveCards(runtime, to);
-    return {
-      address: resolved.address,
-      conversationId: yield* conversationIdOf(resolved),
-      memberCards: resolved.memberCards,
-    };
-  }).pipe(Effect.withSpan("resolveConversation"));
+function resolveMemberCard(runtime: EngineRuntime, member: Message["author"]) {
+  const local = runtime.input.localAgentCard;
+  const pinned =
+    member.agentId === local.agentId
+      ? local
+      : [...runtime.conversations.values()]
+          .flatMap((conversation) => conversation.membership.members)
+          .find((card) => card.agentId === member.agentId);
+  const resolved =
+    pinned === undefined
+      ? runtime.input.registry.lookup({ agentId: member.agentId }).pipe(
+          Effect.mapError(registryFailure),
+          Effect.flatMap((result) =>
+            result.kind === "found"
+              ? Effect.succeed(result.agentCard)
+              : Effect.fail(new SendError({ reason: "unknown-agent" })),
+          ),
+        )
+      : Effect.succeed(pinned);
+  return resolved.pipe(
+    Effect.filterOrFail(
+      (card) => {
+        const view = agentViewOf(card);
+        return (
+          view.agentId === member.agentId &&
+          view.agentName === member.agentName &&
+          view.principalId === member.principalId
+        );
+      },
+      () => new SendError({ reason: "membership-invalid" }),
+    ),
+  );
+}
 
-const resolveMembership = (runtime: EngineRuntime, input: EngineSendInput) =>
-  prepareMessageAddress({
-    localAgentCard: runtime.input.localAgentCard,
-    registry: runtime.input.registry,
-    to: input.to,
-  }).pipe(Effect.flatMap((resolved) => membershipFor(runtime, resolved)));
+function registryFailure() {
+  return new SendError({ reason: "network-unavailable" });
+}
 
 const proposalAction = (
   conversation: EngineConversation,
@@ -579,149 +567,77 @@ const awaitRouterAttachment = (
  * One durably bound send: its minted identity and its completion latch, which
  * yields the hash of the message's locally stored certified record.
  */
-export interface PreparedSendHandle {
+export interface AcceptedMessage {
   readonly msgId: MsgId;
   readonly completion: Deferred.Deferred<RecordHash, SendError>;
 }
-
-const noBindHold = Effect.succeed(Effect.void);
-
-/** Canonical strings preserve prepared bytes without exposing mutable buffers or caller values. */
-export interface PreparedSend {
-  readonly canonicalMembership: string;
-  readonly canonicalIntent: string;
-  readonly collective?: CollectiveMessageBinding;
-}
-
-/** Request claims are acquired at binding and released only when no intent binds. */
-export type BindHold<E> = Effect.Effect<
-  Effect.Effect<void, never, SqlClient.SqlClient>,
-  E,
-  SqlClient.SqlClient
->;
 
 interface PreparedIntent {
   readonly membership: VerifiedMembership;
   readonly intent: MessageIntent;
   readonly canonicalIntent: Uint8Array;
-  readonly collective?: CollectiveMessageBinding;
 }
 
-/** Decode only retained preparation data; resolving names or minting another identity is forbidden here. */
-export const preparedSendData = (prepared: PreparedSend) =>
-  Effect.all({
-    descriptor: decodeCanonical(
-      MembershipDescriptorSchema,
-      new TextEncoder().encode(prepared.canonicalMembership),
-    ),
-    intent: decodeCanonical(
-      MessageIntentSchema,
-      new TextEncoder().encode(prepared.canonicalIntent),
-    ),
-  }).pipe(Effect.mapError(representationFailure));
-
-/** Resolve and capture one exact message without creating outgoing ownership. */
-export const prepareSend = (
+/** Captured message identity survives preparation and every subsequent retry. */
+export const acceptMessage = (
   runtime: EngineRuntime,
-  input: EngineSendInput,
-): Effect.Effect<
-  PreparedSend,
-  SendError | RecipientResolutionError,
-  SqlClient.SqlClient
-> =>
+  message: Message,
+): Effect.Effect<AcceptedMessage, SendError, SqlClient.SqlClient> =>
   Effect.gen(function* () {
+    if (message.author.agentId !== runtime.input.localAgentCard.agentId) {
+      return yield* new SendError({ reason: "membership-invalid" });
+    }
+    const retained = runtime.intents.get(message.msgId);
+    if (retained !== undefined) {
+      yield* requireSameMessage(runtime, retained, message);
+      return { msgId: message.msgId, completion: retained.completion };
+    }
     yield* awaitRouterAttachment(runtime);
-    const canonicalContent = yield* encodeCanonical(
-      Content,
-      input.content,
-    ).pipe(Effect.mapError(representationFailure));
-    const content = yield* decodeCanonical(Content, canonicalContent).pipe(
-      Effect.mapError(representationFailure),
-    );
-    const membership = yield* resolveMembership(runtime, input);
-    const msgId = yield* mintMsgId().pipe(
-      Effect.mapError(representationFailure),
-    );
+    const membership = yield* resolveMembership(runtime, message);
     const intent = yield* Schema.decodeUnknown(MessageIntentSchema)({
       sharnessVersion: runtime.wireVersion,
       kind: "message_intent",
       conversationId: membership.descriptor.conversationId,
       membershipHash: membership.hash,
-      authorAgentId: runtime.input.localAgentCard.agentId,
-      msgId,
-      content,
+      authorAgentId: message.author.agentId,
+      msgId: message.msgId,
+      content: message.content,
     }).pipe(Effect.mapError(representationFailure));
     const canonicalIntent = yield* encodeCanonical(
       MessageIntentSchema,
       intent,
     ).pipe(Effect.mapError(representationFailure));
-    const canonicalMembership = yield* encodeCanonical(
-      MembershipDescriptorSchema,
-      membership.descriptor,
-    ).pipe(Effect.mapError(representationFailure));
-    return Object.freeze({
-      canonicalIntent: new TextDecoder().decode(canonicalIntent),
-      canonicalMembership: new TextDecoder().decode(canonicalMembership),
-      ...(input.collective === undefined
-        ? {}
-        : { collective: Object.freeze({ ...input.collective }) }),
-    });
-  }).pipe(Effect.withSpan("prepareSend"));
-
-/** Bind the exact captured identity after the caller's protocol claim succeeds. */
-export const acceptSend = <E = never>(
-  runtime: EngineRuntime,
-  prepared: PreparedSend,
-  hold: BindHold<E> = noBindHold,
-): Effect.Effect<PreparedSendHandle, SendError | E, SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    const { descriptor, intent } = yield* preparedSendData(prepared);
-    const membership = yield* verifyMembershipDescriptor(
-      descriptor,
-      runtime.input.registrySignerPublicKey,
-    ).pipe(Effect.mapError(representationFailure));
-    if (
-      intent.conversationId !== descriptor.conversationId ||
-      intent.membershipHash !== membership.hash ||
-      intent.authorAgentId !== runtime.input.localAgentCard.agentId
-    ) {
-      return yield* representationFailure();
-    }
-    const value: PreparedIntent = {
+    const activation = yield* activateIntent(runtime, {
       membership,
       intent,
-      canonicalIntent: new TextEncoder().encode(prepared.canonicalIntent),
-      ...(prepared.collective === undefined
-        ? {}
-        : { collective: prepared.collective }),
-    };
-    const activation = yield* activateHeld(runtime, value, hold);
-    return { msgId: intent.msgId, completion: activation.completion };
-  }).pipe(Effect.withSpan("acceptSend"));
+      canonicalIntent,
+    });
+    return { msgId: message.msgId, completion: activation.completion };
+  }).pipe(Effect.withSpan("acceptMessage"));
 
-/** The release survives interruption and preserves custody when an intent was durably accepted. */
-function activateHeld<E>(
+function requireSameMessage(
   runtime: EngineRuntime,
-  prepared: PreparedIntent,
-  hold: BindHold<E>,
-): Effect.Effect<
-  Exclude<IntentActivation, { kind: "waiting" }>,
-  SendError | E,
-  SqlClient.SqlClient
-> {
-  return Effect.uninterruptibleMask((restore) => {
-    let release: Effect.Effect<void, never, SqlClient.SqlClient> = Effect.void;
-    const acquire = hold.pipe(
-      Effect.tap((held) =>
-        Effect.sync(() => {
-          release = held;
-        }),
-      ),
-      Effect.asVoid,
-    );
-    return restore(activateIntent(runtime, prepared, acquire)).pipe(
-      Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : release)),
-    );
+  retained: EngineMessageIntent,
+  message: Message,
+) {
+  return Effect.gen(function* () {
+    const membership = runtime.conversations.get(
+      retained.intent.conversationId,
+    )?.membership;
+    if (membership === undefined) {
+      return yield* representationFailure();
+    }
+    const original = yield* messageFromIntent(
+      membership.members.map(agentViewOf),
+      retained.intent,
+    ).pipe(Effect.mapError(representationFailure));
+    const bytes = yield* Effect.all([
+      encodeCanonical(Message, original),
+      encodeCanonical(Message, message),
+    ]).pipe(Effect.mapError(representationFailure));
+    if (!sameBytes(bytes[0], bytes[1])) {
+      return yield* new SendError({ reason: "message-conflict" });
+    }
   });
 }
 
@@ -735,24 +651,19 @@ function storedIntent(prepared: PreparedIntent): StoredMessageIntent {
   };
 }
 
-function bindPreparedIntent<E>(
+function bindPreparedIntent(
   runtime: EngineRuntime,
   prepared: PreparedIntent,
-  acquire: Effect.Effect<void, E, SqlClient.SqlClient>,
-): Effect.Effect<void, SendError | E, SqlClient.SqlClient> {
+): Effect.Effect<void, SendError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const message = {
       intent: storedIntent(prepared),
-      ...(prepared.collective === undefined
-        ? {}
-        : { collective: prepared.collective }),
     };
     const retained = runtime.conversations.get(prepared.intent.conversationId);
     if (retained !== undefined) {
       if (retained.membership.hash !== prepared.membership.hash) {
         return yield* new SendError({ reason: "certification-unavailable" });
       }
-      yield* acquire;
       return yield* Store.bindMessageIntent({
         kind: "existing-conversation",
         ...message,
@@ -764,7 +675,6 @@ function bindPreparedIntent<E>(
       );
     }
     const created = yield* createConversation(runtime, prepared.membership);
-    yield* acquire;
     yield* Store.bindMessageIntent({
       kind: "new-conversation",
       foundation: created.foundation,
@@ -788,18 +698,17 @@ type IntentActivation =
     }>
   | Readonly<{ kind: "waiting"; barrier: Deferred.Deferred<undefined> }>;
 
-function activateIntent<E>(
+function activateIntent(
   runtime: EngineRuntime,
   prepared: PreparedIntent,
-  acquire: Effect.Effect<void, E, SqlClient.SqlClient>,
 ): Effect.Effect<
   Exclude<IntentActivation, { kind: "waiting" }>,
-  SendError | E,
+  SendError,
   SqlClient.SqlClient
 > {
   return runtime.gate
     .withPermits(1)(
-      Effect.uninterruptible(activateIntentOnce(runtime, prepared, acquire)),
+      Effect.uninterruptible(activateIntentOnce(runtime, prepared)),
     )
     .pipe(
       Effect.flatMap((activation) => {
@@ -811,7 +720,7 @@ function activateIntent<E>(
               .rearmCatchUp(runtime, prepared.intent.conversationId)
               .pipe(
                 Effect.zipRight(Deferred.await(activation.barrier)),
-                Effect.zipRight(activateIntent(runtime, prepared, acquire)),
+                Effect.zipRight(activateIntent(runtime, prepared)),
               );
           default: {
             const exhaustive: never = activation;
@@ -822,18 +731,17 @@ function activateIntent<E>(
     );
 }
 
-function activateIntentOnce<E>(
+function activateIntentOnce(
   runtime: EngineRuntime,
   prepared: PreparedIntent,
-  acquire: Effect.Effect<void, E, SqlClient.SqlClient>,
-): Effect.Effect<IntentActivation, SendError | E, SqlClient.SqlClient> {
+): Effect.Effect<IntentActivation, SendError, SqlClient.SqlClient> {
   const { intent } = prepared;
   return Effect.gen(function* () {
     const barrier = pendingRecoveryFence(runtime, intent.conversationId);
     if (barrier !== undefined) {
       return { kind: "waiting", barrier } satisfies IntentActivation;
     }
-    yield* bindPreparedIntent(runtime, prepared, acquire);
+    yield* bindPreparedIntent(runtime, prepared);
     return yield* activateBoundIntent(runtime, prepared);
   });
 }

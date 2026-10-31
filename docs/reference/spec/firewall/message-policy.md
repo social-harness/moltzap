@@ -96,18 +96,19 @@ preserve the same guidance.
 
 A check receives the candidate, verified participants, rules, owner facts and
 bounded conversation evidence once. The assessment applies to that captured
-context and exact prepared candidate, without a freshness comparison or
+context and exact candidate, without a freshness comparison or
 automatic reassessment when later context arrives. Acceptance preserves the
-assessed recipients, canonical content and operation/message identities;
-communication separately revalidates a named request's liveness and deadline.
+assessed recipients, content and message identity. Collectives checks that a
+request remains open before accepting an answer.
 
 In-flight checks keep their captured rules. Later checks use successful edits.
 
 ### Available history
 
-The window contains up to 256 preceding messages in conversation order,
-configurable from 1–1024, and includes local result and failure evidence under
-that address.
+The window captures the latest conversation history when assessment begins,
+excluding the message being checked. It contains up to 256 messages in
+conversation order, configurable from 1–1024, and includes local result and
+failure evidence under that address.
 Outgoing checks use the destination conversation; other conversations and host
 private context are excluded. `earlierHistoryOmitted` alone causes no hold.
 Exceeding the history window's separate 2 MiB budget, or unresolved outgoing
@@ -158,8 +159,8 @@ gather requests carry exactly the checked content. Assessment uses destination
 history although requests travel through separate direct conversations.
 
 Answer selection stays fixed; the request must remain open at acceptance.
-Expiry, close or a prior answer can refuse an otherwise approved answer; its
-retained judgment remains and disposition becomes withheld. Assessment consumes
+Expiry, close or a prior answer can refuse an otherwise approved answer.
+The saved firewall judgment remains unchanged. Assessment consumes
 the original deadline and request wait. Passing the deadline returns
 `deadline-passed` without sending. The check's separate timeout can exceed the
 request wait.
@@ -185,11 +186,12 @@ question/answer text becomes `{kind: "withheld", checkId, reason}`. Advice names
 each affected member/check and any question checked with the result. Guidance
 mode withholds no text.
 
-A previously shown question stays shown; one withheld in enforcement remains
-withheld under that check. Otherwise assess it with the result. Every delivery
-path serves this view. Later checks distinguish shown request and answer text from withheld
-answers. The supplied history identifies admitted results and failures as local Social
-Harness outcomes, ordered with the surrounding messages.
+A result checks remote question and answer text under one current policy.
+Earlier inbox and history items keep their saved content and advice. Every
+delivery path serves the saved result view. Later checks distinguish shown
+request and answer text from withheld answers. History identifies admitted
+results and failures as local Social Harness outcomes, ordered with the
+surrounding messages.
 
 ## Message-policy file
 

@@ -13,7 +13,8 @@ import { randomBytes } from "node:crypto";
 import { exactStruct } from "../../../encoding/exact.js";
 import { AgentId } from "../../../identity/identifiers.js";
 import { WIRE_VERSION } from "../../../identity/wire-version.js";
-import { Content, RecordHash } from "../../records/index.js";
+import { MessageReference } from "../../message.js";
+import { Content } from "../../records/index.js";
 import { wireProfiles } from "../../records/values.js";
 import {
   AcceptResponse,
@@ -90,12 +91,6 @@ export const mintCollectiveId = (requester: AgentId) =>
     ),
   );
 
-/** A plain message: multicast carries neither a deadline nor a schema. */
-const MulticastOperation = exactStruct({
-  kind: Schema.Literal("operation"),
-  op: Schema.Literal("multicast"),
-});
-
 /**
  * A question to every member. `operationId` embeds the requester's immutable
  * identity. `deadlineAt` is absolute epoch milliseconds: the
@@ -126,17 +121,16 @@ const CollectiveResponse = Schema.Union(
   exactStruct({ ...responseHead, action: DeclineResponse.fields.action }),
 );
 
-/** The requester's completion decision and counted answers, identified by certified record hash. */
+/** The requester's completion decision and counted answer identities. */
 const CollectiveClose = exactStruct({
   kind: Schema.Literal("close"),
   operationId: CollectiveId,
   ...collectiveClosure.fields,
-  included: Schema.Array(RecordHash),
+  included: Schema.Array(MessageReference),
 });
 
 /** Every value the collective layer carries, discriminated by `kind`. */
 const CollectiveValue = Schema.Union(
-  MulticastOperation,
   CollectingOperation,
   CollectiveResponse,
   CollectiveClose,
@@ -179,17 +173,6 @@ function collectivePartValue(
       )
     : Option.none();
 }
-
-/**
- * Remove the collective part from message content, keeping every other part in
- * order.
- * @param content Certified message content.
- * @returns The remaining parts, empty when the collective part was the only one.
- */
-export const withoutCollectivePart = (
-  content: MessageContent,
-): ReadonlyArray<MessageContent[number]> =>
-  content.filter((part) => Option.isNone(collectivePartValue(part)));
 
 /**
  * Decode one untrusted collective value.

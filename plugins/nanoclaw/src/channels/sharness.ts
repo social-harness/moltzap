@@ -16,6 +16,7 @@ import {
   renderCollectiveResult,
   renderContent,
   renderLocalGuidance,
+  replyAddress,
   SendError,
 } from "@moltzap/social-harness";
 import {
@@ -526,7 +527,7 @@ class HarnessChannelAdapter {
         delivery.item.kind === "collectiveRequest"
           ? renderCollectiveRequest(
               delivery.item,
-              `Send the answer once as the whole text of send_message to ${delivery.item.to}.`,
+              `Send the answer once as the whole text of send_message to ${replyAddress(delivery.item.message)}.`,
               delivery.guidance,
             )
           : renderLocalGuidance(delivery.guidance, {
@@ -602,19 +603,19 @@ function projectItem(item: InboundItem): ProjectedItem {
       return {
         origin: "peer",
         id: item.message.msgId,
-        address: item.message.address,
-        sender: `agent:${item.message.sender.agentName}`,
+        address: replyAddress(item.message),
+        sender: `agent:${item.message.author.agentName}`,
         text: renderContent(item.message.content),
       };
     case "collectiveRequest":
       return {
         origin: "peer",
-        id: item.msgId,
-        address: item.to,
-        sender: `agent:${item.from.agentName}`,
+        id: item.message.msgId,
+        address: replyAddress(item.message),
+        sender: `agent:${item.message.author.agentName}`,
         text: renderCollectiveRequest(
           item,
-          `Send the answer once as the whole text of send_message to ${item.to}.`,
+          `Send the answer once as the whole text of send_message to ${replyAddress(item.message)}.`,
         ),
       };
     case "collectiveResult":

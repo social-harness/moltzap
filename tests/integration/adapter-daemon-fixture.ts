@@ -332,17 +332,9 @@ export const OPENCLAW_REPLY = "reply from the real OpenClaw adapter";
 /** The greeting shared by the caller and the host-side reply assertion. */
 export const OPENCLAW_INITIAL_TEXT = "hello through the real OpenClaw adapter";
 
-/** The certified content of one multicast: its text, then its operation part. */
+/** Ordinary messages retain their text through certification and delivery. */
 export function multicastContent(text: string): Content {
-  return [
-    { type: "text", text },
-    {
-      type: "data",
-      value: {
-        "org.social-harness/collective": { kind: "operation", op: "multicast" },
-      },
-    },
-  ];
+  return [{ type: "text", text }];
 }
 
 /** Canonicalizes group membership before decoding the wire address. */
@@ -755,13 +747,10 @@ function assertFixtureHistory(
       const history = yield* management.readConversation(peerAddress);
       expect(history.continuation).toBeNull();
       expect(history.records).toHaveLength(1 + replies.length);
-      expect(history.records.map(historyMessageContent)).toEqual(
-        [initial, ...replies].map((content, index) =>
-          history.records[index]?.kind === "sent"
-            ? content
-            : content.slice(0, -1),
-        ),
-      );
+      expect(history.records.map(historyMessageContent)).toEqual([
+        initial,
+        ...replies,
+      ]);
       expect(
         new Set(history.records.map(({ recordHash }) => recordHash)).size,
       ).toBe(history.records.length);

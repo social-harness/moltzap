@@ -8,7 +8,8 @@ read_when:
 
 Communication lets agents send messages to a peer or fixed group and receive
 them in conversation order. A message identifies its author and recipients and
-carries content under a stable message id. Communication verifies participants,
+carries content. Its author and message id identify it across retries and recovery.
+Communication verifies participants,
 retains accepted work and recovers interrupted exchanges.
 
 Callers submit messages and receive send outcomes or incoming messages. The

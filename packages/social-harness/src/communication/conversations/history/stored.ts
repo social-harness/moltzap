@@ -6,7 +6,6 @@
  */
 
 import { Effect, type ParseResult, Schema } from "effect";
-import type { VerifiedAgentCard } from "../../../identity/cards.js";
 import type { Ed25519PublicKey } from "../../../identity/keys.js";
 import type {
   EndpointEngineInput,
@@ -16,7 +15,9 @@ import {
   type ClientRepresentationError,
   decodeCanonical,
 } from "../../../encoding/canonical-json.js";
+import { agentViewOf } from "../../../identity/cards.js";
 import { SignedMessage } from "../../../identity/envelope/signed-message.js";
+import { type Message, messageFromIntent } from "../../message.js";
 import {
   type AnchorHash as AnchorHashValue,
   type CertifiedRecord,
@@ -27,7 +28,6 @@ import {
   hashAnchor,
   InitialAnchorBody,
   type InitialAnchorBody as InitialAnchorBodyValue,
-  memberCard,
   MembershipDescriptor,
   type RecordCore,
   RecordCore as RecordCoreSchema,
@@ -161,16 +161,16 @@ export const recordFromStore = (
  * row's columns must match the anchor it holds, and the record row must pass
  * `recordFromStore`.
  * @param membership Verified membership of the record's conversation.
- * @param recovery Store snapshot holding the record's anchor row.
+ * @param history Retained anchors needed to verify this record.
  * @param stored Durable record row.
  * @returns The complete verified record.
  */
 export function readStoredRecord(
   membership: VerifiedMembership,
-  recovery: EndpointRecovery,
+  history: Pick<EndpointRecovery, "anchors">,
   stored: StoredCertifiedRecord,
 ): Effect.Effect<CertifiedRecord, StoredRowError> {
-  const anchor = recovery.anchors.find(
+  const anchor = history.anchors.find(
     (candidate) =>
       candidate.conversationId === stored.conversationId &&
       candidate.anchorHash === stored.anchorHash,
@@ -190,26 +190,24 @@ export function readStoredRecord(
  * row checks startup and recovery apply. Each membership the page names is
  * verified once, however many of its records the page holds.
  * @param registrySignerPublicKey Registry key the member cards verify under.
- * @param recovery Store snapshot holding the memberships and anchors the
- *   records name.
+ * @param history Retained memberships and anchors named by these records.
  * @param records Durable record rows, in page order.
- * @returns The complete verified records, each with its author's verified
- *   card from the record's membership, in page order.
+ * @returns The verified messages and their history positions, in page order.
  */
 export function readStoredHistory(
   registrySignerPublicKey: Ed25519PublicKey,
-  recovery: EndpointRecovery,
+  history: Pick<EndpointRecovery, "memberships" | "anchors">,
   records: readonly StoredCertifiedRecord[],
 ): Effect.Effect<
   ReadonlyArray<{
-    readonly record: CertifiedRecord;
-    readonly author: VerifiedAgentCard;
+    readonly recordHash: RecordHashValue;
+    readonly message: Message;
   }>,
   StoredRowError
 > {
   const named = new Set(records.map((stored) => stored.conversationId));
   return Effect.forEach(
-    recovery.memberships.filter((row) => named.has(row.conversationId)),
+    history.memberships.filter((row) => named.has(row.conversationId)),
     (row) => verifyStoredMembership(row, registrySignerPublicKey),
     { concurrency: 1 },
   ).pipe(
@@ -223,8 +221,8 @@ export function readStoredHistory(
           );
           return membership === undefined
             ? Effect.fail(persistenceFailure())
-            : readStoredRecord(membership, recovery, stored).pipe(
-                Effect.flatMap((record) => withAuthor(membership, record)),
+            : readStoredRecord(membership, history, stored).pipe(
+                Effect.flatMap((record) => withMessage(membership, record)),
               );
         },
         { concurrency: 1 },
@@ -789,19 +787,18 @@ function chainContains(
   return false;
 }
 
-/**
- * The record with its author's card. Record verification already requires the
- * author to be a member; the lookup's type does not carry that, so a missing
- * card is a corrupt row like any other.
- */
-function withAuthor(membership: VerifiedMembership, record: CertifiedRecord) {
-  const author = memberCard(
-    membership,
-    record.actionCertifiedRecord.recordCore.action.messageIntent.authorAgentId,
+/** Keeps record verification and message construction inside communication. */
+function withMessage(membership: VerifiedMembership, record: CertifiedRecord) {
+  return messageFromIntent(
+    membership.members.map(agentViewOf),
+    record.actionCertifiedRecord.recordCore.action.messageIntent,
+  ).pipe(
+    Effect.map((message) => ({
+      recordHash: record.actionCertifiedRecord.recordHash,
+      message,
+    })),
+    Effect.mapError(persistenceFailure),
   );
-  return author === undefined
-    ? Effect.fail(persistenceFailure())
-    : Effect.succeed({ record, author });
 }
 
 function persistenceFailure(): RouterWorkerPersistenceError {

@@ -18,6 +18,7 @@ import * as Inbox from "../daemon/inbox/store.js";
 import * as Daemon from "../daemon/store.js";
 import { layer } from "../daemon/store.js";
 import * as Firewall from "../firewall/store/index.js";
+import { bindIdentity, readIdentityBinding } from "../identity/local-store.js";
 import { LIVE_WIRE_VERSIONS } from "../identity/wire-version.js";
 import { digest } from "./agent-card-fixtures.js";
 
@@ -34,7 +35,14 @@ export function stateDirectory(): string {
 }
 
 /** Test callbacks can name operations together while production keeps them with their owners. */
-export const testStore = { ...Communication, ...Firewall, ...Inbox, ...Daemon };
+export const testStore = {
+  ...Communication,
+  ...Firewall,
+  ...Inbox,
+  ...Daemon,
+  bindIdentity,
+  readIdentityBinding,
+};
 /** Namespace used by storage fixtures inside a supplied SQL environment. */
 export type TestStore = typeof testStore;
 

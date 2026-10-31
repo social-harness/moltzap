@@ -6,7 +6,6 @@ import type {
   CompletedReanchor,
   ConversationFoundation,
   EmptyConversationRestart,
-  IdentityBinding,
   MessageIntent,
   MessageIntentBinding,
   ProposalLock,
@@ -15,7 +14,6 @@ import type {
   StoreMutation,
 } from "./types.js";
 
-import { bindCollectiveMessageInTransaction } from "./collective-claims.js";
 import {
   copyBytes,
   EndpointStoreError,
@@ -208,35 +206,6 @@ export function applyCatchUpReanchor(
     );
   }).pipe(storeOperation, Effect.withSpan("applyCatchUpReanchor"));
 }
-/** One database retains the same agent card across reopen and retries. */
-export function bindIdentity(
-  binding: IdentityBinding,
-): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    requireText(binding.agentId);
-    requireBytes(binding.canonicalAgentCard);
-    return yield* transaction(
-      Effect.gen(function* () {
-        const existing = yield* readStoredIdentity();
-        if (existing !== undefined) {
-          requireEqual(existing.agentId, binding.agentId);
-          requireSameBytes(
-            existing.canonicalAgentCard,
-            binding.canonicalAgentCard,
-          );
-          return yield* Effect.succeed<StoreMutation>("existing");
-        }
-        yield* database.unsafe<Readonly<Record<string, unknown>>>(
-          `INSERT INTO identity_binding
-          (singleton, agent_id, canonical_agent_card) VALUES (1, ?, ?)`,
-          [binding.agentId, copyBytes(binding.canonicalAgentCard)],
-        );
-        return yield* Effect.succeed<StoreMutation>("inserted");
-      }),
-    );
-  }).pipe(storeOperation, Effect.withSpan("bindIdentity"));
-}
 function validateMessageIntentBinding(binding: MessageIntentBinding): void {
   const intent = binding.intent;
   requireText(intent.conversationId);
@@ -263,9 +232,6 @@ function bindIntentWithFoundation(
         ? yield* putConversationFoundationInTransaction(binding.foundation)
         : yield* requireConversationFoundation(intent);
     const messageIntent = yield* bindMessageIntentInTransaction(intent);
-    if (binding.collective !== undefined) {
-      yield* bindCollectiveMessageInTransaction(binding.collective, intent);
-    }
     return foundation === "inserted" || messageIntent === "inserted"
       ? "inserted"
       : "existing";

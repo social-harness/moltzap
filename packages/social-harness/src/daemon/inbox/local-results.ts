@@ -1,36 +1,27 @@
-/** @file Checks collective result text and admits operation failures for host delivery. */
+/** @file Collective results check peer-controlled source messages before saving a host projection. */
 
 import * as SqlClient from "@effect/sql/SqlClient";
-import { Effect, Array as EffectArray, Schema, Struct } from "effect";
-import type { RecordHash } from "../../communication/records/index.js";
-import type {
-  CheckedMessage,
-  PreparedFirewallCheck,
-} from "../../firewall/index.js";
+import { Effect, Array as EffectArray } from "effect";
+import type { CheckedMessage } from "../../firewall/index.js";
+import type { InboundItem } from "../../host-protocol/items.js";
 import type {
   FirewallEvidence,
-  FirewallEvidenceSlices,
-  FirewallInboxEntry,
-  FirewallLocalAdmission,
-  FirewallRequestAdmission,
-} from "../../firewall/store/index.js";
-import type { InboundItem } from "../../host-protocol/items.js";
-import { ResultProvenance } from "../../communication/collectives/index.js";
+  IncomingEntry,
+  LocalAdmission,
+} from "./types.js";
+import { ResultSources } from "../../communication/collectives/index.js";
 import {
-  agentAddressOf,
-  type MessageAddressInput,
-} from "../../communication/records/values.js";
+  messageMembers,
+  replyAddress,
+  type Message as SharedMessage,
+} from "../../communication/message.js";
 import {
   decodeRuntimeValue,
   encodeRuntimeValue,
   EndpointStoreError,
 } from "../../communication/store/index.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
-import {
-  ENDPOINT_SENDER,
-  firewallCheckSchema,
-  type Message,
-} from "../../firewall/check.js";
+import { ENDPOINT_SENDER, type Message } from "../../firewall/check.js";
 import {
   type LocalGuidance,
   refusalReason,
@@ -39,125 +30,75 @@ import {
   renderCollectiveResult,
   renderOutcome,
 } from "../../host-protocol/render.js";
-import { AgentView } from "../../identity/cards.js";
+import { readFirewallEvidenceSlices } from "./evidence.js";
 import {
-  readFirewallEvidenceSlices,
-  readFirewallRequestAdmission,
-} from "./evidence.js";
-import {
-  type DecodedRecord,
   decodeMessage,
-  decodeRecord,
   type FirewallEnvironment,
   hashedId,
   messageFields,
   prepareMessageCheck,
+  projectHistoryMessage,
 } from "./firewall-context.js";
-
-// safer-arch-ignore no-fat-orchestrator: One collective result is checked and saved with its question and answers under one captured policy.
-/** The window of a check with no history: a result's missing record, or a failure. */
-const EMPTY_WINDOW = {
-  pendingOutgoing: false,
-  history: [],
-  overflow: false,
-  earlierHistoryOmitted: false,
-} as const;
 
 type ResultItem = Extract<InboundItem, { readonly kind: "collectiveResult" }>;
 type FailureItem = Extract<InboundItem, { readonly kind: "operationFailed" }>;
-
-/** One attempt at a queued local item's check. */
-interface LocalItemCheck {
-  readonly entry: FirewallInboxEntry;
-  readonly item: ResultItem | FailureItem;
-}
 type WithheldText = Extract<
   ResultItem["question"],
   { readonly kind: "withheld" }
 >;
-
-/**
- * Check one local item and build its commit. A failure's text is the
- * endpoint's own, so it is admitted without inference. A result's shell, its
- * members and their outcomes, is always admitted; each answer but the endpoint's own is checked on its own, from
- * one evidence capture, and the question when the runtime was never shown
- * its request and no check withheld it. An answer or question a check does
- * not admit becomes `withheld` in the projection the runtime reads.
- * @param environment The store, installation and local identity.
- * @param local The queued entry with its provenance and decoded item.
- * @returns The commit the store applies.
- */
-export const checkLocalItem = (
-  environment: FirewallEnvironment,
-  local: LocalItemCheck,
-): Effect.Effect<FirewallLocalAdmission, EndpointStoreError> => {
-  const { entry, item } = local;
-  switch (item.kind) {
-    case "operationFailed":
-      return failureAdmission(environment, entry, item);
-    case "collectiveResult":
-      return resultAdmission(environment, { entry, item });
-    default: {
-      const exhaustive: never = item;
-      return exhaustive;
-    }
-  }
-};
-
-/** Only judgment and reason are needed to project a stored check's withheld text. */
-const retainedJudgment = Schema.Struct(
-  Struct.pick(firewallCheckSchema.fields, "judgment", "reason"),
-);
-
-/** One queued result and its immutable canonical item. */
-interface ResultCheck {
-  readonly entry: FirewallInboxEntry;
-  readonly item: ResultItem;
+interface LocalItemCheck {
+  readonly entry: IncomingEntry;
+  readonly item: ResultItem | FailureItem;
 }
-
-/** One answer of a result the firewall checks: its member, its record and its outcome. */
-interface CountedAnswer {
-  readonly member: AgentView;
-  readonly recordHash: RecordHash;
-  readonly outcome: ResultItem["outcomes"][number]["outcome"];
+interface SourceText {
+  readonly kind: "answer" | "question";
+  readonly message: SharedMessage;
+  readonly text: string;
 }
-
-/** One text of a result the firewall checked, under its certified record. */
-interface CheckedText {
-  readonly recordHash: RecordHash;
+interface CheckedSource extends SourceText {
   readonly checked: CheckedMessage;
 }
 
-/** One counted answer of a result, checked on its own. */
-interface CheckedAnswer extends CheckedText {
-  readonly member: AgentView;
+/** Own text is trusted; all selected peer text uses one captured policy installation. */
+export function checkLocalItem(
+  environment: FirewallEnvironment,
+  local: LocalItemCheck,
+): Effect.Effect<LocalAdmission, EndpointStoreError> {
+  return local.item.kind === "operationFailed"
+    ? failureAdmission(environment, local.entry, local.item)
+    : resultAdmission(environment, local.entry, local.item);
 }
 
-/** The texts of a result its firewall checks: the counted answers, and maybe the question. */
-interface ResultTexts {
-  readonly answers: readonly CountedAnswer[];
-  readonly question: QuestionAdmission;
+/** Only source text actually quoted in a public result grants raw-message visibility. */
+export function resultVisibility(
+  item: ResultItem,
+  sources: ResultSources,
+): LocalAdmission["visibility"] {
+  return [
+    ...sources.answers.map((message) => ({ kind: "answer" as const, message })),
+    ...(sources.request === undefined
+      ? []
+      : [{ kind: "question" as const, message: sources.request }]),
+  ].map((source) => ({
+    message: {
+      authorAgentId: source.message.author.agentId,
+      msgId: source.message.msgId,
+    },
+    admitted:
+      source.kind === "question"
+        ? typeof item.question === "string"
+        : item.outcomes.some(
+            (outcome) =>
+              outcome.member.agentId === source.message.author.agentId &&
+              (outcome.outcome.kind === "answered" ||
+                outcome.outcome.kind === "declined"),
+          ),
+  }));
 }
-
-/** A result's checked answers, and its question when that was checked too. */
-interface CheckedResult {
-  readonly answers: readonly CheckedAnswer[];
-  readonly question?: CheckedText;
-}
-
-/**
- * Whether a member's result shows its question: the requester's own, or one
- * the runtime was shown, as it stands; one an enforcing check of its request
- * withheld, withheld under that check; any other, checked with the result.
- */
-type QuestionAdmission =
-  | { readonly kind: "shown" }
-  | { readonly kind: "withheld"; readonly withheld: WithheldText }
-  | { readonly kind: "check"; readonly recordHash: RecordHash };
 
 function failureAdmission(
   environment: FirewallEnvironment,
-  entry: FirewallInboxEntry,
+  entry: IncomingEntry,
   item: FailureItem,
 ) {
   return Effect.gen(function* () {
@@ -172,124 +113,28 @@ function failureAdmission(
         canonicalItem: entry.canonicalItem,
       },
       completions: [],
-      answers: [],
+      visibility: [],
       evidence: yield* localEvidence(item.to, message),
-    } satisfies FirewallLocalAdmission;
-  }).pipe(Effect.withSpan("failureAdmission"));
+    } satisfies LocalAdmission;
+  });
 }
 
 function resultAdmission(
   environment: FirewallEnvironment,
-  result: ResultCheck,
+  entry: IncomingEntry,
+  item: ResultItem,
 ) {
   return Effect.gen(function* () {
-    const provenance = yield* decodeRuntimeValue(
-      ResultProvenance,
-      result.entry.canonicalProvenance ?? new Uint8Array(),
+    const sources = yield* decodeRuntimeValue(
+      ResultSources,
+      entry.canonicalSources ?? new Uint8Array(),
     );
-    const question = yield* questionAdmission(environment, provenance.request);
-    const checked = yield* checkResultTexts(environment, result, {
-      answers: countedAnswers(result.item, provenance.answers),
-      question,
-    });
-    return yield* resultCommit(environment, result, question, checked);
-  }).pipe(Effect.withSpan("resultAdmission"));
-}
-
-/** One evidence capture and one managed rule capture cover every checked text of this result. */
-function checkResultTexts(
-  environment: FirewallEnvironment,
-  result: ResultCheck,
-  texts: ResultTexts,
-): Effect.Effect<CheckedResult, EndpointStoreError> {
-  return Effect.gen(function* () {
-    const { answers, question } = texts;
-    const captured = yield* readFirewallEvidenceSlices({
-      ranges: resultRanges(result.item, texts),
-      maximumRecords: environment.firewall.configuration.maximumHistoryRecords,
-    }).pipe(Effect.provideService(SqlClient.SqlClient, environment.sql));
-    const answerInputs = yield* Effect.forEach(
-      answers,
-      (answer, index) =>
-        prepareRecordText(
-          environment,
-          { ...result, evidence: sliceEvidence(captured, index) },
-          (candidate) => answerMessage(candidate, answer, result.item),
-        ),
-      { concurrency: 1 },
+    const checked = yield* checkSources(
+      environment,
+      entry,
+      selectedSources(item, sources, environment.localAgentCard.agentId),
     );
-    const inputs =
-      question.kind !== "check"
-        ? answerInputs
-        : [
-            ...answerInputs,
-            yield* prepareRecordText(
-              environment,
-              { ...result, evidence: sliceEvidence(captured, answers.length) },
-              (candidate) => requestMessage(candidate, result.item),
-            ),
-          ];
-    const checks: readonly CheckedMessage[] =
-      inputs.length === 0 ? [] : yield* environment.firewall.check(inputs);
-    return yield* checkedResult(texts, checks);
-  }).pipe(Effect.withSpan("checkResultTexts"));
-}
-
-/** Ordered assessments retain the certified identities of each answer and optional question. */
-function checkedResult(
-  texts: ResultTexts,
-  checks: readonly CheckedMessage[],
-): Effect.Effect<CheckedResult, EndpointStoreError> {
-  return Effect.gen(function* () {
-    const expected =
-      texts.answers.length + (texts.question.kind === "check" ? 1 : 0);
-    if (checks.length !== expected) {
-      return yield* new EndpointStoreError({ reason: "corrupt" });
-    }
-    const checkedAnswers = yield* Effect.forEach(
-      texts.answers,
-      (answer, index) => {
-        const checked = checks[index];
-        return checked === undefined
-          ? Effect.fail(new EndpointStoreError({ reason: "corrupt" }))
-          : Effect.succeed({
-              member: answer.member,
-              recordHash: answer.recordHash,
-              checked,
-            });
-      },
-      { concurrency: 1 },
-    );
-    if (texts.question.kind !== "check") {
-      return { answers: checkedAnswers };
-    }
-    const checked = checks[texts.answers.length];
-    if (checked === undefined) {
-      return yield* new EndpointStoreError({ reason: "corrupt" });
-    }
-    return {
-      answers: checkedAnswers,
-      question: { recordHash: texts.question.recordHash, checked },
-    };
-  }).pipe(Effect.withSpan("checkedResult"));
-}
-
-/** The commit of a checked result: its projection, advice, checks and evidence. */
-function resultCommit(
-  environment: FirewallEnvironment,
-  result: ResultCheck,
-  question: QuestionAdmission,
-  checked: CheckedResult,
-): Effect.Effect<FirewallLocalAdmission, EndpointStoreError> {
-  return Effect.gen(function* () {
-    const { entry, item } = result;
-    const projected = projectResult(item, question, checked);
-    const completions = [
-      ...checked.answers.map((answer) => answer.checked.completion),
-      ...(checked.question === undefined
-        ? []
-        : [checked.question.checked.completion]),
-    ];
+    const projected = projectResult(item, checked);
     const message = yield* localMessage(
       environment,
       entry,
@@ -299,82 +144,177 @@ function resultCommit(
     return {
       queuedItem: entry.canonicalItem,
       item: yield* projectedEntry(entry, projected, resultGuidance(checked)),
-      completions,
-      answers: checked.answers.map((answer) => ({
-        recordHash: answer.recordHash,
-        admitted:
-          answer.checked.completion.admit && quotesRecord(item, answer.member),
-      })),
+      completions: checked.map((source) => source.checked.completion),
+      visibility: sourceVisibility(item, sources, checked),
       evidence: yield* localEvidence(item.to, message),
-    };
-  }).pipe(Effect.withSpan("resultCommit"));
+    } satisfies LocalAdmission;
+  });
 }
 
-/**
- * Whether a member's line of a result quotes its answer message. An `invalid`
- * outcome's line is the validation message instead, so that message's content
- * stays assessor evidence: the runtime was never shown it.
- */
-function quotesRecord(item: ResultItem, member: AgentView): boolean {
-  return (
-    item.outcomes.find((outcome) => outcome.member.agentId === member.agentId)
-      ?.outcome.kind !== "invalid"
-  );
-}
-
-function questionAdmission(
-  environment: FirewallEnvironment,
-  request?: RecordHash,
-): Effect.Effect<QuestionAdmission, EndpointStoreError> {
-  if (request === undefined) {
-    return Effect.succeed({ kind: "shown" });
-  }
-  return readFirewallRequestAdmission(request)
-    .pipe(Effect.provideService(SqlClient.SqlClient, environment.sql))
-    .pipe(
-      Effect.flatMap(
-        (admission): Effect.Effect<QuestionAdmission, EndpointStoreError> => {
-          if (admission?.presented === true) {
-            return Effect.succeed({ kind: "shown" });
-          }
-          const enforced =
-            environment.firewall.configuration.mode === "enforcement";
-          return (
-            enforced ? withheldBy(admission) : Effect.succeed(undefined)
-          ).pipe(
-            Effect.map(
-              (withheld): QuestionAdmission =>
-                withheld === undefined
-                  ? { kind: "check", recordHash: request }
-                  : { kind: "withheld", withheld },
-            ),
-          );
-        },
-      ),
-      Effect.withSpan("questionAdmission"),
-    );
-}
-
-/** Which records a result's checks read their windows before, and in which conversations. */
-function resultRanges(item: ResultItem, texts: ResultTexts) {
+function selectedSources(
+  item: ResultItem,
+  sources: ResultSources,
+  localAgentId: string,
+): readonly SourceText[] {
   return [
-    ...texts.answers.map((answer) => ({
-      beforeRecord: answer.recordHash,
-      conversation:
-        item.op === "gather" ? agentAddressOf(answer.member) : item.to,
-    })),
-    ...(texts.question.kind === "check"
-      ? [{ beforeRecord: texts.question.recordHash, conversation: item.to }]
-      : []),
+    ...sources.answers.flatMap((message): SourceText[] => {
+      const outcome = item.outcomes.find(
+        (candidate) => candidate.member.agentId === message.author.agentId,
+      );
+      return message.author.agentId === localAgentId || outcome === undefined
+        ? []
+        : [{ kind: "answer", message, text: renderOutcome(outcome.outcome) }];
+    }),
+    ...(sources.request === undefined ||
+    sources.request.author.agentId === localAgentId ||
+    typeof item.question !== "string"
+      ? []
+      : [
+          {
+            kind: "question" as const,
+            message: sources.request,
+            text: JSON.stringify(item.question),
+          },
+        ]),
   ];
 }
 
-/** The inbox entry of a result's projection, with its advice when it fits the item budget. */
+function checkSources(
+  environment: FirewallEnvironment,
+  entry: IncomingEntry,
+  sources: readonly SourceText[],
+) {
+  return Effect.gen(function* () {
+    const captured = yield* readFirewallEvidenceSlices({
+      ranges: sources.map((source) => ({
+        message: source.message,
+        conversation: replyAddress(source.message),
+      })),
+      maximumRecords: environment.firewall.configuration.maximumHistoryRecords,
+      registrySignerPublicKey: environment.registrySignerPublicKey,
+    }).pipe(Effect.provideService(SqlClient.SqlClient, environment.sql));
+    const inputs = yield* Effect.forEach(
+      sources,
+      (source, index) => {
+        const evidence = captured.slices[index];
+        return evidence === undefined
+          ? Effect.fail(new EndpointStoreError({ reason: "corrupt" }))
+          : prepareSource(environment, entry, source, evidence);
+      },
+      { concurrency: 1 },
+    );
+    const checks =
+      inputs.length === 0 ? [] : yield* environment.firewall.check(inputs);
+    if (checks.length !== sources.length) {
+      return yield* new EndpointStoreError({ reason: "corrupt" });
+    }
+    return yield* Effect.forEach(
+      sources,
+      (source, index) =>
+        checks[index] === undefined
+          ? Effect.fail(new EndpointStoreError({ reason: "corrupt" }))
+          : Effect.succeed({ ...source, checked: checks[index] }),
+      { concurrency: 1 },
+    );
+  });
+}
+
+function prepareSource(
+  environment: FirewallEnvironment,
+  entry: IncomingEntry,
+  source: SourceText,
+  evidence: FirewallEvidence,
+) {
+  return Effect.gen(function* () {
+    const projected = yield* projectHistoryMessage({
+      message: source.message,
+      visible: false,
+    });
+    return yield* prepareMessageCheck(environment, {
+      direction: "incoming",
+      canonicalCandidate: entry.canonicalItem,
+      evidence,
+      message: yield* decodeMessage({
+        ...messageFields(projected.message),
+        text: source.text,
+      }),
+      cards: messageMembers(source.message),
+    });
+  });
+}
+
+function projectResult(
+  item: ResultItem,
+  checked: readonly CheckedSource[],
+): ResultItem {
+  const question = checked.find((source) => source.kind === "question");
+  return {
+    ...item,
+    question:
+      question === undefined || question.checked.completion.admit
+        ? item.question
+        : withheldBecause(question.checked),
+    outcomes: EffectArray.map(item.outcomes, (outcome) => {
+      const source = checked.find(
+        (candidate) =>
+          candidate.kind === "answer" &&
+          candidate.message.author.agentId === outcome.member.agentId,
+      );
+      return source === undefined || source.checked.completion.admit
+        ? outcome
+        : { member: outcome.member, outcome: withheldBecause(source.checked) };
+    }),
+  };
+}
+
+function sourceVisibility(
+  item: ResultItem,
+  sources: ResultSources,
+  checked: readonly CheckedSource[],
+): LocalAdmission["visibility"] {
+  return resultVisibility(item, sources).map((visibility) => {
+    const assessment = checked.find(
+      (source) =>
+        source.message.author.agentId === visibility.message.authorAgentId &&
+        source.message.msgId === visibility.message.msgId,
+    );
+    return {
+      ...visibility,
+      admitted:
+        visibility.admitted &&
+        (assessment === undefined || assessment.checked.completion.admit),
+    };
+  });
+}
+
+function withheldBecause(checked: CheckedMessage): WithheldText {
+  return {
+    kind: "withheld",
+    checkId: checked.completion.checkId,
+    reason: refusalReason(checked.result.reason),
+  };
+}
+
+function resultGuidance(
+  checked: readonly CheckedSource[],
+): LocalGuidance | undefined {
+  const answers = checked.flatMap((source) =>
+    source.kind !== "answer" || source.checked.guidance === undefined
+      ? []
+      : [{ member: source.message.author, ...source.checked.guidance }],
+  );
+  const question = checked.find((source) => source.kind === "question")?.checked
+    .guidance;
+  return answers.length === 0 && question === undefined
+    ? undefined
+    : { answers, ...(question === undefined ? {} : { question }) };
+}
+
 function projectedEntry(
-  entry: FirewallInboxEntry,
+  entry: IncomingEntry,
   projected: ResultItem,
   guidance?: LocalGuidance,
-): Effect.Effect<FirewallLocalAdmission["item"], EndpointStoreError> {
+): Effect.Effect<LocalAdmission["item"], EndpointStoreError> {
   return Effect.gen(function* () {
     const canonicalItem = yield* encodeRuntimeValue(projected);
     const canonicalGuidance =
@@ -391,212 +331,9 @@ function projectedEntry(
   });
 }
 
-/**
- * The withheld value a request's retained check gives, when one ran and its
- * judgment held the request.
- */
-function withheldBy(
-  admission?: FirewallRequestAdmission,
-): Effect.Effect<WithheldText | undefined, EndpointStoreError> {
-  const checkId = admission?.checkId;
-  const canonicalResult = admission?.canonicalResult;
-  if (checkId === undefined || canonicalResult === undefined) {
-    return Effect.succeed(undefined);
-  }
-  return decodeRuntimeValue(retainedJudgment, canonicalResult).pipe(
-    Effect.map((result) =>
-      result.judgment === "allow"
-        ? undefined
-        : withheldOf(checkId, result.reason),
-    ),
-  );
-}
-
-/** The answers provenance names, each with its outcome in the result. */
-function countedAnswers(
-  item: ResultItem,
-  answers: ResultProvenance["answers"],
-): readonly CountedAnswer[] {
-  return answers.flatMap((answer) => {
-    const outcome = item.outcomes.find(
-      (candidate) => agentAddressOf(candidate.member) === answer.member,
-    );
-    return outcome === undefined
-      ? []
-      : [
-          {
-            member: outcome.member,
-            recordHash: answer.recordHash,
-            outcome: outcome.outcome,
-          },
-        ];
-  });
-}
-
-/** One slice of a capture as the evidence one check reads. */
-function sliceEvidence(
-  captured: FirewallEvidenceSlices,
-  index: number,
-): FirewallEvidence {
-  return {
-    ...(captured.slices[index] ?? EMPTY_WINDOW),
-  };
-}
-
-/** A missing candidate remains missing evidence rather than inferred peer text. */
-function prepareRecordText(
-  environment: FirewallEnvironment,
-  check: ResultCheck & { readonly evidence: FirewallEvidence },
-  project: (
-    candidate: DecodedRecord,
-  ) => Effect.Effect<Message, EndpointStoreError>,
-): Effect.Effect<PreparedFirewallCheck, EndpointStoreError> {
-  return Effect.gen(function* () {
-    const candidate =
-      check.evidence.candidate === undefined
-        ? undefined
-        : yield* decodeRecord(
-            check.evidence.candidate,
-            environment.localAgentCard.agentId,
-          );
-    const message =
-      candidate === undefined ? undefined : yield* project(candidate);
-    return yield* prepareMessageCheck(environment, {
-      direction: "incoming",
-      evidence: check.evidence,
-      canonicalCandidate: check.entry.canonicalItem,
-      ...(message === undefined ? {} : { message }),
-      cards: candidate?.cards ?? [],
-    });
-  });
-}
-
-/**
- * An answer as the runtime would read it: the member's line of the result,
- * attributed to the record's author after the record is confirmed to be that
- * member's answer to this operation.
- */
-function answerMessage(
-  candidate: DecodedRecord,
-  answer: CountedAnswer,
-  item: ResultItem,
-): Effect.Effect<Message, EndpointStoreError> {
-  const operation = candidate.message.operation;
-  return operation?.kind === "answer" &&
-    operation.operationId === item.operationId &&
-    candidate.cards.some(
-      (card) =>
-        card.agentId === candidate.intent.authorAgentId &&
-        Schema.equivalence(AgentView)(AgentView.make(card), answer.member),
-    )
-    ? decodeMessage({
-        ...messageFields(candidate.message),
-        text: renderOutcome(answer.outcome),
-        operation: {
-          kind: "answer",
-          op: item.op,
-          operationId: item.operationId,
-        },
-      })
-    : Effect.fail(new EndpointStoreError({ reason: "corrupt" }));
-}
-
-/** A request's question as a member's model would have read it. */
-function requestMessage(
-  candidate: DecodedRecord,
-  item: ResultItem,
-): Effect.Effect<Message, EndpointStoreError> {
-  const operation = candidate.message.operation;
-  return operation?.kind === "request" &&
-    operation.operationId === item.operationId
-    ? Effect.succeed(candidate.message)
-    : Effect.fail(new EndpointStoreError({ reason: "corrupt" }));
-}
-
-/** The result the runtime reads: every text a check did not admit becomes `withheld`. */
-function projectResult(
-  item: ResultItem,
-  question: QuestionAdmission,
-  checked: CheckedResult,
-): ResultItem {
-  return {
-    ...item,
-    question: projectedQuestion(item, question, checked.question),
-    outcomes: EffectArray.map(item.outcomes, (outcome) =>
-      projectedOutcome(outcome, checked.answers),
-    ),
-  };
-}
-
-function projectedQuestion(
-  item: ResultItem,
-  question: QuestionAdmission,
-  checked?: CheckedText,
-): ResultItem["question"] {
-  switch (question.kind) {
-    case "shown":
-      return item.question;
-    case "withheld":
-      return question.withheld;
-    case "check":
-      return checked === undefined || checked.checked.completion.admit
-        ? item.question
-        : withheldBecause(checked.checked);
-    default: {
-      const exhaustive: never = question;
-      return exhaustive;
-    }
-  }
-}
-
-function projectedOutcome(
-  outcome: ResultItem["outcomes"][number],
-  checked: readonly CheckedAnswer[],
-): ResultItem["outcomes"][number] {
-  const check = checked.find(
-    (answer) => answer.member.agentId === outcome.member.agentId,
-  );
-  return check === undefined || check.checked.completion.admit
-    ? outcome
-    : { member: outcome.member, outcome: withheldBecause(check.checked) };
-}
-
-function withheldBecause(checked: CheckedMessage): WithheldText {
-  return withheldOf(checked.completion.checkId, checked.result.reason);
-}
-
-function withheldOf(
-  checkId: string,
-  reason: CheckedMessage["result"]["reason"],
-): WithheldText {
-  return { kind: "withheld", checkId, reason: refusalReason(reason) };
-}
-
-/** Each checked text's advice, keyed by its member; none when no check advised. */
-function resultGuidance(checked: CheckedResult): LocalGuidance | undefined {
-  const advised = checked.answers.flatMap((answer) =>
-    answer.checked.guidance === undefined
-      ? []
-      : [{ member: answer.member, ...answer.checked.guidance }],
-  );
-  const questionGuidance = checked.question?.checked.guidance;
-  if (advised.length === 0 && questionGuidance === undefined) {
-    return undefined;
-  }
-  return {
-    answers: advised,
-    ...(questionGuidance === undefined ? {} : { question: questionGuidance }),
-  };
-}
-
-/**
- * A local item's own text, attributed to the endpoint and shown to the local
- * agent. Its id is the item's delivery, since one operation can end in more
- * than one failure.
- */
 function localMessage(
   environment: FirewallEnvironment,
-  entry: FirewallInboxEntry,
+  entry: IncomingEntry,
   text: string,
   operation: NonNullable<Message["operation"]>,
 ) {
@@ -610,7 +347,7 @@ function localMessage(
 }
 
 /** The runtime-visible evidence a local item leaves in its conversation. */
-function localEvidence(conversation: MessageAddressInput, message: Message) {
+function localEvidence(conversation: ResultItem["to"], message: Message) {
   return encodeRuntimeValue({
     ...messageFields(message),
     visibility: "runtime",

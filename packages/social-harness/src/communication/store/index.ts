@@ -3,8 +3,6 @@
 
 /** Failures exposed by communication persistence. */
 export { EndpointStoreError } from "./database/values.js";
-/** How a daemon opens its exclusive store. */
-export type { StoreOpening } from "./database/index.js";
 /** Saved communication records and recovery state. */
 export type {
   CertifiedRecord,
@@ -12,8 +10,6 @@ export type {
   DisseminationObligation,
   EmptyConversationRestart,
   EndpointRecovery,
-  HistoryPage,
-  IdentityBinding,
   InboundDeliveryInput,
   MessageIntent,
   OutboundMessageInput,
@@ -35,17 +31,10 @@ export { decodeRuntimeValue, encodeRuntimeValue } from "./runtime-codec.js";
 /** Pending envelopes cannot be re-signed when their live window expires. */
 export { OutboxTooOldError } from "./database/values.js";
 /** Immutable collective ownership, existing message claims, and terminal delivery. */
-export type {
-  CollectiveMessageBinding,
-  CollectiveOperationInput,
-  CollectiveRequestRefusal,
-  StoredCollectiveMessage,
-  StoredCollectiveOperation,
-} from "./types.js";
+export type { StoredCollectiveOperation } from "./types.js";
 /** Protocol writes and reads use the caller's shared SQL environment. */
 export {
   applyCatchUpReanchor,
-  bindIdentity,
   bindMessageIntent,
   completeReanchor,
   lockFirstMessageProposal,
@@ -54,20 +43,22 @@ export {
   restartEmptyConversation,
   stageReanchor,
 } from "./anchors.js";
-/** The saved identity is independent of the registered network services. */
-export { readStoredIdentity as readIdentity } from "./rows/index.js";
 /** Collective identities and accepted claims survive process interruption. */
 export {
+  completeCollectiveMessage,
+  completeCollectiveOperation,
   finalizeCollectiveOperation,
+  putCollectiveMessage,
   putCollectiveOperation,
   readCollectiveAnswers,
   readCollectiveMessages,
   readCollectiveOperation,
-  readCollectiveOperations,
-  readCollectiveRefusals,
+  readNextCollectiveResult,
+  readOpenCollectiveOperations,
+  readPendingCollectiveMessages,
   recordCollectiveAnswer,
-  recordCollectiveRefusal,
   retireCollectiveOperation,
+  retireCollectiveResult,
 } from "./collectives.js";
 /** Accepted work, certified history and network retry obligations share SQL transactions. */
 export {
@@ -78,11 +69,12 @@ export {
   enqueueDisseminationOutbound,
   enqueueOutbound,
   readPendingDeliveries,
-  readRetainedDeliveries,
 } from "./queues/index.js";
 /** History pages remain anchored while later records are appended. */
 export {
   readStoredConversation as readConversation,
+  readMemberships,
+  readRecentConversation,
   recoverStoredState as recover,
 } from "./reads.js";
 /** Record acceptance retains exact bytes and separately attributed evidence. */

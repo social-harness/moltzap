@@ -1,11 +1,13 @@
 /** @file A real daemon inbox with scoped SQL and helpers for adding test messages. */
 
 import { SqlClient } from "@effect/sql";
-import { Effect, Layer } from "effect";
-import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
+import { Effect, Layer, Schema } from "effect";
+import { DeliveryToken } from "../communication/store/index.js";
 import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
+import { queueIncomingItem } from "../daemon/inbox/pending.js";
 import { acknowledgeInboxItem, putInboxItem } from "../daemon/inbox/store.js";
-import { layer, queueFirewallItem } from "../daemon/store.js";
+import { makeInboxOperations } from "../daemon/messaging/inbox.js";
+import { layer } from "../daemon/store.js";
 import { LIVE_WIRE_VERSIONS } from "../identity/wire-version.js";
 
 /** Test events use the production inbox and receiver callbacks over one database. */
@@ -20,20 +22,27 @@ export const openInboxFixture = Effect.fn("openInboxFixture")(function* (
   );
   const sql = yield* SqlClient.SqlClient.pipe(Effect.provide(persistence));
   const run = Effect.provideService(SqlClient.SqlClient, sql);
-  const delivery = yield* makeHostDelivery({
-    scope: yield* Effect.scope,
-    collectives: () => undefined,
-    historyExport: noHistoryExport,
-  }).pipe(run);
+  const inbox = yield* makeInboxOperations(sql, noHistoryExport);
   return {
-    ...delivery.eventStore,
+    ...inbox.events,
+    operations: {
+      readInbox: inbox.listInbox,
+      readEvent: ({ eventId }: { readonly eventId: string }) =>
+        Schema.decodeUnknown(DeliveryToken)(eventId).pipe(
+          Effect.catchTag("ParseError", () =>
+            Effect.fail({ reason: "invalid-event" }),
+          ),
+          Effect.flatMap(inbox.getInboxItem),
+        ),
+      acknowledgeDelivery: inbox.acknowledgeDelivery,
+    },
     sql,
     run,
     putInboxItem: (item: Parameters<typeof putInboxItem>[0]) =>
       putInboxItem(item).pipe(run),
     acknowledgeInboxItem: (token: Parameters<typeof acknowledgeInboxItem>[0]) =>
       acknowledgeInboxItem(token).pipe(run),
-    queueFirewallItem: (item: Parameters<typeof queueFirewallItem>[0]) =>
-      queueFirewallItem(item).pipe(run),
+    queueIncomingItem: (item: Parameters<typeof queueIncomingItem>[0]) =>
+      queueIncomingItem(item).pipe(run),
   };
 });

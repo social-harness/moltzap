@@ -8,8 +8,8 @@ import type { Effect, Layer, Option, Types } from "effect";
 import type { checkMessage } from "../test.js";
 import type {
   Daemon,
+  Firewall,
   loadMessagePolicy,
-  makeFirewall,
   MessagePolicy,
 } from "./index.js";
 
@@ -65,11 +65,11 @@ type PolicyWriterDirectionsAreExact = Expect<
     "incoming" | "outgoing" | "both"
   >
 >;
-/** Loaded policy parameters enter the same constructor as trusted code configuration. */
+/** Loaded policies and trusted code configuration share the service construction boundary. */
 type LoadedPolicyInstalls = Expect<
   Effect.Effect.Success<
     ReturnType<typeof loadMessagePolicy>
-  > extends Option.Option<Parameters<typeof makeFirewall>[0]>
+  > extends Option.Option<NonNullable<Parameters<typeof Firewall.layer>[0]>>
     ? true
     : false
 >;

@@ -11,7 +11,10 @@ import {
 import { Deferred, Effect, Fiber, Redacted, Schema } from "effect";
 import { describe, expect } from "vitest";
 import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
-import { loopbackMcpEndpoint } from "../../__tests__/mcp-http-fixtures.js";
+import {
+  loopbackMcpEndpoint,
+  mcpIdentity,
+} from "../../__tests__/mcp-http-fixtures.js";
 import { localGuidance } from "../../__tests__/message-policy-fixtures.js";
 import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
 import { enqueue, item, token } from "../../__tests__/webhook-fixtures.js";
@@ -25,9 +28,8 @@ import {
   INBOX_ITEM_EVENT,
   INBOX_PENDING_EVENT,
 } from "../../host-protocol/names.js";
-import { makeHostDelivery } from "../inbox/host-delivery.js";
-import { noHistoryExport } from "../inbox/host-traffic-log.js";
-import { makeHarnessMcpHttpHandler } from "./tools.js";
+import { Identity } from "../../identity/local.js";
+import { makeHarnessMcpHttpHandler } from "./index.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- HTTP/JSON-RPC refusal codes and receipt counts are external behavior. */
 
@@ -51,36 +53,33 @@ const beforeReceive = <A, E>(
 const acquireFixture = (block?: BlockedOperation) =>
   Effect.gen(function* () {
     const store = yield* openInboxFixture(stateDirectory());
-    const delivery = yield* makeHostDelivery({
-      scope: yield* Effect.scope,
-      collectives: () => ({ prepare: unreachable, accept: unreachable }),
-      historyExport: noHistoryExport,
-    }).pipe(store.run);
     const handler = yield* makeHarnessMcpHttpHandler({
       implementation: info,
       credential,
       eventStore: {
-        ...delivery.eventStore,
+        ...store,
         readInbox: (bounds) =>
-          beforeReceive("poll", delivery.eventStore.readInbox(bounds), block),
+          beforeReceive("poll", store.readInbox(bounds), block),
       },
       operations: {
-        ...delivery.operations,
+        ...store.operations,
         readInbox: (request) =>
-          beforeReceive("read", delivery.operations.readInbox(request), block),
+          beforeReceive("read", store.operations.readInbox(request), block),
         acknowledgeDelivery: (deliveryToken) =>
           beforeReceive(
             "ack",
-            delivery.operations.acknowledgeDelivery(deliveryToken),
+            store.operations.acknowledgeDelivery(deliveryToken),
             block,
           ),
-        protocolActive: () => true,
+
+        send: unreachable,
+        readInboxSummary: store.readInboxSummary,
         readStatus: unreachable,
         register: unreachable,
         searchConversations: unreachable,
         readConversation: unreachable,
       },
-    });
+    }).pipe(Effect.provideService(Identity, mcpIdentity(true)));
     return { store, handler, endpoint: yield* loopbackMcpEndpoint(handler) };
   });
 
@@ -166,7 +165,7 @@ const deliversAdmittedItems = () =>
       canonicalItem: yield* encodeRuntimeValue(item("admitted")),
       canonicalGuidance: yield* encodeRuntimeValue(guidance),
     });
-    yield* store.queueFirewallItem({
+    yield* store.queueIncomingItem({
       deliveryToken: token(3),
       canonicalItem: yield* encodeRuntimeValue(item("private pending check")),
       conversation: "agent:bob",

@@ -1,751 +1,249 @@
-/** @file Collective results reach the host with the permitted answers and guidance. */
+/** @file Result assessment checks the text shown to the host while retaining private source custody. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Deferred, Duration, Effect, Fiber, Queue, Schema } from "effect";
-import { describe, expect } from "vitest";
+import { Context, Deferred, Effect, Fiber, Layer, Schema } from "effect";
+import { expect } from "vitest";
 import type { AnswerContent } from "../../communication/collectives/contracts.js";
-import type { ResultProvenance } from "../../communication/collectives/index.js";
-import type { CertifiedRecord } from "../../communication/records/index.js";
-import type { MessageAddressInput } from "../../communication/records/values.js";
+import type { CollectiveMemberOutcome } from "../../communication/collectives/inbound.js";
 import type {
   DecisionRequest,
   MessageMiddleware,
   MiddlewareInput,
 } from "../../firewall/check.js";
-import type { FirewallOptions } from "../../firewall/index.js";
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
-import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
-import {
-  admitPending,
-  bob,
-  carol,
-  collectiveContent,
-  group,
-  holdMarked,
-  type IncomingRuntime,
-  marker,
-  question,
-  seedRequest,
-  sendInput,
-} from "../../__tests__/collective-delivery-fixtures.js";
+import { digest } from "../../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import { conversationIdentityFixture } from "../../__tests__/conversation-fixtures.js";
 import {
-  addConversation,
-  fixture,
-  type Fixture,
-  seedIncoming,
-} from "../../__tests__/conversation-fixtures.js";
-import {
-  auditChecks,
-  incomingFixture,
+  firewallOptions,
+  observeInputs,
   pass,
   policy,
   rule,
 } from "../../__tests__/daemon-delivery-fixtures.js";
-import { bytes } from "../../__tests__/store-schema-fixtures.js";
 import {
-  type DeliveryToken,
+  encodeCollectiveContent,
+  FormModeSchema,
+} from "../../communication/collectives/wire/index.js";
+import { messageFromIntent } from "../../communication/message.js";
+import { mintMsgId } from "../../communication/records/index.js";
+import {
+  decodeRuntimeValue,
+  DeliveryToken,
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
+import { Firewall, type FirewallOptions } from "../../firewall/index.js";
+import { localGuidanceSchema } from "../../host-protocol/advice.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import { renderOutcome } from "../../host-protocol/render.js";
+import { agentViewOf, type VerifiedAgentCard } from "../../identity/cards.js";
+import { saveResultDecision } from "../store.js";
+import { checkLocalItem } from "./local-results.js";
+import { queueIncomingItem } from "./pending.js";
+import { isMessageVisible, readHistoryViews } from "./store.js";
 
-// @agent-code-guard/regression-only: Real SQLite and the protocol engine verify admission and host-visible publication.
+const question = "Which day?\nUse a calendar.";
+const privateAnswer = "Private original invalid answer";
+type Subject = Effect.Effect.Success<typeof conversationIdentityFixture>;
 
-const resultId = collectiveOperationId(
-  testAgentView("agent:alice").agentId,
-  30,
-);
-
-type ResultItem = Extract<InboundItem, { readonly kind: "collectiveResult" }>;
-
-type FailureItem = Extract<InboundItem, { readonly kind: "operationFailed" }>;
-
-type Outcome = ResultItem["outcomes"][number]["outcome"];
-
-/** The result item alone, so a test reads its outcomes without narrowing. */
-const resultItem = Schema.typeSchema(InboundItem).pipe(
-  Schema.filter((item): item is ResultItem => item.kind === "collectiveResult"),
-);
-
-const failureItem = Schema.typeSchema(InboundItem).pipe(
-  Schema.filter((item): item is FailureItem => item.kind === "operationFailed"),
-);
-
-/** A policy that asks for a response to every message it sees. */
-function adviseEvery() {
-  return policy((input) =>
-    Effect.succeed({
-      findings: pass.findings,
-      expectations: [
-        {
-          ruleId: rule.id,
-          expectation: "required" as const,
-          subjects: [input.event.message.id],
-        },
-      ],
-    }),
-  );
-}
-
-/** One value for each member alice's gather `resultId` asks. */
-interface PerMember<Value> {
-  readonly bob: Value;
-  readonly carol: Value;
-}
-
-/** A member's accepted answer to alice's gather `resultId`. */
-function answerContent(content: object) {
-  return collectiveContent({
-    kind: "response",
-    operationId: resultId,
-    action: "accept",
-    content,
-  });
-}
-
-/**
- * Alice's store holds a direct conversation with each of Bob and Carol, each
- * ending in that member's answer to alice's gather `resultId`.
- */
-function seedAnswers(subject: Fixture, answers: PerMember<AnswerContent>) {
-  return Effect.gen(function* () {
-    const bobFirstMessage = yield* seedIncoming(subject, true);
-    const bobAnswer = yield* subject.run(
-      appendCertifiedMessage(
-        subject,
-        bobFirstMessage,
-        yield* answerContent(answers.bob),
-      ),
-    );
-    const other = yield* addConversation(subject, true);
-    const carolAnswer = yield* subject.run(
-      appendCertifiedMessage(
-        { ...subject, ...other },
-        other.record,
-        yield* answerContent(answers.carol),
-      ),
-    );
-    return provenanceOf({ bob: bobAnswer, carol: carolAnswer });
-  });
-}
-
-function provenanceOf(records: PerMember<CertifiedRecord>): ResultProvenance {
-  return {
-    answers: [
-      {
-        member: bob,
-        recordHash: records.bob.actionCertifiedRecord.recordHash,
-      },
-      {
-        member: carol,
-        recordHash: records.carol.actionCertifiedRecord.recordHash,
-      },
-    ],
-  };
-}
-
-/** Alice's gather to Bob and Carol, as the collective layer emits its result. */
-function gatherResult(
-  outcomes: PerMember<Outcome>,
-  to: MessageAddressInput = group,
-): ResultItem {
-  return Schema.decodeUnknownSync(resultItem)({
-    kind: "collectiveResult",
-    closedAt: 0,
-    closedBy: "settled",
-    op: "gather",
-    operationId: resultId,
-    to,
-    question,
-    outcomes: [
-      { member: testAgentView(bob), outcome: outcomes.bob },
-      { member: testAgentView(carol), outcome: outcomes.carol },
-    ],
-  });
-}
-
-/** Both members' answers as answered outcomes. */
-function answered(answers: PerMember<AnswerContent>): PerMember<Outcome> {
-  return {
-    bob: { kind: "answered", content: answers.bob },
-    carol: { kind: "answered", content: answers.carol },
-  };
-}
-
-/** Queue a local result with its provenance and wait for its admission. */
-function admitResult(
-  runtime: IncomingRuntime,
-  item: InboundItem,
-  provenance: ResultProvenance,
+function sourceMessage(
+  subject: Subject,
+  author: VerifiedAgentCard,
+  content: Parameters<typeof messageFromIntent>[1]["content"],
 ) {
-  return runtime.delivery
-    .queueLocalItem(item, provenance)
-    .pipe(Effect.zipRight(admitPending(runtime)));
-}
-
-/** The item a read-event returns for one delivery token. */
-function readEventItem(runtime: IncomingRuntime, token?: DeliveryToken) {
-  return Effect.fromNullable(token).pipe(
-    Effect.orDie,
-    Effect.flatMap((deliveryToken) =>
-      runtime.delivery.operations.readEvent({
-        eventId: deliveryToken,
-      }),
-    ),
-    Effect.map((event) => event.item),
-  );
-}
-
-function withholdsOneAnswerFromEveryRuntimeRead() {
   return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const answers = {
-      bob: { slot: "mon", note: marker },
-      carol: { slot: "tue" },
-    };
-    const provenance = yield* seedAnswers(subject, answers);
-    const runtime = yield* incomingFixture(subject, holdMarked(), {}, false);
-    const result = gatherResult(answered(answers));
-    yield* admitResult(runtime, result, provenance);
-
-    const checks = yield* auditChecks(subject);
-    const bobCheck = checks.find(
-      (check) => check.input.message?.sender === subject.remote.card.agentId,
+    return yield* messageFromIntent(
+      [subject.local.card, subject.remote.card, subject.third.card].map(
+        agentViewOf,
+      ),
+      {
+        authorAgentId: author.agentId,
+        msgId: yield* mintMsgId(),
+        content,
+      },
     );
-    const [, carolOutcome] = result.outcomes;
-    const projected = {
-      ...result,
-      outcomes: [
-        {
-          member: testAgentView(bob),
-          outcome: {
-            kind: "withheld",
-            checkId: bobCheck?.checkId,
-            reason: "rule-violation",
-          },
-        },
-        carolOutcome,
-      ],
-    };
-    const inbox = yield* runtime.delivery.operations.readInbox({});
-    const webhook = yield* runtime.delivery.eventStore.readInbox();
-    const canonical = yield* encodeRuntimeValue(result);
-    expect(inbox.items.map((entry) => entry.item)).toEqual([projected]);
-    expect(runtime.published.map((event) => event.item)).toEqual([projected]);
-    expect(
-      yield* readEventItem(runtime, inbox.items[0]?.deliveryToken),
-    ).toEqual(projected);
-    expect(webhook.items.map((entry) => entry.canonicalItem)).toEqual([
-      yield* encodeRuntimeValue(projected),
-    ]);
-    expect(checks.map((check) => check.candidate)).toEqual([
-      canonical,
-      canonical,
-    ]);
-  });
+  }).pipe(Effect.orDie);
 }
 
-function scopesUnresolvedEvidenceToTheMembersAnswer() {
+function resultCase(
+  subject: Subject,
+  raw: AnswerContent = { slot: "mon" },
+  outcome: CollectiveMemberOutcome = { kind: "answered", content: raw },
+) {
   return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const answers = { bob: { slot: "mon" }, carol: { slot: "tue" } };
-    const provenance = yield* seedAnswers(subject, answers);
-    yield* subject.run(
-      subject.store.bindMessageIntent({
-        kind: "existing-conversation",
-        intent: {
-          conversationId: subject.membership.descriptor.conversationId,
-          membershipHash: subject.membership.hash,
-          authorAgentId: subject.local.card.agentId,
-          msgId: "msg_unresolved",
-          canonicalIntent: bytes("pending send to Bob"),
-        },
-      }),
-    );
-    const runtime = yield* incomingFixture(subject, holdMarked(), {}, false);
-    yield* admitResult(runtime, gatherResult(answered(answers)), provenance);
-
-    expect(
-      (yield* runtime.delivery.operations.readInbox({})).items[0]?.item,
-    ).toMatchObject({
-      outcomes: [
-        {
-          member: testAgentView(bob),
-          outcome: { kind: "withheld", reason: "unresolved-evidence" },
-        },
-        {
-          member: testAgentView(carol),
-          outcome: { kind: "answered", content: answers.carol },
-        },
-      ],
+    const operationId = collectiveOperationId(subject.remote.card.agentId);
+    const request = yield* requestSource(subject, operationId);
+    const own = yield* answerSource(subject, subject.local.card, operationId, {
+      slot: "tue",
     });
-    expect(yield* auditChecks(subject)).toMatchObject([
-      { disposition: "withheld", result: { reason: "unresolved-evidence" } },
-      { disposition: "admitted", result: { reason: "eligible" } },
-    ]);
-  });
-}
-
-function checksAnInvalidAnswerAsItsLine() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const provenance = yield* seedAnswers(subject, {
-      bob: { slot: "mon" },
-      carol: { slot: "sun" },
-    });
-    const seen: MiddlewareInput[] = [];
-    const runtime = yield* incomingFixture(
+    const remote = yield* answerSource(
       subject,
-      holdMarked(seen),
-      {},
-      false,
+      subject.third.card,
+      operationId,
+      raw,
     );
-    const outcomes = {
-      bob: { kind: "answered", content: { slot: "mon" } },
-      carol: { kind: "invalid", reason: `slot: ${marker} is not an option` },
-    } as const;
-    yield* admitResult(runtime, gatherResult(outcomes), provenance);
+    const decoded = yield* Schema.decodeUnknown(InboundItem)({
+      kind: "collectiveResult",
+      op: "all_gather",
+      operationId,
+      to: "group:alice,bob,carol",
+      question,
+      closedBy: "settled",
+      closedAt: Date.now(),
+      outcomes: [
+        {
+          member: agentViewOf(subject.local.card),
+          outcome: { kind: "answered", content: { slot: "tue" } },
+        },
+        { member: agentViewOf(subject.third.card), outcome },
+      ],
+    });
+    if (decoded.kind !== "collectiveResult") {
+      return yield* Effect.dieMessage("Expected a collective result");
+    }
+    const sources = { answers: [own, remote], request };
+    const entry = {
+      sequence: 1,
+      deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(digest("dlv_", 7)),
+      conversation: "group:alice,bob,carol",
+      canonicalItem: yield* encodeRuntimeValue(decoded),
+      canonicalSources: yield* encodeRuntimeValue(sources),
+    };
+    return { entry, item: decoded, sources, remote };
+  });
+}
 
-    const texts = seen.map((input) => input.event.message.text);
-    expect(texts).toHaveLength(2);
-    expect(texts).toEqual(
-      expect.arrayContaining([
-        renderOutcome(outcomes.bob),
-        renderOutcome(outcomes.carol),
-      ]),
-    );
-    expect(seen.map((input) => input.event.message.operation)).toEqual([
-      { kind: "answer", op: "gather", operationId: resultId },
-      { kind: "answer", op: "gather", operationId: resultId },
+function assessment(
+  subject: Subject,
+  middleware: MessageMiddleware,
+  overrides: Partial<FirewallOptions> = {},
+) {
+  return Effect.gen(function* () {
+    const context = yield* Layer.build(
+      Firewall.layer(firewallOptions(middleware, overrides)),
+    ).pipe(subject.run);
+    const firewall = Context.get(context, Firewall);
+    if (firewall.configuration === undefined) {
+      return yield* Effect.dieMessage("Expected a configured policy");
+    }
+    return {
+      firewall,
+      sql: subject.sql,
+      localAgentCard: subject.local.card,
+      registrySignerPublicKey: subject.signer,
+    };
+  });
+}
+
+it("checks the remote answer and quoted question while trusting the agent's own answer", () =>
+  Effect.gen(function* () {
+    const subject = yield* conversationIdentityFixture;
+    const result = yield* resultCase(subject);
+    const seen: MiddlewareInput[] = [];
+    const environment = yield* assessment(subject, observeInputs(seen));
+    const admitted = yield* checkLocalItem(environment, result);
+    expect(seen.map((input) => input.event.message.text)).toEqual([
+      renderOutcome(result.item.outcomes[1]?.outcome ?? { kind: "no-answer" }),
+      JSON.stringify(question),
+    ]);
+    expect(seen.map((input) => input.event.message.sender)).toEqual([
+      subject.third.card.agentId,
+      subject.remote.card.agentId,
     ]);
     expect(
-      (yield* runtime.delivery.operations.readInbox({})).items[0]?.item,
+      yield* decodeRuntimeValue(InboundItem, admitted.item.canonicalItem),
+    ).toEqual(result.item);
+  }));
+
+it("checks only the public invalid-answer reason and keeps its original body private", () =>
+  Effect.gen(function* () {
+    const subject = yield* conversationIdentityFixture;
+    const invalid = {
+      kind: "invalid" as const,
+      reason: "Expected an allowed day",
+    };
+    const result = yield* resultCase(subject, { slot: privateAnswer }, invalid);
+    const seen: MiddlewareInput[] = [];
+    const environment = yield* assessment(
+      subject,
+      observeInputs(seen, (input) => ({
+        findings: pass.findings,
+        expectations: [
+          {
+            ruleId: rule.id,
+            expectation: "required",
+            subjects: [input.event.message.id],
+          },
+        ],
+      })),
+    );
+    const admitted = yield* checkLocalItem(environment, result);
+    yield* subject.run(
+      queueIncomingItem(result.entry).pipe(
+        Effect.zipRight(saveResultDecision(admitted)),
+      ),
+    );
+    const { author, msgId } = result.remote;
+    const reference = { authorAgentId: author.agentId, msgId };
+    expect(seen[0]?.event.message.text).toBe(renderOutcome(invalid));
+    expect(yield* subject.run(isMessageVisible(reference))).toBe(false);
+    const [view] = yield* subject.run(readHistoryViews([reference]));
+    expect(
+      yield* decodeRuntimeValue(
+        InboundItem,
+        view?.canonicalItem ?? new Uint8Array(),
+      ),
+    ).toEqual(result.item);
+    const guidance = yield* decodeRuntimeValue(
+      localGuidanceSchema,
+      admitted.item.canonicalGuidance ?? new Uint8Array(),
+    );
+    expect(
+      "answers" in guidance
+        ? guidance.answers[0]?.subjects[0]?.text
+        : undefined,
+    ).toBe(renderOutcome(invalid));
+  }));
+
+it("keeps one captured text policy while an owner edit completes during result assessment", () =>
+  Effect.gen(function* () {
+    const subject = yield* conversationIdentityFixture;
+    const result = yield* resultCase(subject);
+    const entered = yield* Deferred.make<undefined>();
+    const release = yield* Deferred.make<undefined>();
+    const environment = yield* assessment(
+      subject,
+      policy(() =>
+        Deferred.succeed(entered, undefined).pipe(
+          Effect.zipRight(Deferred.await(release)),
+          Effect.as(pass),
+        ),
+      ),
+      batchOptions(),
+    );
+    const textRule = {
+      id: "answer-review",
+      applies: "both" as const,
+      text: "Require review before showing peer text.",
+    };
+    yield* environment.firewall.updatePolicy({ add: [textRule] });
+    const checking = yield* checkLocalItem(environment, result).pipe(
+      Effect.forkScoped,
+    );
+    yield* Deferred.await(entered);
+    yield* environment.firewall.updatePolicy({ remove: [textRule.id] });
+    yield* Deferred.succeed(release, undefined);
+    const admitted = yield* Fiber.join(checking);
+    expect(
+      yield* decodeRuntimeValue(InboundItem, admitted.item.canonicalItem),
     ).toMatchObject({
+      question: { kind: "withheld", reason: "rule-violation" },
       outcomes: [
         { outcome: { kind: "answered" } },
         { outcome: { kind: "withheld", reason: "rule-violation" } },
       ],
     });
-  });
-}
+  }));
 
-function showsEveryAnswerWithItsAdvice() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const answers = { bob: { slot: "mon" }, carol: { slot: "tue" } };
-    const provenance = yield* seedAnswers(subject, answers);
-    const runtime = yield* incomingFixture(
-      subject,
-      adviseEvery(),
-      { mode: "guidance" },
-      false,
-    );
-    const result = gatherResult(answered(answers));
-    yield* admitResult(runtime, result, provenance);
-
-    const [delivered] = (yield* runtime.delivery.operations.readInbox({}))
-      .items;
-    expect(delivered?.item).toEqual(result);
-    expect(delivered?.guidance).toMatchObject({
-      answers: [
-        {
-          member: testAgentView(bob),
-          instructions: [{ instruction: rule.guidance }],
-          subjects: [{ sender: testAgentView(bob) }],
-        },
-        {
-          member: testAgentView(carol),
-          instructions: [{ instruction: rule.guidance }],
-          subjects: [{ sender: testAgentView(carol) }],
-        },
-      ],
-    });
-  });
-}
-
-function admitsAFailureWithoutInference() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const firstMessage = yield* seedIncoming(subject, true);
-    yield* subject.run(appendCertifiedMessage(subject, firstMessage, question));
-    const runtime = yield* incomingFixture(
-      subject,
-      policy(() => Effect.dieMessage("a failure is never inferred")),
-      {},
-      false,
-    );
-    yield* admitPending(runtime);
-    const failure = Schema.decodeUnknownSync(failureItem)({
-      kind: "operationFailed",
-      operationId: resultId,
-      to: group,
-      error: "all_gather failed: the result could not be shared",
-    });
-
-    yield* runtime.delivery.queueLocalItem(failure);
-    yield* admitPending(runtime);
-
-    const inbox = yield* runtime.delivery.operations.readInbox({});
-    expect(inbox.items.map((entry) => entry.item)).toContainEqual(failure);
-  });
-}
-
-function leavesTheResultInLaterEvidence() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const secret = `${marker} private detail`;
-    const answers = {
-      bob: { slot: "mon", note: secret },
-      carol: { slot: "tue" },
-    };
-    const provenance = yield* seedAnswers(subject, answers);
-    const seen: MiddlewareInput[] = [];
-    const runtime = yield* incomingFixture(
-      subject,
-      holdMarked(seen),
-      {},
-      false,
-    );
-    yield* admitResult(
-      runtime,
-      gatherResult(answered(answers), bob),
-      provenance,
-    );
-
-    const sending = yield* runtime.delivery.operations
-      .send({ input: sendInput({ to: bob, text: question }) })
-      .pipe(Effect.forkScoped);
-    yield* Deferred.await(subject.outbound);
-    yield* Fiber.interrupt(sending);
-
-    const history = seen.at(-1)?.context.history ?? [];
-    expect(history.at(-2)).toMatchObject({
-      sender: subject.remote.card.agentId,
-      operation: { kind: "answer", operationId: resultId },
-      visibility: "assessor",
-      admission: "withheld",
-    });
-    expect(history.at(-1)).toMatchObject({
-      sender: "sharness",
-      operation: { kind: "result", op: "gather", operationId: resultId },
-      visibility: "runtime",
-      admission: "admitted",
-    });
-    expect(history.at(-1)?.text).not.toContain(secret);
-    expect(seen[0]?.event.message.text).toContain(secret);
-  });
-}
-
-/**
- * Bob's request reaches alice's runtime neither shown nor held: its check
- * allows it but outlasts its deadline. A result naming it then follows.
- */
-function questionCheckedWithResult(
-  mode: FirewallOptions["mode"],
-  middleware: (seen: MiddlewareInput[]) => MessageMiddleware,
-) {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const deadlineAt = Date.now() + 3_000;
-    const text = `${marker} ${question}`;
-    const request = yield* seedRequest(subject, deadlineAt, text);
-    const seen: MiddlewareInput[] = [];
-    const checked = middleware(seen);
-    const runtime = yield* incomingFixture(
-      subject,
-      policy((input) =>
-        seen.length === 0
-          ? Effect.sleep(
-              Duration.millis(Math.max(0, deadlineAt - Date.now()) + 50),
-            ).pipe(
-              Effect.zipRight(Effect.sync(() => seen.push(input))),
-              Effect.as(pass),
-            )
-          : checked.check(input),
-      ),
-      { mode },
-      false,
-    );
-    yield* admitPending(runtime);
-    const result = Schema.decodeUnknownSync(resultItem)({
-      kind: "collectiveResult",
-      closedAt: 0,
-      closedBy: "settled",
-      op: "all_gather",
-      operationId: collectiveOperationId(testAgentView(bob).agentId),
-      to: bob,
-      question: text,
-      outcomes: [
-        { member: testAgentView(bob), outcome: { kind: "no-answer" } },
-      ],
-    });
-    yield* admitResult(runtime, result, {
-      answers: [],
-      request: request.actionCertifiedRecord.recordHash,
-    });
-    return {
-      seen,
-      delivery: (yield* runtime.delivery.operations.readInbox({})).items[0],
-    };
-  });
-}
-
-function withholdsAQuestionCheckedWithItsResult() {
-  return Effect.gen(function* () {
-    const { seen, delivery } = yield* questionCheckedWithResult(
-      "enforcement",
-      holdMarked,
-    );
-
-    expect(seen.at(-1)?.event.message.operation).toMatchObject({
-      kind: "request",
-      op: "gather",
-    });
-    expect(delivery?.item).toMatchObject({
-      question: { kind: "withheld", reason: "rule-violation" },
-    });
-  });
-}
-
-function advisesOnAQuestionCheckedWithItsResult() {
-  return Effect.gen(function* () {
-    const { delivery } = yield* questionCheckedWithResult("guidance", () =>
-      adviseEvery(),
-    );
-
-    expect(delivery?.item).toMatchObject({ question: `${marker} ${question}` });
-    expect(delivery?.guidance).toMatchObject({
-      answers: [],
-      question: { instructions: [{ instruction: rule.guidance }] },
-    });
-  });
-}
-
-function admitsAResultWithNoAnswerWithoutInference() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    yield* seedEarlierMessage(subject);
-    const runtime = yield* incomingFixture(
-      subject,
-      policy((input) =>
-        input.event.message.operation === undefined
-          ? Effect.succeed(pass)
-          : Effect.dieMessage("a result without answers is never inferred"),
-      ),
-      {},
-      false,
-    );
-    yield* admitPending(runtime);
-    const result = gatherResult({
-      bob: { kind: "no-answer" },
-      carol: { kind: "no-answer" },
-    });
-
-    yield* admitResult(runtime, result, { answers: [] });
-
-    expect(runtime.published.map((event) => event.item)).toContainEqual(result);
-  });
-}
-
-function keepsAnInvalidAnswerFromLaterRuntimeHistory() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const provenance = yield* seedAnswers(subject, {
-      bob: { slot: "wed", note: "outside the form" },
-      carol: { slot: "tue" },
-    });
-    const seen: MiddlewareInput[] = [];
-    const runtime = yield* incomingFixture(
-      subject,
-      holdMarked(seen),
-      {},
-      false,
-    );
-    yield* admitResult(
-      runtime,
-      gatherResult(
-        {
-          bob: { kind: "invalid", reason: "slot: wed is not an option" },
-          carol: { kind: "answered", content: { slot: "tue" } },
-        },
-        bob,
-      ),
-      provenance,
-    );
-
-    const sending = yield* runtime.delivery.operations
-      .send({ input: sendInput({ to: bob, text: question }) })
-      .pipe(Effect.forkScoped);
-    yield* Deferred.await(subject.outbound);
-    yield* Fiber.interrupt(sending);
-
-    expect(seen.at(-1)?.context.history.at(-2)).toMatchObject({
-      operation: { kind: "answer", operationId: resultId },
-      visibility: "assessor",
-    });
-  });
-}
-
-/** Alice's direct conversation with Bob, ending in one plain message from Bob. */
-function seedEarlierMessage(subject: Fixture) {
-  return seedIncoming(subject, true).pipe(
-    Effect.flatMap((firstMessage) =>
-      subject.run(
-        appendCertifiedMessage(subject, firstMessage, "An earlier message"),
-      ),
-    ),
-  );
-}
-
-/** An all_gather of alice's that failed, as the collective layer emits it. */
-function allGatherFailure(error: string) {
-  return Schema.decodeUnknownSync(failureItem)({
-    kind: "operationFailed",
-    operationId: resultId,
-    to: bob,
-    error,
-  });
-}
-
-function keepsTwoFailuresOfOneOperationApart() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    yield* seedEarlierMessage(subject);
-    const seen: MiddlewareInput[] = [];
-    const runtime = yield* incomingFixture(
-      subject,
-      holdMarked(seen),
-      {},
-      false,
-    );
-    yield* admitPending(runtime);
-    yield* runtime.delivery.queueLocalItem(allGatherFailure("first refusal"));
-    yield* admitPending(runtime);
-    yield* runtime.delivery.queueLocalItem(allGatherFailure("second refusal"));
-    yield* admitPending(runtime);
-
-    const sending = yield* runtime.delivery.operations
-      .send({ input: sendInput({ to: bob, text: question }) })
-      .pipe(Effect.forkScoped);
-    yield* Deferred.await(subject.outbound);
-    yield* Fiber.interrupt(sending);
-
-    const failures = (seen.at(-1)?.context.history ?? []).filter(
-      (entry) => entry.operation?.kind === "failure",
-    );
-    expect(failures.map((entry) => entry.text)).toEqual([
-      "first refusal",
-      "second refusal",
-    ]);
-    expect(new Set(failures.map((entry) => entry.id)).size).toBe(2);
-  });
-}
-
-describe("result publication", () => {
-  it(
-    "withholds one answer from every runtime read while the result's other answers stay",
-    withholdsOneAnswerFromEveryRuntimeRead,
-  );
-  it(
-    "scopes unresolved-send evidence to the member whose answer shares the conversation",
-    scopesUnresolvedEvidenceToTheMembersAnswer,
-  );
-  it(
-    "checks an invalid answer's peer-controlled reason as the line a model reads",
-    checksAnInvalidAnswerAsItsLine,
-  );
-  it(
-    "shows every answer in guidance mode, each with its own advice",
-    showsEveryAnswerWithItsAdvice,
-  );
-  it(
-    "leaves the shown result and its answers' admission in later evidence",
-    leavesTheResultInLaterEvidence,
-  );
-  it(
-    "withholds a question the runtime was never shown when its check with the result holds it",
-    withholdsAQuestionCheckedWithItsResult,
-  );
-  it(
-    "attaches advice to a question checked with its result in guidance mode",
-    advisesOnAQuestionCheckedWithItsResult,
-  );
-  it(
-    "admits a result with no counted answer without inference",
-    admitsAResultWithNoAnswerWithoutInference,
-  );
-  it(
-    "keeps an invalid answer's message content out of later runtime-visible history",
-    keepsAnInvalidAnswerFromLaterRuntimeHistory,
-  );
-});
-
-describe("operation failure publication", () => {
-  it(
-    "admits an operation failure without inference",
-    admitsAFailureWithoutInference,
-  );
-  it(
-    "keeps two failures of one operation apart in later evidence",
-    keepsTwoFailuresOfOneOperationApart,
-  );
-});
-
-it(
-  "checks an entire result under one rule value while a rule edit completes",
-  capturedResultDuringEdit,
-);
-
-/** A queued second answer retains the same rules as an answer already under assessment. */
-function capturedResultDuringEdit() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const answers = { bob: { slot: "mon" }, carol: { slot: "tue" } };
-    const provenance = yield* seedAnswers(subject, answers);
-    const entered = yield* Deferred.make<undefined>();
-    const release = yield* Deferred.make<undefined>();
-    const runtime = yield* incomingFixture(
-      subject,
-      policy((input) =>
-        input.event.message.operation?.kind === "answer"
-          ? Deferred.succeed(entered, undefined).pipe(
-              Effect.zipRight(Deferred.await(release)),
-              Effect.as(pass),
-            )
-          : Effect.succeed(pass),
-      ),
-      batchOptions(),
-      false,
-    );
-    const textRule = {
-      id: "answer-review",
-      applies: "both",
-      text: "Require owner review for answers.",
-    } as const;
-    yield* runtime.firewall.updatePolicy({ add: [textRule] });
-    yield* runtime.delivery.queueLocalItem(
-      gatherResult(answered(answers)),
-      provenance,
-    );
-    yield* runtime.runPass;
-    yield* Deferred.await(entered);
-    yield* runtime.firewall.updatePolicy({ remove: [textRule.id] });
-    yield* Deferred.succeed(release, undefined);
-    yield* Queue.take(runtime.completed);
-    const result = (yield* runtime.delivery.operations.readInbox(
-      {},
-    )).items.find((entry) => entry.item.kind === "collectiveResult");
-    expect(result?.item).toMatchObject({
-      outcomes: [
-        { outcome: { kind: "withheld", reason: "rule-violation" } },
-        { outcome: { kind: "withheld", reason: "rule-violation" } },
-      ],
-    });
-  });
-}
-
-/** A second answer waits while the deciding rule changes. */
 function batchOptions(): Partial<FirewallOptions> {
   return {
     maximumConcurrentChecks: 1,
@@ -758,9 +256,9 @@ function batchOptions(): Partial<FirewallOptions> {
             usage: {},
             raw: "",
             answers: Object.fromEntries(
-              Object.entries(request.questions).map(([id, question]) => [
+              Object.entries(request.questions).map(([id, entry]) => [
                 id,
-                batchAnswer(request, question),
+                batchAnswer(request, entry),
               ]),
             ),
           }),
@@ -774,7 +272,6 @@ function batchOptions(): Partial<FirewallOptions> {
   };
 }
 
-/** Deterministic provider answers isolate active-rule capture from model quality. */
 function batchAnswer(
   request: DecisionRequest,
   question: DecisionRequest["questions"][string],
@@ -788,4 +285,45 @@ function batchAnswer(
       choices.map((entry) => [entry, entry === choice ? 1 : 0]),
     ),
   };
+}
+
+function requestSource(
+  subject: Subject,
+  operationId: ReturnType<typeof collectiveOperationId>,
+) {
+  return Effect.gen(function* () {
+    const requestedSchema = yield* Schema.decodeUnknown(FormModeSchema)({
+      type: "object",
+      properties: { slot: { type: "string", enum: ["mon", "tue"] } },
+      required: ["slot"],
+    });
+    return yield* sourceMessage(
+      subject,
+      subject.remote.card,
+      yield* encodeCollectiveContent(
+        {
+          kind: "operation",
+          op: "all_gather",
+          operationId,
+          deadlineAt: Date.now() + 60_000,
+          requestedSchema,
+        },
+        question,
+      ),
+    );
+  });
+}
+
+function answerSource(
+  subject: Subject,
+  author: VerifiedAgentCard,
+  operationId: ReturnType<typeof collectiveOperationId>,
+  content: AnswerContent,
+) {
+  return encodeCollectiveContent({
+    kind: "response",
+    operationId,
+    action: "accept",
+    content,
+  }).pipe(Effect.flatMap((encoded) => sourceMessage(subject, author, encoded)));
 }

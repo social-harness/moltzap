@@ -68,12 +68,13 @@ export {
   ListenError,
   SendError,
 } from "./communication/conversations/errors.js";
-/** Certified inbound messages, direct or to a fixed group. */
+/** Shared message identities, participants and reply destinations. */
 export {
-  type DirectMessage,
-  type GroupMessage,
-  InboundMessage,
-} from "./communication/conversations/message.js";
+  Message,
+  messageMembers,
+  MessageReference,
+  replyAddress,
+} from "./communication/message.js";
 /** Message ids and the closed semantic content of a message. */
 export {
   Content,

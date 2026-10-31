@@ -31,7 +31,6 @@ it(
 );
 it("rejects an unreadable cursor instead of starting a different history read", () =>
   withDaemonStore(stateDirectory(), rejectsUnreadableCursor));
-
 function replaysHistory() {
   return Effect.gen(function* () {
     const directory = stateDirectory();

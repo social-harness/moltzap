@@ -1,0 +1,288 @@
+/** @file Invalid outer bodies cannot displace a later certified message delivered to a consumer. */
+
+import { SqlClient } from "@effect/sql";
+import { scopedLive as it } from "@effect/vitest";
+import {
+  Context,
+  Deferred,
+  Effect,
+  FiberSet,
+  Layer,
+  Queue,
+  Ref,
+  Schema,
+} from "effect";
+import { expect } from "vitest";
+import { identifier } from "../__tests__/agent-card-fixtures.js";
+import {
+  buildCertifiedFirstMessage,
+  type SigningIdentity,
+} from "../__tests__/certified-history-fixtures.js";
+import { conversationIdentityFixture } from "../__tests__/conversation-fixtures.js";
+import {
+  batch,
+  emptyBatch,
+  pollCursor,
+} from "../__tests__/router-worker-fixtures.js";
+import { encodeCanonical } from "../encoding/canonical-json.js";
+import { agentViewOf, type VerifiedAgentCard } from "../identity/cards.js";
+import { SealedBody } from "../identity/envelope/sealed-body.js";
+import {
+  EnvelopeId,
+  type LiveSignedMessage,
+  SignedMessage,
+} from "../identity/envelope/signed-message.js";
+import { AgentSigningAuthority } from "../identity/keys.js";
+import { saveLocalIdentity } from "../identity/local-store.js";
+import { localIdentityLayer } from "../identity/local.js";
+import { Registry } from "../identity/registry/index.js";
+import { Communication } from "./index.js";
+import { type Message, messageFromIntent } from "./message.js";
+import { DirectPacket, signOuterPacket } from "./records/index.js";
+import { Router } from "./router/index.js";
+import { communicationLive } from "./service/index.js";
+
+interface Members {
+  readonly local: SigningIdentity;
+  readonly peer: SigningIdentity;
+  readonly outsider: SigningIdentity;
+}
+
+interface RefusedEnvelope {
+  readonly sealedTo?: (members: Members) => readonly VerifiedAgentCard[];
+  readonly sealedAs: number;
+  readonly signer: (members: Members) => SigningIdentity;
+  readonly signedAs: number;
+}
+
+const envelopeId = (byte: number) =>
+  Schema.decodeUnknownSync(EnvelopeId)(identifier("env_", byte));
+
+function refusedEnvelope(
+  refused: RefusedEnvelope,
+  members: Members,
+  plaintext: Uint8Array,
+) {
+  return Effect.gen(function* () {
+    const signer = refused.signer(members);
+    const body =
+      refused.sealedTo === undefined
+        ? plaintext
+        : yield* SealedBody.seal({
+            senderAgentId: members.peer.card.agentId,
+            recipientAgentCards: refused.sealedTo(members),
+            envelopeId: envelopeId(refused.sealedAs),
+            plaintext,
+          });
+    return yield* SignedMessage.sign({
+      agentCard: signer.card,
+      signingAuthority: signer.authority,
+      recipientAgentIds: new Set([
+        members.local.card.agentId,
+        members.peer.card.agentId,
+      ]),
+      envelopeId: envelopeId(refused.signedAs),
+      body,
+    });
+  });
+}
+
+/** The network supplies one batch after activation and holds subsequent cursor polls. */
+function feedingRouter(input: {
+  readonly subject: Effect.Effect.Success<typeof conversationIdentityFixture>;
+  readonly feed: readonly LiveSignedMessage[];
+  readonly release: Deferred.Deferred<undefined>;
+}) {
+  return Effect.gen(function* () {
+    const fed = yield* Ref.make(false);
+    return Router.of({
+      poll: ({ request }) =>
+        request.pollCursor === undefined
+          ? Effect.succeed(
+              emptyBatch(
+                input.subject.anchor.routerInstanceId,
+                input.subject.anchor.pollCursor,
+              ),
+            )
+          : Deferred.await(input.release).pipe(
+              Effect.zipRight(Ref.getAndSet(fed, true)),
+              Effect.flatMap((alreadyFed) =>
+                alreadyFed
+                  ? Effect.never
+                  : Effect.succeed(
+                      batch(
+                        input.subject.anchor.routerInstanceId,
+                        pollCursor(25),
+                        input.feed,
+                      ),
+                    ),
+              ),
+            ),
+      send: () => Effect.never,
+    });
+  });
+}
+
+type Subject = Effect.Effect.Success<typeof conversationIdentityFixture>;
+
+function prepareIngress(refused: RefusedEnvelope) {
+  return Effect.gen(function* () {
+    const subject = yield* conversationIdentityFixture;
+    const members: Members = {
+      local: subject.local,
+      peer: subject.remote,
+      outsider: subject.third,
+    };
+    const discarded = yield* buildCertifiedFirstMessage(
+      subject.local,
+      subject.remote,
+      subject.membership,
+      subject.anchor.routerInstanceId,
+    );
+    const accepted = yield* buildCertifiedFirstMessage(
+      subject.local,
+      subject.remote,
+      subject.membership,
+      subject.anchor.routerInstanceId,
+    );
+    const validEnvelope = yield* signOuterPacket({
+      packet: accepted,
+      membership: subject.membership,
+      agentCard: subject.remote.card,
+      signingAuthority: subject.remote.authority,
+    });
+    const release = yield* Deferred.make<undefined>();
+    const router = yield* feedingRouter({
+      subject,
+      release,
+      feed: [
+        yield* refusedEnvelope(
+          refused,
+          members,
+          yield* encodeCanonical(DirectPacket, discarded),
+        ),
+        validEnvelope,
+      ],
+    });
+    return { subject, accepted, release, router };
+  });
+}
+
+function registryFor(subject: Subject) {
+  return Registry.of({
+    register: () => Effect.dieMessage("The consumer is already registered"),
+    lookup: (request) => {
+      const card = [
+        subject.local.card,
+        subject.remote.card,
+        subject.third.card,
+      ].find((candidate) =>
+        "agentName" in request
+          ? candidate.agentName === request.agentName
+          : candidate.agentId === request.agentId,
+      );
+      return Effect.succeed(
+        card === undefined
+          ? { kind: "not_found" as const }
+          : { kind: "found" as const, agentCard: card },
+      );
+    },
+  });
+}
+
+function openCommunication(
+  subject: Subject,
+  router: Context.Tag.Service<typeof Router>,
+) {
+  return Effect.gen(function* () {
+    yield* subject.run(saveLocalIdentity(subject.local.card));
+    const registry = registryFor(subject);
+    const dependencies = Layer.mergeAll(
+      Layer.succeed(SqlClient.SqlClient, subject.sql),
+      Layer.succeed(Registry, registry),
+      Layer.succeed(Router, router),
+    );
+    const identity = localIdentityLayer({
+      signingAuthority: subject.local.authority,
+      registrySignerPublicKey: subject.signer,
+      agentPublicKey: AgentSigningAuthority.publicKey(subject.local.authority),
+      admissionCredential: Effect.dieMessage(
+        "The consumer is already registered",
+      ),
+    }).pipe(Layer.provideMerge(dependencies));
+    const workers = yield* FiberSet.make<never>();
+    const context = yield* Layer.build(
+      communicationLive(
+        {
+          signingAuthority: subject.local.authority,
+          registrySignerPublicKey: subject.signer,
+        },
+        workers,
+      ).pipe(Layer.provideMerge(identity)),
+    );
+    return { communication: Context.get(context, Communication), workers };
+  });
+}
+
+function deliversAfterRefusedBody(refused: RefusedEnvelope) {
+  return Effect.gen(function* () {
+    const { subject, accepted, release, router } =
+      yield* prepareIngress(refused);
+    const { communication, workers } = yield* openCommunication(
+      subject,
+      router,
+    );
+    const received = yield* Queue.unbounded<Message>();
+    yield* communication
+      .consume((message) => Queue.offer(received, message).pipe(Effect.asVoid))
+      .pipe(Effect.forkScoped);
+    yield* Deferred.succeed(release, undefined);
+    const message = yield* Queue.take(received).pipe(
+      Effect.raceFirst(
+        FiberSet.join(workers).pipe(Effect.zipRight(Effect.never)),
+      ),
+      Effect.timeout("10 seconds"),
+    );
+    const expected = yield* messageFromIntent(
+      [agentViewOf(subject.local.card), agentViewOf(subject.remote.card)],
+      accepted.actionCertifiedRecord.recordCore.action.messageIntent,
+    );
+    expect(message).toEqual(expected);
+  });
+}
+
+it.each<{ readonly body: string; readonly refused: RefusedEnvelope }>([
+  {
+    body: "a plaintext body",
+    refused: { sealedAs: 31, signer: ({ peer }) => peer, signedAs: 31 },
+  },
+  {
+    body: "a body sealed to other recipients",
+    refused: {
+      sealedTo: ({ peer, outsider }) => [peer.card, outsider.card],
+      sealedAs: 32,
+      signer: ({ peer }) => peer,
+      signedAs: 32,
+    },
+  },
+  {
+    body: "a sealed body re-signed by another sender",
+    refused: {
+      sealedTo: ({ local, peer }) => [local.card, peer.card],
+      sealedAs: 33,
+      signer: ({ outsider }) => outsider,
+      signedAs: 33,
+    },
+  },
+  {
+    body: "a sealed body re-signed under another EnvelopeId",
+    refused: {
+      sealedTo: ({ local, peer }) => [local.card, peer.card],
+      sealedAs: 34,
+      signer: ({ peer }) => peer,
+      signedAs: 35,
+    },
+  },
+])("delivers the next certified message after refusing $body", ({ refused }) =>
+  deliversAfterRefusedBody(refused),
+);

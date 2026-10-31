@@ -119,14 +119,18 @@ function startAllGatherAndExpectRequests({
     );
     const request = {
       kind: "collectiveRequest",
-      op: "all_gather",
-      operationId: started.operationId,
-      msgId: anyString,
-      from: requester.agent,
-      to: group,
-      question,
-      requestedSchema: slotSchema,
-      deadlineAt: anyNumber,
+      message: {
+        msgId: anyString,
+        author: requester.agent,
+        recipients: [first.agent, second.agent, third.agent],
+        content: {
+          op: "all_gather",
+          operationId: started.operationId,
+          question,
+          requestedSchema: slotSchema,
+          deadlineAt: anyNumber,
+        },
+      },
     };
     expect(yield* nextItem(first)).toEqual(request);
     expect(yield* nextItem(second)).toEqual(request);

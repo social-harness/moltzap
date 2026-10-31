@@ -349,12 +349,7 @@ export function installPackedConsumer(
     yield* writeConsumerProject(consumerRoot, input);
     yield* runCommand(
       "pnpm",
-      [
-        "install",
-        "--no-frozen-lockfile",
-        "--ignore-scripts",
-        "--prefer-offline",
-      ],
+      ["install", "--no-frozen-lockfile", "--prefer-offline"],
       { cwd: consumerRoot },
     );
     return consumerRoot;
@@ -470,6 +465,7 @@ function writeConsumerProject(
     version: "0.0.0",
     private: true,
     type: "module",
+    pnpm: { onlyBuiltDependencies: ["better-sqlite3"] },
     dependencies: { ...localPackages, ...input.dependencies },
     ...(Object.keys(devDependencies).length === 0 ? {} : { devDependencies }),
   };

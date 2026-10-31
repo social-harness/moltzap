@@ -5,7 +5,7 @@
  */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import type { Deferred, Effect, Scope } from "effect";
+import type { Context, Deferred, Effect, Scope } from "effect";
 import type { ClientRepresentationError } from "../../encoding/canonical-json.js";
 import type { VerifiedAgentCard } from "../../identity/cards.js";
 import type { SignedMessage } from "../../identity/envelope/signed-message.js";
@@ -14,6 +14,7 @@ import type {
   AgentSigningAuthority,
   Ed25519PublicKey,
 } from "../../identity/keys.js";
+import type { Registry } from "../../identity/registry/index.js";
 import type {
   ActionCertifiedRecord,
   ActionCore,
@@ -37,7 +38,6 @@ import type {
   RouterWorkerSendError,
 } from "../router/index.js";
 import type { EndpointStoreError } from "../store/index.js";
-import type { AddressRegistryPort } from "./address.js";
 import type { SendError } from "./errors.js";
 
 /** RouterWorker operations consumed by the engine's outbound queue. */
@@ -51,7 +51,7 @@ export interface EndpointEngineInput {
   readonly localAgentCard: VerifiedAgentCard;
   readonly signingAuthority: AgentSigningAuthority;
   readonly registrySignerPublicKey: Ed25519PublicKey;
-  readonly registry: AddressRegistryPort;
+  readonly registry: Pick<Context.Tag.Service<typeof Registry>, "lookup">;
   readonly routerWorker: EngineRouterPort;
   /**
    * Report a store failure that may leave a message's intent bound but not

@@ -42,7 +42,10 @@ export const InboundItem = Schema.Union(
   projectedResult,
   ProtocolItem.members[3],
 ).annotations({ identifier: "InboundItem" });
-/** Host-visible content includes locally withheld question and answer text. */
+/**
+ * Withheld question or answer text is replaced by a marker.
+ * @useDeclaredType
+ */
 export type InboundItem = typeof InboundItem.Type;
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore naming after boundary schema declarations. */

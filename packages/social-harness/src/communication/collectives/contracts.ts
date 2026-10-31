@@ -1,12 +1,10 @@
 /** @file Collective operations, answers and the closed errors of a refused collective send. */
 
 import { Data, ParseResult, Schema } from "effect";
-import type { AgentView } from "../../identity/cards.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { canonicalIdentifier } from "../../encoding/identifier.js";
 import {
   issuesText,
-  type SendError,
   sendFailureReasons,
   sendFailureText,
 } from "../conversations/errors.js";
@@ -20,9 +18,6 @@ import {
 } from "../records/values.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
-
-/** The agents a collecting operation asks, in result order. */
-export type Members = readonly [AgentView, ...AgentView[]];
 
 /**
  * Identity of one gather or all_gather, minted by the requesting endpoint.
@@ -97,13 +92,9 @@ export const collectiveClosure = exactStruct({
       "Whether every requested member had an outcome or the deadline left members unresolved",
   }),
 });
-/** Completion metadata remains identical across recovery and all-gather participants. */
-export type CollectiveClosure = typeof collectiveClosure.Type;
-
 /**
- * Multicast: one message to the `to` address, complete when certified. `op`
- * defaults to multicast, so an omitted `op` and an omitted `collective` mean
- * the same operation.
+ * One accepted message to a direct or group address. Omitting `op` or
+ * `collective` selects multicast.
  */
 const multicastOperation = exactStruct({
   op: Schema.optionalWith(Schema.Literal("multicast"), { exact: true }),
@@ -201,7 +192,7 @@ const absentResultField = Schema.Never.annotations({
 
 /**
  * A successful invocation identifies its operation explicitly. Multicasts
- * and responses name their certified message and canonical conversation address.
+ * and responses name their accepted message and canonical conversation address.
  * Collecting operations name the operation whose result arrives in the inbox.
  * A response also names the request it answered. Refusals use the error channel.
  * Readers may ignore future fields, but fields owned by another result kind
@@ -228,12 +219,12 @@ export const SendResultSchema = Schema.Union(
   }),
 ).annotations({ identifier: "SendResult" });
 /**
- * A certified message, a certified answer or an accepted collective operation.
+ * An accepted message, answer or question operation.
  * @useDeclaredType
  */
 type SendResult = typeof SendResultSchema.Type;
 
-/** Private completion retains the messages certified before the invocation returned. */
+/** Private accepted-message identities accompany the host-visible operation outcome. */
 export type CollectiveSendOutcome = SendResult & {
   readonly msgIds: readonly MsgId[];
 };
@@ -277,18 +268,6 @@ export type CollectiveFailure = typeof collectiveFailure.Type;
  * @returns The validated failure.
  */
 export const decodeCollectiveFailure = Schema.decodeUnknown(collectiveFailure);
-
-/**
- * The text of an all_gather whose close was not certified, so the asker has
- * no result. A close refused before it was queued reaches no member; a
- * `delivery-pending` close reaches them once Social Harness is reachable, and its
- * text says so.
- * @param error Why the close message failed.
- * @returns The `operationFailed` text the asker's model reads.
- */
-export function closeFailureText(error: SendError): string {
-  return `all_gather failed: the result could not be shared with the group: ${error.detail ?? sendFailureText[error.reason]}`;
-}
 
 /**
  * One line per issue of a decode failure, each led by its path, such as
@@ -374,15 +353,6 @@ function isFixedFailure(
 ): failure is Extract<CollectiveFailure, { readonly kind: FixedFailureKind }> {
   return Object.hasOwn(fixedFailureText, failure.kind);
 }
-
-/**
- * The service could not keep an item the layer emitted. The service has
- * already reported its own failure, so the layer only stops the work that
- * emitted the item.
- */
-export class CollectiveEmitError extends Data.TaggedError(
-  "CollectiveEmitError",
-) {}
 
 /**
  * A gather, all_gather or answer was refused. The message is what a host

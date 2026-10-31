@@ -21,7 +21,10 @@ import {
 } from "./index.js";
 
 const collectiveId = collectiveOperationId(testAgentView("agent:bob").agentId);
-const recordHash = digest("rch_", 2);
+const answerReference = {
+  authorAgentId: testAgentView("agent:bob").agentId,
+  msgId: digest("msg_", 2),
+};
 const deadlineAt = 1_790_000_000_000;
 const flatSchema = {
   type: "object",
@@ -89,7 +92,7 @@ describe("collective content round trip", () => {
     const close = {
       kind: "close",
       operationId: collectiveId,
-      included: [recordHash],
+      included: [answerReference],
       closedAt: deadlineAt,
       closedBy: "deadline",
     };
@@ -128,26 +131,6 @@ describe("collective timestamps", () => {
 
 // @agent-code-guard/regression-only: examples pin the closed operation and response wire grammar.
 describe("collective value grammar", () => {
-  it("accepts a multicast operation with only its discriminants", () => {
-    expect(decodes({ kind: "operation", op: "multicast" })).toBe(true);
-  });
-
-  it("rejects a multicast operation carrying a deadline", () => {
-    expect(decodes({ kind: "operation", op: "multicast", deadlineAt })).toBe(
-      false,
-    );
-  });
-
-  it("rejects a multicast operation carrying a requested schema", () => {
-    expect(
-      decodes({
-        kind: "operation",
-        op: "multicast",
-        requestedSchema: flatSchema,
-      }),
-    ).toBe(false);
-  });
-
   it("rejects a gather without a deadline", () => {
     expect(
       decodes({
@@ -366,7 +349,6 @@ describe("collective operation identity", () => {
 it.each([
   { ...gather, operationId: digest("col_", 1) },
   { ...gather, operationId: `${collectiveId}=` },
-  { ...gather, nonce: "A".repeat(43) },
 ])("rejects a noncanonical request identity: %j", (request) => {
   expect(decodes(request)).toBe(false);
   expect(decodes(gather)).toBe(true);

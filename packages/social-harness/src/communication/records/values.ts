@@ -160,7 +160,7 @@ const isAgentName = Schema.is(AgentName);
  * @param value A candidate address.
  * @returns The name, or undefined when the value is not an agent address.
  */
-export const parseAgentAddress = (value: string): string | undefined => {
+const parseAgentAddress = (value: string): string | undefined => {
   if (!value.startsWith(AGENT_ADDRESS_PREFIX)) {
     return undefined;
   }
@@ -173,9 +173,7 @@ export const parseAgentAddress = (value: string): string | undefined => {
  * @param value A candidate address.
  * @returns The names, or undefined when the value is not a group address.
  */
-export const parseGroupAddress = (
-  value: string,
-): readonly string[] | undefined => {
+const parseGroupAddress = (value: string): readonly string[] | undefined => {
   if (!value.startsWith(GROUP_ADDRESS_PREFIX)) {
     return undefined;
   }
@@ -209,13 +207,6 @@ export const AgentAddress = addressInput.pipe(
  * @useDeclaredType
  */
 export type AgentAddress = typeof AgentAddress.Type;
-
-/**
- * The registry name a validated `agent:` address names, such as the local
- * agent's own name, which canonical addresses spell it by.
- */
-export const agentNameOf = (address: AgentAddress): string =>
-  address.slice(AGENT_ADDRESS_PREFIX.length);
 
 /** The direct destination of an agent with a validated immutable Registry name. */
 export const agentAddressOf = (agent: {

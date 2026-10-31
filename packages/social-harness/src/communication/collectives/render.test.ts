@@ -116,16 +116,23 @@ describe("withheld result text", () => {
 it("quotes a guided question and form while leaving endpoint answer instructions executable", () => {
   const item = Schema.decodeUnknownSync(InboundItem)({
     kind: "collectiveRequest",
-    op: "gather",
-    operationId: collectiveOperationId(testAgentView("agent:alice").agentId, 1),
-    msgId: digest("msg_", 2),
-    from: testAgentView("agent:alice"),
-    to: "agent:alice",
-    deadlineAt: 1,
-    question: "Which <day>?",
-    requestedSchema: {
-      type: "object",
-      properties: { slot: { type: "string" } },
+    message: {
+      msgId: digest("msg_", 2),
+      author: testAgentView("agent:alice"),
+      recipients: [testAgentView("agent:bob")],
+      content: {
+        op: "gather",
+        operationId: collectiveOperationId(
+          testAgentView("agent:alice").agentId,
+          1,
+        ),
+        deadlineAt: 1,
+        question: "Which <day>?",
+        requestedSchema: {
+          type: "object",
+          properties: { slot: { type: "string" } },
+        },
+      },
     },
   });
   if (item.kind !== "collectiveRequest") {
@@ -143,6 +150,8 @@ it("quotes a guided question and form while leaving endpoint answer instructions
   expect(JSON.parse(quoted ?? '""')).toBe(renderCollectiveRequestBody(item));
   const escapedDay = "\\u003cday\\u003e";
   expect(quoted).toContain(escapedDay);
-  expect(answer).toContain(`"operationId":${JSON.stringify(item.operationId)}`);
+  expect(answer).toContain(
+    `"operationId":${JSON.stringify(item.message.content.operationId)}`,
+  );
   expect(send).toBe(howToAnswer);
 });

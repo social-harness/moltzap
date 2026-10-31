@@ -1,12 +1,9 @@
 /** @file Private MCP schemas for daemon management and history reads: exact requests, and results a reader decodes additively. */
 
 import { Schema } from "effect";
-import {
-  AgentAddress,
-  Content,
-  GroupAddress,
-  RecordHash,
-} from "../communication/records/index.js";
+import { Message, MessageReference } from "../communication/message.js";
+import { AgentAddress, GroupAddress } from "../communication/records/index.js";
+import { DeliveryToken } from "../communication/store/types.js";
 import { exactParseOptions, exactStruct } from "../encoding/exact.js";
 import { compareAscii, isStrictlyAscending } from "../encoding/identifier.js";
 import { AgentCard, AgentView } from "../identity/cards.js";
@@ -30,13 +27,17 @@ const historyContinuation = Schema.NonEmptyString;
 const historyRecord = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("sent"),
-    author: AgentView,
-    recordHash: RecordHash,
-    content: Content,
+    message: Message,
   }),
   Schema.Struct({
     kind: Schema.Literal("received"),
-    recordHash: RecordHash,
+    message: MessageReference,
+    item: InboundItem,
+    guidance: Schema.optionalWith(localGuidanceSchema, { exact: true }),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("result"),
+    deliveryToken: DeliveryToken,
     item: InboundItem,
     guidance: Schema.optionalWith(localGuidanceSchema, { exact: true }),
   }),
@@ -107,12 +108,7 @@ export const managementSearchConversationsResultSchema = Schema.Struct({
 export const managementReadConversationRequestSchema = Schema.Union(
   exactStruct({
     address: Schema.propertySignature(messageAddress).annotations({
-      description:
-        "Canonical agent:<name> or group:<sorted-members> address whose certified history to read.",
-    }),
-    afterRecordHash: Schema.optional(RecordHash).annotations({
-      description:
-        "Read strictly after this certified record hash; omit to start at first message.",
+      description: "Conversation address returned by search_conversations.",
     }),
   }),
   exactStruct({
@@ -148,6 +144,6 @@ export type ManagementSearchConversationsResult =
 /** Decoded local certified-history request. */
 export type ManagementReadConversationRequest =
   typeof managementReadConversationRequestSchema.Type;
-/** Encoded proof-bearing local certified-history result. */
+/** Saved peer views and guidance remain unchanged by later policy edits. */
 export type ManagementReadConversationResult =
   typeof managementReadConversationResultSchema.Type;

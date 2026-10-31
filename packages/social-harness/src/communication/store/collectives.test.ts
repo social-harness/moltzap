@@ -1,240 +1,137 @@
-/**
- * @file Collective identities and message claims survive protocol store reopening.
- */
+/** @file Collective custody keeps immutable messages and first-answer selection across reopening. */
 
 import { live as it } from "@effect/vitest";
 import { Effect } from "effect";
 import { expect } from "vitest";
-import type { CollectiveOperationInput, MessageIntent } from "./index.js";
+import type { Question } from "../collectives/index.js";
+import type { Message } from "../message.js";
+import type {
+  CollectiveAnswerReference,
+  StoredCollectiveMessage,
+} from "./types.js";
 import {
-  bytes,
+  alice,
+  bob,
+  question,
+  wireMessage,
+} from "../../__tests__/collective-service-fixtures.js";
+import {
   stateDirectory,
-  storedConversation,
   type TestStore,
   withDaemonStore,
 } from "../../__tests__/store-schema-fixtures.js";
-const { foundation, record } = storedConversation("collective-request");
-const request = bytes("authenticated request bytes");
-const remote: CollectiveOperationInput = {
-  operationId: "remote-operation",
-  origin: {
-    kind: "remote",
-    recordHash: record.recordHash,
-  },
-  canonicalRequest: request,
-  canonicalDescriptor: bytes("received request"),
-};
-const local: CollectiveOperationInput = {
-  operationId: "local-operation",
-  origin: { kind: "local" },
-  canonicalRequest: bytes("authored request"),
-  canonicalDescriptor: bytes("complete local descriptor"),
-};
-const intent = (msgId: string): MessageIntent => ({
-  authorAgentId: "agent:alice",
-  msgId,
-  conversationId: foundation.conversationId,
-  membershipHash: foundation.membershipHash,
-  canonicalIntent: bytes(msgId),
-});
-function seed(store: TestStore) {
-  return Effect.gen(function* () {
-    yield* store.bindIdentity({
-      agentId: "agent:alice",
-      canonicalAgentCard: bytes("identity"),
-    });
-    yield* store.putConversationFoundation(foundation);
-    yield* store.applyCertifiedRecord(record, {
-      recipientAgentId: "agent:alice",
-      canonicalMessage: request,
-    });
-    const [delivery] = yield* store.readPendingDeliveries();
-    if (delivery === undefined) {
-      return yield* Effect.dieMessage("missing certified request");
-    }
-    return delivery;
-  });
-}
-// @agent-code-guard/regression-only: transaction and reopen cases exercise immutable identity, selection, and query boundaries.
-it("binds a collective id to one authenticated origin and exact request bytes across reopen", () =>
+import { encodeRuntimeValue, EndpointStoreError } from "./index.js";
+
+it("reopens the exact saved message and refuses changed content under its custody slot", () =>
   Effect.gen(function* () {
-    const path = stateDirectory();
-    yield* withDaemonStore(path, rejectChangedOrigin);
-    const retained = yield* withDaemonStore(path, assertRetainedOrigins);
-    expect(retained).toHaveLength(2);
-  }));
-it("requires an accepted request before atomically claiming one response intent", () =>
-  Effect.gen(function* () {
-    const path = stateDirectory();
-    yield* withDaemonStore(path, claimAnswer);
-    const messages = yield* withDaemonStore(path, (store) =>
-      store.readCollectiveMessages(),
-    );
-    expect(
-      messages.map((message) => ({
-        role: message.role,
-        msgId: message.intent.msgId,
-      })),
-    ).toEqual([{ role: "response", msgId: "first-answer" }]);
-  }));
-it("reads one retained operation and only the message roles requested for that operation", () =>
-  Effect.gen(function* () {
-    const found = yield* withDaemonStore(
-      stateDirectory(),
-      readOperationQueries,
-    );
-    expect(found).toMatchObject({
-      local: { ...local, phase: "finalizing" },
-      remote: { operationId: remote.operationId, phase: "collecting" },
-      requests: ["local-request"],
-      localMessages: ["local-request", "first-close"],
-      responses: ["remote-response"],
-    });
-  }));
-function readOperationQueries(store: TestStore) {
-  return Effect.gen(function* () {
-    yield* seed(store);
-    yield* store.putCollectiveOperation(local);
-    yield* store.putCollectiveOperation(remote);
-    yield* store.bindMessageIntent({
-      kind: "existing-conversation",
-      intent: intent("local-request"),
-      collective: {
-        operationId: local.operationId,
-        role: "request",
-        destination: "agent:bob",
+    const directory = stateDirectory();
+    const captured = question(Date.now() + 5000);
+    const message = yield* wireMessage(
+      alice,
+      [bob],
+      {
+        kind: "operation",
+        op: captured.op,
+        operationId: captured.operationId,
+        deadlineAt: captured.deadlineAt,
+        requestedSchema: captured.requestedSchema,
       },
-    });
-    yield* store.bindMessageIntent({
-      kind: "existing-conversation",
-      intent: intent("remote-response"),
-      collective: {
-        operationId: remote.operationId,
-        role: "response",
-        destination: "agent:bob",
-      },
-    });
-    yield* bindFrozenClose(store);
-    return {
-      local: yield* store.readCollectiveOperation(local.operationId),
-      remote: yield* store.readCollectiveOperation(remote.operationId),
-      requests: (yield* store.readCollectiveMessages({
-        operationId: local.operationId,
-        role: "request",
-      })).map((message) => message.intent.msgId),
-      localMessages: (yield* store.readCollectiveMessages({
-        operationId: local.operationId,
-      })).map((message) => message.intent.msgId),
-      responses: (yield* store.readCollectiveMessages({
-        operationId: remote.operationId,
-        role: "response",
-      })).map((message) => message.intent.msgId),
+      { byte: 23, text: captured.text },
+    );
+    const saved = {
+      operationId: captured.operationId,
+      role: "request" as const,
+      destination: `agent:${bob.agentName}`,
+      canonicalMessage: yield* encodeRuntimeValue(message),
     };
-  });
-}
-function rejectChangedOrigin(store: TestStore) {
-  return Effect.gen(function* () {
-    yield* seed(store);
-    yield* store.putCollectiveOperation(local);
-    expect(
-      yield* Effect.flip(
-        store.putCollectiveOperation({
-          ...remote,
-          operationId: local.operationId,
-        }),
-      ),
-    ).toMatchObject({ reason: "conflict" });
-    expect(
-      yield* Effect.flip(
-        store.putCollectiveOperation({
-          ...remote,
-          canonicalRequest: bytes("changed peer bytes"),
-        }),
-      ),
-    ).toMatchObject({ reason: "conflict" });
-    yield* store.putCollectiveOperation(remote);
-  });
-}
-function assertRetainedOrigins(store: TestStore) {
-  return Effect.gen(function* () {
-    yield* store.putCollectiveOperation(local);
-    yield* store.putCollectiveOperation(remote);
-    expect(
-      yield* Effect.flip(
-        store.putCollectiveOperation({
-          ...remote,
-          canonicalDescriptor: bytes("different request context"),
-        }),
-      ),
-    ).toMatchObject({ reason: "conflict" });
-    expect(
-      (yield* store.readCollectiveOperations()).map(
-        ({ operationId, creatorAgentId }) => ({ operationId, creatorAgentId }),
-      ),
-    ).toEqual([
-      { operationId: local.operationId, creatorAgentId: "agent:alice" },
-      { operationId: remote.operationId, creatorAgentId: record.authorAgentId },
-    ]);
-    return yield* store.readCollectiveOperations();
-  });
-}
-function claimAnswer(store: TestStore) {
-  return Effect.gen(function* () {
-    yield* seed(store);
-    const binding = {
-      kind: "existing-conversation",
-      intent: intent("first-answer"),
-      collective: {
-        operationId: remote.operationId,
-        role: "response",
-        destination: "agent:bob",
-      },
-    } as const;
-    expect(yield* Effect.flip(store.bindMessageIntent(binding))).toMatchObject({
-      reason: "not-found",
-    });
-    yield* store.putCollectiveOperation(remote);
-    yield* store.bindMessageIntent(binding);
-    expect(
-      yield* Effect.flip(
-        store.bindMessageIntent({
-          ...binding,
-          intent: intent("second-answer"),
-          collective: {
-            ...binding.collective,
-            destination: "another-spelling",
-          },
-        }),
-      ),
-    ).toMatchObject({ reason: "conflict" });
-    expect(
-      (yield* store.recover()).messageIntents.map(({ msgId }) => msgId),
-    ).toEqual(["first-answer"]);
-  });
-}
-function bindFrozenClose(store: TestStore) {
-  return Effect.gen(function* () {
-    const close = {
-      kind: "existing-conversation",
-      intent: intent("first-close"),
-      collective: {
-        operationId: local.operationId,
-        role: "close",
-        destination: "group:alice,bob,carol",
-      },
-    } as const;
-    expect(yield* Effect.flip(store.bindMessageIntent(close))).toMatchObject({
-      reason: "conflict",
-    });
-    yield* store.finalizeCollectiveOperation(
-      local.operationId,
-      bytes("frozen answer references"),
+    yield* withDaemonStore(directory, (store) =>
+      keepMessage(store, captured, saved, message),
     );
-    yield* store.bindMessageIntent(close);
+    const reopened = yield* withDaemonStore(directory, (store) =>
+      store.readCollectiveMessages(captured.operationId),
+    );
+    expect(reopened).toEqual([saved]);
+  }));
+
+it("retains the first saved answer and refuses a first recording at the deadline", () =>
+  Effect.gen(function* () {
+    const directory = stateDirectory();
+    const captured = question(Date.now() + 5000);
+    const message = yield* wireMessage(
+      bob,
+      [alice],
+      {
+        kind: "response",
+        operationId: captured.operationId,
+        action: "decline",
+      },
+      { byte: 24 },
+    );
+    const answer = {
+      operationId: captured.operationId,
+      member: `agent:${bob.agentName}`,
+      canonicalMessage: yield* encodeRuntimeValue(message),
+    };
+    yield* withDaemonStore(directory, (store) =>
+      recordAnswer(store, captured, answer),
+    );
+    const reopened = yield* withDaemonStore(directory, (store) =>
+      store.readCollectiveAnswers(captured.operationId),
+    );
+    expect(reopened).toEqual([answer]);
+  }));
+
+function keepMessage(
+  store: TestStore,
+  captured: Question,
+  saved: StoredCollectiveMessage,
+  message: Message,
+) {
+  return Effect.gen(function* () {
+    yield* store.putCollectiveOperation({
+      operationId: captured.operationId,
+      creatorAgentId: alice.agentId,
+      origin: "local",
+      canonicalRequest: yield* encodeRuntimeValue(captured),
+      deadlineAt: captured.deadlineAt,
+    });
+    yield* store.putCollectiveMessage(saved);
+    yield* store.putCollectiveMessage(saved);
+    const changed = {
+      ...message,
+      content: [{ type: "text" as const, text: "Changed question" }],
+    };
+    const failure = yield* store
+      .putCollectiveMessage({
+        ...saved,
+        canonicalMessage: yield* encodeRuntimeValue(changed),
+      })
+      .pipe(Effect.flip);
+    expect(failure).toBeInstanceOf(EndpointStoreError);
+  });
+}
+
+function recordAnswer(
+  store: TestStore,
+  captured: Question,
+  answer: CollectiveAnswerReference,
+) {
+  return Effect.gen(function* () {
+    yield* store.putCollectiveOperation({
+      operationId: captured.operationId,
+      creatorAgentId: alice.agentId,
+      origin: "local",
+      canonicalRequest: yield* encodeRuntimeValue(captured),
+      deadlineAt: captured.deadlineAt,
+    });
     expect(
-      yield* Effect.flip(
-        store.bindMessageIntent({ ...close, intent: intent("second-close") }),
-      ),
-    ).toMatchObject({ reason: "conflict" });
+      yield* store.recordCollectiveAnswer(answer, captured.deadlineAt),
+    ).toBeFalsy();
+    expect(
+      yield* store.recordCollectiveAnswer(answer, captured.deadlineAt - 1),
+    ).toBeTruthy();
+    expect(
+      yield* store.recordCollectiveAnswer(answer, captured.deadlineAt - 1),
+    ).toBeFalsy();
   });
 }

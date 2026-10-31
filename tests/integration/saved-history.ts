@@ -10,7 +10,7 @@ type HistoryRecord =
 /** Direct-message scenarios require a saved multicast view for every received record. */
 export function historyMessageContent(record: HistoryRecord): Content {
   if (record.kind === "sent") {
-    return record.content;
+    return record.message.content;
   }
   assert(
     record.item.kind === "multicast",

@@ -1,7 +1,15 @@
 /** @file Active policy, authorized edits and checks over captured message batches. */
 
 import * as SqlClient from "@effect/sql/SqlClient";
-import { Clock, Effect, Schedule, Schema, Struct } from "effect";
+import {
+  Clock,
+  Context,
+  Effect,
+  Layer,
+  Schedule,
+  Schema,
+  Struct,
+} from "effect";
 import { createHash, randomBytes } from "node:crypto";
 import {
   exitOutcome,
@@ -37,6 +45,7 @@ import {
   editableDocumentSchema,
   type FirewallConfiguration,
   firewallConfigurationSchema,
+  type firewallDecisionsSchema,
   type FirewallInstallation,
   FirewallPolicyError,
   FirewallSettings,
@@ -55,6 +64,7 @@ import { makeJevDecisionProvider } from "./jev.js";
 import {
   type FirewallActivation,
   type FirewallCompletion,
+  readDecisions,
   readFirewallPolicy,
   withoutTraces,
   writeFirewallPolicy,
@@ -95,7 +105,7 @@ export interface CheckedMessage {
 }
 
 /** Checks capture one policy for all supplied messages. */
-export interface Firewall {
+export interface FirewallOperations {
   readonly configuration: FirewallConfiguration;
   /** Returns fixed and editable rules with the active policy revision. */
   readonly readPolicy: () => Effect.Effect<
@@ -106,10 +116,45 @@ export interface Firewall {
   readonly updatePolicy: (
     request: typeof policyUpdateSchema.Type,
   ) => Effect.Effect<typeof policyUpdateResultSchema.Type, FirewallPolicyError>;
+  /** Returns saved decision summaries without private assessment content. */
+  readonly readDecisions: (request: {
+    readonly since?: number;
+  }) => Effect.Effect<typeof firewallDecisionsSchema.Type, FirewallPolicyError>;
   /** Returns completed assessments in input order. The caller saves their decisions. */
   readonly check: (
     inputs: readonly PreparedFirewallCheck[],
   ) => Effect.Effect<readonly CheckedMessage[], EndpointStoreError>;
+}
+
+/** Construction validates the complete policy before seeding a missing document. */
+export function makeFirewall(
+  source: FirewallOptions | LoadedMessagePolicy,
+): Effect.Effect<FirewallOperations, FirewallPolicyError, SqlClient.SqlClient> {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const { captured, fixed, active } = yield* initialPolicy(source);
+    return yield* liveFirewall(sql, captured, fixed, active);
+  }).pipe(Effect.withSpan("makeFirewall"));
+}
+
+interface DisabledFirewall extends Omit<FirewallOperations, "configuration"> {
+  readonly configuration: undefined;
+}
+
+/** Owns one active policy and access to retained decisions for the daemon's lifetime. */
+export class Firewall extends Context.Tag("SocialHarness/Firewall")<
+  Firewall,
+  FirewallOperations | DisabledFirewall
+>() {
+  /** Unconfigured policy keeps saved decisions readable and produces no assessments. */
+  static readonly layer = (
+    source?: FirewallOptions | LoadedMessagePolicy,
+  ): Layer.Layer<Firewall, FirewallPolicyError, SqlClient.SqlClient> => {
+    if (source === undefined) {
+      return Layer.effect(Firewall, disabledFirewall());
+    }
+    return Layer.effect(Firewall, makeFirewall(source));
+  };
 }
 
 type FixedRules = typeof policyReadSchema.fields.fixedRules.Type;
@@ -120,22 +165,40 @@ const storedPolicySchema = exactStruct({
 });
 const persistenceFailure = () =>
   new FirewallPolicyError({ reason: "persistence-failed" });
+
+function disabledFirewall() {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const notConfigured = Effect.fail(
+      new FirewallPolicyError({ reason: "not-configured" }),
+    );
+    return {
+      configuration: undefined,
+      readPolicy: () => notConfigured,
+      updatePolicy: () => notConfigured,
+      readDecisions: (request) => savedDecisions(sql, request),
+      check: () => Effect.succeed([]),
+    } satisfies DisabledFirewall;
+  });
+}
+
+function savedDecisions(
+  sql: SqlClient.SqlClient,
+  request: { readonly since?: number },
+) {
+  return readDecisions(request).pipe(
+    Effect.provideService(SqlClient.SqlClient, sql),
+    Effect.catchTag("EndpointStoreError", () =>
+      Effect.fail(persistenceFailure()),
+    ),
+  );
+}
+
 type PolicyEditPath = NonNullable<FirewallPolicyError["path"]>;
 const invalidRule = (
   problem: PolicyProblem,
   at: { readonly path?: PolicyEditPath; readonly ruleId?: string } = {},
 ) => new FirewallPolicyError({ reason: "invalid-rule", problem, ...at });
-
-/** Construction validates the complete policy before seeding a missing document. */
-export function makeFirewall(
-  source: FirewallOptions | LoadedMessagePolicy,
-): Effect.Effect<Firewall, FirewallPolicyError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const { captured, fixed, active } = yield* initialPolicy(source);
-    return yield* liveFirewall(sql, captured, fixed, active);
-  }).pipe(Effect.withSpan("makeFirewall"));
-}
 
 function initialPolicy(source: FirewallOptions | LoadedMessagePolicy) {
   return Effect.gen(function* () {
@@ -231,7 +294,7 @@ function liveFirewall(
         }),
       );
     }
-    const firewall: Firewall = {
+    const firewall: FirewallOperations = {
       configuration: options.configuration,
       readPolicy: () =>
         Effect.sync(() => ({
@@ -240,6 +303,7 @@ function liveFirewall(
           activeRevision: active.configurationDigest,
         })),
       updatePolicy,
+      readDecisions: (request) => savedDecisions(sql, request),
       check: (inputs) =>
         Effect.suspend(() => checkBatch(options, active, permits, inputs)),
     };
