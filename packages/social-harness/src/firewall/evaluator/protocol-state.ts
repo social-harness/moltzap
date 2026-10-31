@@ -26,8 +26,11 @@ type Condition =
         | "answers"
         | "final"
         | "unprompted"
-        | "names-escalated";
+        | "names-escalated"
+        | "sent-by-member"
+        | "once-per-sender";
     }
+  | { readonly kind: "every-member-sent"; readonly act: string }
   | { readonly kind: "after" | "opened-by"; readonly acts: readonly string[] }
   | {
       readonly kind: "count-is" | "count-below";
@@ -50,6 +53,20 @@ type Check =
       readonly max: number;
     }
   | { readonly kind: "ends-with"; readonly p: string; readonly suffix: string }
+  | {
+      readonly kind: "items-in-latest" | "number-in-every";
+      readonly p: string;
+      readonly act: string;
+      readonly q: string;
+    }
+  | { readonly kind: "none-in-every"; readonly act: string; readonly q: string }
+  | {
+      readonly kind: "matches-item";
+      readonly p: string;
+      readonly q: string;
+      readonly act: string;
+      readonly r: string;
+    }
   | {
       readonly kind: "present-when";
       readonly p: string;
@@ -79,8 +96,16 @@ function parseCondition(text: string): Condition | undefined {
       return { kind: part };
     case "names an escalated request":
       return { kind: "names-escalated" };
+    case "sent by a member":
+      return { kind: "sent-by-member" };
+    case "once per sender":
+      return { kind: "once-per-sender" };
     default:
       break;
+  }
+  const everyMember = /^every member has sent ([a-z-]+)$/u.exec(part);
+  if (everyMember !== null) {
+    return { kind: "every-member-sent", act: everyMember[1] ?? "" };
   }
   const after = /^after (.+)$/u.exec(part);
   if (after !== null) {
@@ -111,6 +136,51 @@ function parseCheck(text: string): Check | undefined {
       p: numberIn[1] ?? "",
       act: numberIn[2] ?? "",
       q: numberIn[3] ?? "",
+    };
+  }
+  const itemsIn =
+    /^:([a-z-]+) items are numbers in the latest ([a-z-]+) :([a-z-]+)$/u.exec(
+      part,
+    );
+  if (itemsIn !== null) {
+    return {
+      kind: "items-in-latest",
+      p: itemsIn[1] ?? "",
+      act: itemsIn[2] ?? "",
+      q: itemsIn[3] ?? "",
+    };
+  }
+  const inEvery =
+    /^:([a-z-]+) is a number in every ([a-z-]+) :([a-z-]+)$/u.exec(part);
+  if (inEvery !== null) {
+    return {
+      kind: "number-in-every",
+      p: inEvery[1] ?? "",
+      act: inEvery[2] ?? "",
+      q: inEvery[3] ?? "",
+    };
+  }
+  const noneInEvery = /^no number is in every ([a-z-]+) :([a-z-]+)$/u.exec(
+    part,
+  );
+  if (noneInEvery !== null) {
+    return {
+      kind: "none-in-every",
+      act: noneInEvery[1] ?? "",
+      q: noneInEvery[2] ?? "",
+    };
+  }
+  const item =
+    /^:([a-z-]+) matches item :([a-z-]+) of the latest ([a-z-]+) :([a-z-]+)$/u.exec(
+      part,
+    );
+  if (item !== null) {
+    return {
+      kind: "matches-item",
+      p: item[1] ?? "",
+      q: item[2] ?? "",
+      act: item[3] ?? "",
+      r: item[4] ?? "",
     };
   }
   const accepted = /^:([a-z-]+) matches the accepted option$/u.exec(part);
@@ -250,6 +320,18 @@ const slotKey = (slot: string) =>
     .trim()
     .toLowerCase();
 
+/** An agent named by address or id, without its "agent:" prefix. */
+const agentKey = (name: string) => name.trim().replace(/^agent:/u, "");
+
+/** The members the act that opened `request` lists in its :members. */
+const membersOf = (request: Request) =>
+  new Set(listItems(request.acts[0]?.values.get("members")).map(agentKey));
+
+const numbersOf = (value: string | undefined) =>
+  (value ?? "").trim() === "none"
+    ? []
+    : listItems(value).map((item) => /^\s*(\d+)/u.exec(item)?.[1] ?? item);
+
 const canonical = (act: SentAct) =>
   JSON.stringify([act.sender, act.name, [...act.values].sort()]);
 
@@ -287,6 +369,28 @@ function holds(
         named.closedBy === "inform-escalated" &&
         !named.acts.some((earlier) => earlier.name === act.name)
       );
+    }
+    case "sent-by-member":
+      return open !== undefined && membersOf(open).has(agentKey(act.sender));
+    case "once-per-sender":
+      return (
+        open !== undefined &&
+        !open.acts.some(
+          (earlier) =>
+            earlier.name === act.name && earlier.sender === act.sender,
+        )
+      );
+    case "every-member-sent": {
+      if (open === undefined) {
+        return false;
+      }
+      const senders = new Set(
+        open.acts
+          .filter((earlier) => earlier.name === condition.act)
+          .map((earlier) => agentKey(earlier.sender)),
+      );
+      const members = membersOf(open);
+      return members.size > 0 && [...members].every((m) => senders.has(m));
     }
     case "after":
       return last !== undefined && condition.acts.includes(last.name);
@@ -353,6 +457,51 @@ function checkErrors(
           : [
               `:${check.p} has ${String(count)} items, not ${String(check.min)} to ${String(check.max)}`,
             ];
+      }
+      case "items-in-latest": {
+        const offered = new Set(
+          listItems(latest(check.act)?.values.get(check.q)).map(
+            (entry) => /^\s*(\d+)/u.exec(entry)?.[1],
+          ),
+        );
+        const value = act.values.get(check.p) ?? "";
+        const isList =
+          value.trim() === "none" || /^\[.*\]$/u.test(value.trim());
+        return isList && numbersOf(value).every((n) => offered.has(n))
+          ? []
+          : [`:${check.p} names an item not in the latest ${check.act}`];
+      }
+      case "number-in-every": {
+        const n = (act.values.get(check.p) ?? "").trim();
+        const answers = (open?.acts ?? []).filter((e) => e.name === check.act);
+        return answers.length > 0 &&
+          answers.every((e) => numbersOf(e.values.get(check.q)).includes(n))
+          ? []
+          : [`:${check.p} is not in every ${check.act}`];
+      }
+      case "none-in-every": {
+        const answers = (open?.acts ?? []).filter((e) => e.name === check.act);
+        const common = answers.reduce<string[] | undefined>((shared, e) => {
+          const numbers = numbersOf(e.values.get(check.q));
+          return shared === undefined
+            ? numbers
+            : shared.filter((n) => numbers.includes(n));
+        }, undefined);
+        return (common ?? []).length === 0
+          ? []
+          : [
+              `some number is in every ${check.act}: ${(common ?? []).join(", ")}`,
+            ];
+      }
+      case "matches-item": {
+        const n = (act.values.get(check.q) ?? "").trim();
+        const entry = listItems(latest(check.act)?.values.get(check.r)).find(
+          (e) => /^\s*(\d+)/u.exec(e)?.[1] === n,
+        );
+        return entry !== undefined &&
+          slotKey(entry) === slotKey(act.values.get(check.p) ?? "")
+          ? []
+          : [`:${check.p} is not item ${n} of the latest ${check.act}`];
       }
       case "ends-with":
         return (act.values.get(check.p) ?? "").trim().endsWith(check.suffix)
