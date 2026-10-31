@@ -5,13 +5,13 @@ import type {
   HarnessMcpOperations,
   ManagementRegisterResult,
   ManagementStatusResult,
-} from "../mcp/index.js";
+} from "./mcp/index.js";
 import {
   AgentCard,
   agentViewOf,
   type VerifiedAgentCard,
-} from "../../identity/cards.js";
-import { Identity, LocalIdentity } from "../../identity/local.js";
+} from "../identity/cards.js";
+import { Identity, LocalIdentity } from "../identity/local.js";
 
 class DaemonManagementError extends Data.TaggedError("DaemonManagementError")<{
   readonly reason:
