@@ -31,6 +31,25 @@ type Condition =
         | "once-per-sender";
     }
   | { readonly kind: "every-member-sent"; readonly act: string }
+  | {
+      readonly kind: "every-member-sent-since" | "sent-since-latest";
+      readonly act: string;
+      readonly since: string;
+    }
+  | { readonly kind: "once-per-sender-since"; readonly since: string }
+  | {
+      readonly kind: "all-since" | "some-since";
+      readonly act: string;
+      readonly since: string;
+      readonly q: string;
+      readonly value: string;
+    }
+  | { readonly kind: "once-per-recipient" }
+  | {
+      readonly kind: "recipients-answered";
+      readonly act: string;
+      readonly by: string;
+    }
   | { readonly kind: "after" | "opened-by"; readonly acts: readonly string[] }
   | {
       readonly kind: "count-is" | "count-below";
@@ -73,6 +92,32 @@ type Check =
       readonly act: string;
       readonly r: string;
     }
+  | { readonly kind: "is-number"; readonly p: string; readonly n: number }
+  | {
+      readonly kind: "one-more" | "none-or-number-in";
+      readonly p: string;
+      readonly q: string;
+      readonly act: string;
+    }
+  | { readonly kind: "greater"; readonly p: string; readonly q: string }
+  | {
+      readonly kind: "largest-since";
+      readonly p: string;
+      readonly q: string;
+      readonly act: string;
+      readonly since: string;
+    }
+  | {
+      readonly kind: "within-every";
+      readonly p: string;
+      readonly act: string;
+      readonly q: string;
+    }
+  | {
+      readonly kind: "no-range-in-every";
+      readonly act: string;
+      readonly q: string;
+    }
   | {
       readonly kind: "present-when";
       readonly p: string;
@@ -109,6 +154,53 @@ function parseCondition(text: string): Condition | undefined {
     default:
       break;
   }
+  if (part === "once per recipient") {
+    return { kind: "once-per-recipient" };
+  }
+  const everySince =
+    /^every member has sent ([a-z-]+) since the latest ([a-z-]+)$/u.exec(part);
+  if (everySince !== null) {
+    return {
+      kind: "every-member-sent-since",
+      act: everySince[1] ?? "",
+      since: everySince[2] ?? "",
+    };
+  }
+  const onceSince = /^once per sender since the latest ([a-z-]+)$/u.exec(part);
+  if (onceSince !== null) {
+    return { kind: "once-per-sender-since", since: onceSince[1] ?? "" };
+  }
+  const quantified =
+    /^(every|some) ([a-z-]+) since the latest ([a-z-]+) has :([a-z-]+) (\S+)$/u.exec(
+      part,
+    );
+  if (quantified !== null) {
+    return {
+      kind: quantified[1] === "every" ? "all-since" : "some-since",
+      act: quantified[2] ?? "",
+      since: quantified[3] ?? "",
+      q: quantified[4] ?? "",
+      value: quantified[5] ?? "",
+    };
+  }
+  const sentSince =
+    /^the sender was sent ([a-z-]+) after its latest ([a-z-]+)$/u.exec(part);
+  if (sentSince !== null) {
+    return {
+      kind: "sent-since-latest",
+      since: sentSince[1] ?? "",
+      act: sentSince[2] ?? "",
+    };
+  }
+  const answered =
+    /^every agent sent ([a-z-]+) has sent ([a-z-]+) after it$/u.exec(part);
+  if (answered !== null) {
+    return {
+      kind: "recipients-answered",
+      act: answered[1] ?? "",
+      by: answered[2] ?? "",
+    };
+  }
   const everyMember = /^every member has sent ([a-z-]+)$/u.exec(part);
   if (everyMember !== null) {
     return { kind: "every-member-sent", act: everyMember[1] ?? "" };
@@ -134,6 +226,72 @@ function parseCondition(text: string): Condition | undefined {
 
 function parseCheck(text: string): Check | undefined {
   const part = text.trim();
+  const isNumber = /^:([a-z-]+) is (\d+)$/u.exec(part);
+  if (isNumber !== null) {
+    return { kind: "is-number", p: isNumber[1] ?? "", n: Number(isNumber[2]) };
+  }
+  const oneMore =
+    /^:([a-z-]+) is one more than :([a-z-]+) of the latest ([a-z-]+)$/u.exec(
+      part,
+    );
+  if (oneMore !== null) {
+    return {
+      kind: "one-more",
+      p: oneMore[1] ?? "",
+      q: oneMore[2] ?? "",
+      act: oneMore[3] ?? "",
+    };
+  }
+  const noneOr =
+    /^:([a-z-]+) is none or a number in the latest ([a-z-]+) :([a-z-]+)$/u.exec(
+      part,
+    );
+  if (noneOr !== null) {
+    return {
+      kind: "none-or-number-in",
+      p: noneOr[1] ?? "",
+      act: noneOr[2] ?? "",
+      q: noneOr[3] ?? "",
+    };
+  }
+  const greater = /^:([a-z-]+) is greater than :([a-z-]+)$/u.exec(part);
+  if (greater !== null) {
+    return { kind: "greater", p: greater[1] ?? "", q: greater[2] ?? "" };
+  }
+  const largest =
+    /^:([a-z-]+) is the largest :([a-z-]+) of the ([a-z-]+) since the latest ([a-z-]+)$/u.exec(
+      part,
+    );
+  if (largest !== null) {
+    return {
+      kind: "largest-since",
+      p: largest[1] ?? "",
+      q: largest[2] ?? "",
+      act: largest[3] ?? "",
+      since: largest[4] ?? "",
+    };
+  }
+  const within =
+    /^:([a-z-]+) lies within an item of every ([a-z-]+) :([a-z-]+)$/u.exec(
+      part,
+    );
+  if (within !== null) {
+    return {
+      kind: "within-every",
+      p: within[1] ?? "",
+      act: within[2] ?? "",
+      q: within[3] ?? "",
+    };
+  }
+  const noRange =
+    /^no slot lies within an item of every ([a-z-]+) :([a-z-]+)$/u.exec(part);
+  if (noRange !== null) {
+    return {
+      kind: "no-range-in-every",
+      act: noRange[1] ?? "",
+      q: noRange[2] ?? "",
+    };
+  }
   const numberIn =
     /^:([a-z-]+) is a number in the latest ([a-z-]+) :([a-z-]+)$/u.exec(part);
   if (numberIn !== null) {
@@ -291,7 +449,14 @@ export function codeFixedParameters(
   const fixed = new Map<string, ReadonlySet<string>>();
   for (const [name, act] of declaredActs(protocol)) {
     const numbered = (states.get(name)?.checks ?? []).flatMap(({ check }) =>
-      check.kind === "number-in" ? [check.p] : [],
+      check.kind === "number-in" ||
+      check.kind === "is-number" ||
+      check.kind === "one-more" ||
+      check.kind === "none-or-number-in" ||
+      check.kind === "largest-since" ||
+      check.kind === "within-every"
+        ? [check.p]
+        : [],
     );
     const enumerated = [...act.parameters]
       .filter(([, parameter]) => parameter.allowed !== undefined)
@@ -305,6 +470,7 @@ interface SentAct {
   readonly name: string;
   readonly values: ReadonlyMap<string, string>;
   readonly sender: string;
+  readonly recipients: readonly string[];
 }
 
 interface Request {
@@ -351,6 +517,96 @@ const numbersOf = (value: string | undefined) =>
 
 const canonical = (act: SentAct) =>
   JSON.stringify([act.sender, act.name, [...act.values].sort()]);
+
+/** The index of the last act `matches`, or -1. */
+function lastIndexWhere(
+  acts: readonly SentAct[],
+  matches: (act: SentAct) => boolean,
+): number {
+  for (let index = acts.length - 1; index >= 0; index--) {
+    const act = acts[index];
+    if (act !== undefined && matches(act)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+/** The open meeting's acts after its latest `name`, or undefined when it has none. */
+function actsSince(request: Request, name: string): SentAct[] | undefined {
+  const index = lastIndexWhere(request.acts, (act) => act.name === name);
+  return index < 0 ? undefined : request.acts.slice(index + 1);
+}
+
+/** Each sender's latest act named `name` in `request`; a later one replaces an earlier one. */
+function latestPerSender(
+  request: Request | undefined,
+  name: string,
+): SentAct[] {
+  const latest = new Map<string, SentAct>();
+  for (const act of request?.acts ?? []) {
+    if (act.name === name) {
+      latest.set(agentKey(act.sender), act);
+    }
+  }
+  return [...latest.values()];
+}
+
+interface Range {
+  readonly day: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+const WEEKDAYS = new Set(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
+
+/** "<day> <start>–<end>" as minutes within that day, or undefined. */
+function rangeOf(text: string): Range | undefined {
+  const match =
+    /([a-z]{3})[a-z]*\.?\s+(\d{1,2}):(\d{2})\s*[–—-]\s*(\d{1,2}):(\d{2})/iu.exec(
+      text,
+    );
+  const day = (match?.[1] ?? "").toLowerCase();
+  if (match === null || !WEEKDAYS.has(day)) {
+    return undefined;
+  }
+  return {
+    day,
+    start: Number(match[2]) * 60 + Number(match[3]),
+    end: Number(match[4]) * 60 + Number(match[5]),
+  };
+}
+
+const rangesOf = (value: string | undefined): Range[] =>
+  listItems(value)
+    .map(rangeOf)
+    .filter((range) => range !== undefined);
+
+/** The meeting length the opening act states, in minutes; 30 when it states none. */
+const lengthOf = (request: Request | undefined) =>
+  Number(
+    /(\d+)/u.exec(request?.acts[0]?.values.get("length") ?? "")?.[1] ?? 30,
+  );
+
+/** Whether some `length`-minute slot falls inside a range of every list. */
+function commonSlotExists(
+  lists: ReadonlyArray<readonly Range[]>,
+  length: number,
+): boolean {
+  const fits = (ranges: readonly Range[], day: string, start: number) =>
+    ranges.some(
+      (range) =>
+        range.day === day &&
+        range.start <= start &&
+        start + length <= range.end,
+    );
+  return (lists[0] ?? []).some((range) =>
+    Array.from(
+      { length: Math.max(0, range.end - range.start - length + 1) },
+      (_, offset) => range.start + offset,
+    ).some((start) => lists.every((ranges) => fits(ranges, range.day, start))),
+  );
+}
 
 function holds(
   condition: Condition,
@@ -409,6 +665,95 @@ function holds(
       const members = membersOf(open);
       return members.size > 0 && [...members].every((m) => senders.has(m));
     }
+    case "every-member-sent-since": {
+      const since =
+        open === undefined ? undefined : actsSince(open, condition.since);
+      if (open === undefined || since === undefined) {
+        return false;
+      }
+      const senders = new Set(
+        since
+          .filter((earlier) => earlier.name === condition.act)
+          .map((earlier) => agentKey(earlier.sender)),
+      );
+      const members = membersOf(open);
+      return members.size > 0 && [...members].every((m) => senders.has(m));
+    }
+    case "once-per-sender-since": {
+      const since =
+        open === undefined ? undefined : actsSince(open, condition.since);
+      return (
+        since !== undefined &&
+        !since.some(
+          (earlier) =>
+            earlier.name === act.name &&
+            agentKey(earlier.sender) === agentKey(act.sender),
+        )
+      );
+    }
+    case "all-since":
+    case "some-since": {
+      const answers = (
+        open === undefined ? undefined : actsSince(open, condition.since)
+      )?.filter((earlier) => earlier.name === condition.act);
+      const matches = (earlier: SentAct) =>
+        (earlier.values.get(condition.q) ?? "").trim() === condition.value;
+      return (
+        answers !== undefined &&
+        answers.length > 0 &&
+        (condition.kind === "all-since"
+          ? answers.every(matches)
+          : answers.some(matches))
+      );
+    }
+    case "sent-since-latest": {
+      if (open === undefined) {
+        return false;
+      }
+      const sender = agentKey(act.sender);
+      const own = lastIndexWhere(
+        open.acts,
+        (earlier) =>
+          earlier.name === condition.act && agentKey(earlier.sender) === sender,
+      );
+      return open.acts
+        .slice(own + 1)
+        .some(
+          (earlier) =>
+            earlier.name === condition.since &&
+            earlier.recipients.map(agentKey).includes(sender),
+        );
+    }
+    case "once-per-recipient": {
+      const earlier = new Set(
+        (open?.acts ?? [])
+          .filter((sent) => sent.name === act.name)
+          .flatMap((sent) => sent.recipients.map(agentKey)),
+      );
+      return (
+        open !== undefined &&
+        act.recipients.every((recipient) => !earlier.has(agentKey(recipient)))
+      );
+    }
+    case "recipients-answered":
+      return (
+        open !== undefined &&
+        open.acts.every(
+          (sent, index) =>
+            sent.name !== condition.act ||
+            sent.recipients
+              .map(agentKey)
+              .every((recipient) =>
+                open.acts
+                  .slice(index + 1)
+                  .some(
+                    (reply) =>
+                      reply.name === condition.by &&
+                      agentKey(reply.sender) === recipient,
+                  ),
+              ),
+        )
+      );
     case "after":
       return last !== undefined && condition.acts.includes(last.name);
     case "opened-by":
@@ -490,14 +835,14 @@ function checkErrors(
       }
       case "number-in-every": {
         const n = (act.values.get(check.p) ?? "").trim();
-        const answers = (open?.acts ?? []).filter((e) => e.name === check.act);
+        const answers = latestPerSender(open, check.act);
         return answers.length > 0 &&
           answers.every((e) => numbersOf(e.values.get(check.q)).includes(n))
           ? []
           : [`:${check.p} is not in every ${check.act}`];
       }
       case "none-in-every": {
-        const answers = (open?.acts ?? []).filter((e) => e.name === check.act);
+        const answers = latestPerSender(open, check.act);
         const common = answers.reduce<string[] | undefined>((shared, e) => {
           const numbers = numbersOf(e.values.get(check.q));
           return shared === undefined
@@ -525,6 +870,78 @@ function checkErrors(
           slotKey(latest(check.act)?.values.get(check.q) ?? "\u0000")
           ? []
           : [`:${check.p} differs from :${check.q} of the latest ${check.act}`];
+      case "is-number":
+        return (act.values.get(check.p) ?? "").trim() === String(check.n)
+          ? []
+          : [`:${check.p} is not ${String(check.n)}`];
+      case "one-more": {
+        const previous = Number(latest(check.act)?.values.get(check.q));
+        return Number(act.values.get(check.p)) === previous + 1
+          ? []
+          : [
+              `:${check.p} is not one more than :${check.q} of the latest ${check.act}`,
+            ];
+      }
+      case "none-or-number-in": {
+        const value = (act.values.get(check.p) ?? "").trim();
+        const numbers = listItems(latest(check.act)?.values.get(check.q)).map(
+          (item) => /^\s*(\d+)/u.exec(item)?.[1],
+        );
+        return !act.values.has(check.p) ||
+          value === "none" ||
+          numbers.includes(value)
+          ? []
+          : [
+              `:${check.p} is neither none nor a number in the latest ${check.act}`,
+            ];
+      }
+      case "greater": {
+        const value = Number(act.values.get(check.p));
+        return Number.isNaN(value) || value > Number(act.values.get(check.q))
+          ? []
+          : [`:${check.p} is not greater than :${check.q}`];
+      }
+      case "largest-since": {
+        const given = (
+          open === undefined ? undefined : actsSince(open, check.since)
+        )
+          ?.filter((e) => e.name === check.act)
+          .map((e) => Number(e.values.get(check.q)))
+          .filter((n) => !Number.isNaN(n));
+        return given !== undefined &&
+          given.length > 0 &&
+          Number(act.values.get(check.p)) === Math.max(...given)
+          ? []
+          : [
+              `:${check.p} is not the largest :${check.q} of the ${check.act} since the latest ${check.since}`,
+            ];
+      }
+      case "within-every": {
+        const slot = rangeOf(act.values.get(check.p) ?? "");
+        const lists = latestPerSender(open, check.act).map((e) =>
+          rangesOf(e.values.get(check.q)),
+        );
+        return slot !== undefined &&
+          lists.length > 0 &&
+          lists.every((ranges) =>
+            ranges.some(
+              (range) =>
+                range.day === slot.day &&
+                range.start <= slot.start &&
+                slot.end <= range.end,
+            ),
+          )
+          ? []
+          : [`:${check.p} does not lie within an item of every ${check.act}`];
+      }
+      case "no-range-in-every": {
+        const lists = latestPerSender(open, check.act).map((e) =>
+          rangesOf(e.values.get(check.q)),
+        );
+        return commonSlotExists(lists, lengthOf(open))
+          ? [`some slot lies within an item of every ${check.act}`]
+          : [];
+      }
       case "ends-with":
         return (act.values.get(check.p) ?? "").trim().endsWith(check.suffix)
           ? []
@@ -603,32 +1020,35 @@ export function makeProtocolState(options: {
   const idParameter =
     /id in :([a-z-]+)/u.exec(options.rule.text)?.[1] ?? "request";
   const { id, kind, guidance, feedback } = options.rule;
-  const actOf = (text: string, sender: string): SentAct | undefined => {
-    const parsed = parseAct(text);
+  const actOf = (message: {
+    readonly text: string;
+    readonly sender: string;
+    readonly recipients: readonly string[];
+  }): SentAct | undefined => {
+    const parsed = parseAct(message.text);
     return typeof parsed === "string"
       ? undefined
-      : { name: parsed.name, values: new Map(parsed.values), sender };
+      : {
+          name: parsed.name,
+          values: new Map(parsed.values),
+          sender: message.sender,
+          recipients: message.recipients,
+        };
   };
   return {
     id: options.id,
-    revision: "protocol-state-v2",
+    revision: "protocol-state-v3",
     rules: [{ id, kind, guidance, feedback }],
     check: (input: MiddlewareInput) =>
       Effect.sync(() => {
         const state: State = { requests: new Map() };
         for (const entry of input.context.history) {
-          const act =
-            entry.admission === "admitted"
-              ? actOf(entry.text, entry.sender)
-              : undefined;
+          const act = entry.admission === "admitted" ? actOf(entry) : undefined;
           if (act !== undefined) {
             apply(declarations.get(act.name), act, state, idParameter);
           }
         }
-        const candidate = actOf(
-          input.event.message.text,
-          input.event.message.sender,
-        );
+        const candidate = actOf(input.event.message);
         const declaration =
           candidate === undefined
             ? undefined
