@@ -8,15 +8,7 @@ import {
   SdkHttpError,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import {
-  Data,
-  Deferred,
-  Effect,
-  Redacted,
-  Ref,
-  type Scope,
-  Stream,
-} from "effect";
+import { Deferred, Effect, Redacted, Ref, type Scope, Stream } from "effect";
 import type { SendResult } from "../host-protocol/send-result.js";
 import { CollectiveError } from "../communication/collectives/contracts.js";
 import {
@@ -51,14 +43,11 @@ import { inboxWakeups } from "./events.js";
 import { acknowledgeReason, isReason, listenFailure } from "./failures.js";
 import { pollWakeups } from "./poll.js";
 
-/* eslint-disable agent-code-guard/promise-type, @typescript-eslint/no-invalid-void-type -- The official MCP client lifecycle is Promise-native and is converted to Effect at this private edge. */
-
 const MODERN_PROTOCOL_VERSION = "2026-07-28";
 const CLIENT_IMPLEMENTATION = {
   name: "sharness-endpoint",
   version: packageVersion,
 } as const;
-class CloseError extends Data.TaggedError("CloseError") {}
 
 /**
  * Connect to one registered daemon for the caller's scope. The daemon's
@@ -98,13 +87,7 @@ export function safeCredentialEndpoint(endpoint: URL): boolean {
 }
 
 function closeClient(client: Client): Effect.Effect<void> {
-  return closeQuietly(() => client.close());
-}
-
-function closeQuietly(close: () => Promise<void>): Effect.Effect<void> {
-  return Effect.tryPromise({ try: close, catch: () => new CloseError() }).pipe(
-    Effect.ignore,
-  );
+  return Effect.tryPromise(() => client.close()).pipe(Effect.ignore);
 }
 
 /**
@@ -453,22 +436,16 @@ function pendingInbox(
 function acquireListenerSlot(
   active: Ref.Ref<boolean>,
 ): Effect.Effect<void, ListenError, Scope.Scope> {
-  return Effect.uninterruptible(
-    Effect.gen(function* () {
-      const acquired = yield* Ref.modify(active, (isActive) =>
-        isActive
-          ? ([false, true] satisfies [boolean, boolean])
-          : ([true, true] satisfies [boolean, boolean]),
-      ).pipe(
-        Effect.filterOrFail(
-          (slotAcquired) => slotAcquired,
-          () => new ListenError({ reason: "already-listening" }),
-        ),
-      );
-      yield* Effect.addFinalizer(() => Ref.set(active, false));
-      return acquired;
-    }).pipe(Effect.asVoid),
-  );
+  // eslint-disable-next-line agent-code-guard/acquire-release-requires-scope -- Stream.unwrapScoped in messages owns the listener slot.
+  return Effect.acquireRelease(
+    Ref.getAndSet(active, true).pipe(
+      Effect.filterOrFail(
+        (isActive) => !isActive,
+        () => new ListenError({ reason: "already-listening" }),
+      ),
+    ),
+    () => Ref.set(active, false),
+  ).pipe(Effect.asVoid);
 }
 
 function messages(
@@ -502,19 +479,15 @@ function messages(
   );
 }
 
-function makeMcpClient(): Client {
-  return new Client(CLIENT_IMPLEMENTATION, {
-    capabilities: {},
-    versionNegotiation: { mode: { pin: MODERN_PROTOCOL_VERSION } },
-  });
-}
-
 function acquireEndpoint(
   endpoint: URL,
   options: HarnessEndpointOptions,
 ): Effect.Effect<HarnessEndpoint, ConnectError, Scope.Scope> {
   return Effect.gen(function* () {
-    const client = makeMcpClient();
+    const client = new Client(CLIENT_IMPLEMENTATION, {
+      capabilities: {},
+      versionNegotiation: { mode: { pin: MODERN_PROTOCOL_VERSION } },
+    });
     yield* acquireConnection(client, endpoint, options);
     const listenerActive = yield* Ref.make(false);
     return {
@@ -523,8 +496,6 @@ function acquireEndpoint(
     } satisfies HarnessEndpoint;
   });
 }
-
-/* eslint-enable agent-code-guard/promise-type, @typescript-eslint/no-invalid-void-type -- Restore strict defaults after the Promise-native MCP edge. */
 
 /** The capability this module acquires, and its connect and delivery types. */
 export {

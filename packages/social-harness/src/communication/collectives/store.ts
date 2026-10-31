@@ -6,7 +6,6 @@ import { AgentId } from "../../identity/identifiers.js";
 import { Message, MessageReference } from "../message.js";
 import { maximumMembers, MessageAddressInput } from "../records/values.js";
 import {
-  copyBytes,
   EndpointStoreError,
   mintDeliveryToken,
   readBytes,
@@ -28,12 +27,10 @@ type CloseValue = Extract<CollectiveValue, { readonly kind: "close" }>;
 
 interface OperationState {
   readonly operationId: CollectiveId;
-  readonly creatorAgentId: AgentId;
   readonly deadlineAt: number;
   readonly phase: "collecting" | "finalizing" | "completed";
   readonly deliveryToken: DeliveryToken;
-  readonly delivered: boolean;
-  readonly close?: { readonly message: Message; readonly value: CloseValue };
+  readonly close?: CloseValue;
   readonly result?: {
     readonly item: ResultDelivery["item"];
     readonly answers: readonly MessageReference[];
@@ -100,7 +97,7 @@ export function putCollectiveOperation(
         ) {
           return yield* new EndpointStoreError({ reason: "conflict" });
         }
-        return false;
+        return;
       }
       const deliveryToken = yield* mintDeliveryToken((token) =>
         sql
@@ -116,12 +113,11 @@ export function putCollectiveOperation(
           operationId,
           input.request.author.agentId,
           input.origin,
-          copyBytes(canonicalRequest),
+          canonicalRequest,
           deadlineAt,
           deliveryToken,
         ],
       );
-      return true;
     }),
   ).pipe(storeOperation, Effect.withSpan("putCollectiveOperation"));
 }
@@ -134,19 +130,24 @@ export function readCollectiveOperation(operationId: CollectiveId) {
   );
 }
 
-/** Only local collecting operations need periodic deadline work. */
-export const readLocalCollectingOperations = () =>
-  readOperations(
-    " WHERE origin='local' AND phase='collecting' ORDER BY rowid",
-    [],
-  ).pipe(Effect.withSpan("readLocalCollectingOperations"));
-
-/** Startup alone resumes retained remote closes; incoming events advance them afterward. */
-export const readPendingRemoteCloses = () =>
-  readOperations(
-    " WHERE origin='remote' AND phase='finalizing' ORDER BY rowid",
-    [],
-  ).pipe(Effect.withSpan("readPendingRemoteCloses"));
+/** Workers load each operation's content inside its completion transaction. */
+export function readCollectiveOperationIds(
+  origin: StoredCollectiveOperation["origin"],
+  phase: StoredCollectiveOperation["phase"],
+) {
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
+      "SELECT operation_id FROM collective_operations WHERE origin=? AND phase=? ORDER BY rowid",
+      [origin, phase],
+    );
+    return yield* Effect.forEach(
+      rows,
+      (row) => decodeValue(CollectiveId, readText(row, "operation_id")),
+      { concurrency: 1 },
+    );
+  }).pipe(storeOperation, Effect.withSpan("readCollectiveOperationIds"));
+}
 
 /** Results become available only after their required close certifies. */
 export const readNextCollectiveResult = () =>
@@ -192,14 +193,14 @@ export function putCollectiveMessage(input: StoredCollectiveMessage) {
   ).pipe(storeOperation, Effect.withSpan("putCollectiveMessage"));
 }
 
-/** Saved associations recover certification observations without resubmitting payloads. */
+/** An operation reads all associations; startup reads only unfinished response and close observations. */
 export function readCollectiveMessages(operationId?: CollectiveId) {
   return Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
       "SELECT operation_id,role,destination,author_agent_id,msg_id FROM collective_messages" +
         (operationId === undefined
-          ? " ORDER BY rowid"
+          ? " WHERE role IN ('response','close') AND operation_id IN (SELECT operation_id FROM collective_operations WHERE phase!='completed') ORDER BY rowid"
           : " WHERE operation_id=? ORDER BY rowid"),
       operationId === undefined ? [] : [operationId],
     );
@@ -261,7 +262,7 @@ export function recordCollectiveAnswer(
       }
       yield* sql.unsafe(
         "INSERT INTO collective_answers(operation_id,member,canonical_message) VALUES(?,?,?)",
-        [operationId, member, copyBytes(yield* encodeRuntimeValue(message))],
+        [operationId, member, yield* encodeRuntimeValue(message)],
       );
       return true;
     }),
@@ -290,7 +291,7 @@ export function saveRemoteClose(operationId: CollectiveId, message: Message) {
     const sql = yield* SqlClient.SqlClient;
     yield* sql.unsafe(
       "UPDATE collective_operations SET phase='finalizing',canonical_close=? WHERE operation_id=? AND origin='remote' AND phase='collecting'",
-      [copyBytes(yield* encodeRuntimeValue(message)), operationId],
+      [yield* encodeRuntimeValue(message), operationId],
     );
   }).pipe(storeOperation, Effect.withSpan("saveRemoteClose"));
 }
@@ -308,8 +309,8 @@ export function saveCollectiveResult(input: {
       "UPDATE collective_operations SET phase=?,canonical_result=?,canonical_answer_refs=? WHERE operation_id=? AND phase<>'completed' AND canonical_result IS NULL",
       [
         input.complete ? "completed" : "finalizing",
-        copyBytes(yield* encodeRuntimeValue(input.item)),
-        copyBytes(yield* encodeRuntimeValue(input.answers)),
+        yield* encodeRuntimeValue(input.item),
+        yield* encodeRuntimeValue(input.answers),
         input.operationId,
       ],
     );
@@ -337,8 +338,8 @@ export function failCollectiveClose(
     yield* sql.unsafe(
       "UPDATE collective_operations SET phase='completed',canonical_result=?,canonical_answer_refs=? WHERE operation_id=? AND phase='finalizing' AND delivered=0",
       [
-        copyBytes(yield* encodeRuntimeValue(item)),
-        copyBytes(yield* encodeRuntimeValue([])),
+        yield* encodeRuntimeValue(item),
+        yield* encodeRuntimeValue([]),
         operationId,
       ],
     );
@@ -415,15 +416,13 @@ function readOperation(
     }
     const state: OperationState = {
       operationId,
-      creatorAgentId,
       phase,
       deadlineAt: readInteger(row, "deadline_at"),
       deliveryToken: yield* decodeValue(
         DeliveryToken,
         readText(row, "delivery_token"),
       ),
-      delivered: readInteger(row, "delivered") === 1,
-      ...(close === undefined ? {} : { close }),
+      ...(close === undefined ? {} : { close: close.value }),
       ...(result === undefined ? {} : { result }),
     };
     if (origin === "local") {

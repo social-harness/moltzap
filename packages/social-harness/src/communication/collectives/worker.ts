@@ -131,22 +131,26 @@ function failOperationMessage(saved: StoredCollectiveMessage, reason: string) {
 function resume(environment: Environment) {
   return Effect.gen(function* () {
     for (const saved of yield* Store.readCollectiveMessages()) {
-      if (saved.role !== "request") {
-        yield* Queue.offer(environment.observations, saved);
-      }
+      yield* Queue.offer(environment.observations, saved);
     }
-    for (const operation of yield* Store.readPendingRemoteCloses()) {
-      yield* finishRemote(environment, operation.operationId);
+    for (const operationId of yield* Store.readCollectiveOperationIds(
+      "remote",
+      "finalizing",
+    )) {
+      yield* finishRemote(environment, operationId);
     }
   });
 }
 
 function localDeadlines(environment: Environment) {
   return Effect.gen(function* () {
-    for (const operation of yield* Store.readLocalCollectingOperations()) {
+    for (const operationId of yield* Store.readCollectiveOperationIds(
+      "local",
+      "collecting",
+    )) {
       yield* Effect.uninterruptible(
         Effect.gen(function* () {
-          const close = yield* finishLocal(environment, operation.operationId);
+          const close = yield* finishLocal(environment, operationId);
           if (close !== undefined) {
             yield* Queue.offer(environment.observations, close);
           }
@@ -163,7 +167,7 @@ function retireUnusableClose(saved: StoredCollectiveMessage) {
       if (
         operation?.origin === "remote" &&
         operation.phase === "finalizing" &&
-        operation.close?.value.included.some(
+        operation.close?.included.some(
           (reference) =>
             reference.authorAgentId === saved.reference.authorAgentId &&
             reference.msgId === saved.reference.msgId,

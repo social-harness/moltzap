@@ -119,7 +119,17 @@ function request(
 const invalidCalls = [
   { name: "status", arguments: { unexpected: true }, paths: [["unexpected"]] },
   { name: "read_event", arguments: { eventId: "bad" }, paths: [["eventId"]] },
+  {
+    name: "read_event",
+    arguments: { eventId: `dlv_${"A".repeat(42)}B` },
+    paths: [["eventId"]],
+  },
   { name: "acknowledge_delivery", arguments: {}, paths: [["deliveryToken"]] },
+  {
+    name: "acknowledge_delivery",
+    arguments: { deliveryToken: `dlv_${"A".repeat(43)}`, content: "message" },
+    paths: [["content"]],
+  },
   {
     name: "policy_update",
     arguments: {

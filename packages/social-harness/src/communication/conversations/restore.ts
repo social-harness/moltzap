@@ -56,7 +56,8 @@ interface RecoveredEngineState {
   readonly conversations: Map<ConversationIdValue, EngineConversation>;
   readonly actionFolds: Map<ActionHash, EngineActionFold>;
   readonly recordFolds: Map<RecordHashValue, EngineActionFold>;
-  readonly completedMessages: Map<string, RecordHashValue>;
+  readonly completedMessages: Set<string>;
+  /** Verified pending intents retain their durable acceptance order. */
   readonly messageIntents: ReadonlyArray<
     Effect.Effect.Success<ReturnType<typeof readStoredMessageIntent>>
   >;
@@ -109,11 +110,9 @@ export const recoverEngineState = (
       (stored) => readStoredMessageIntent(stored, verifiedMemberships),
       { concurrency: 1 },
     );
-    const completedMessages = new Map(
+    const completedMessages = new Set(
       messageIntents.flatMap((stored) =>
-        stored.completedRecordHash === undefined
-          ? []
-          : [[stored.intent.msgId, stored.completedRecordHash] as const],
+        stored.completedRecordHash === undefined ? [] : [stored.intent.msgId],
       ),
     );
     return {
@@ -121,7 +120,9 @@ export const recoverEngineState = (
       actionFolds,
       recordFolds,
       completedMessages,
-      messageIntents,
+      messageIntents: messageIntents.filter(
+        (stored) => stored.completedRecordHash === undefined,
+      ),
       outboundMessages,
     };
   }).pipe(Effect.withSpan("recoverEngineState"));

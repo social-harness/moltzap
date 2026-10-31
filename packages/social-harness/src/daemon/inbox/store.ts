@@ -19,11 +19,17 @@ import {
   StoreSignal,
   transaction,
 } from "../../communication/store/database/index.js";
+import { decodeRuntimeValue } from "../../communication/store/index.js";
 import {
   DeliveryToken,
   type StoreMutation,
 } from "../../communication/store/types.js";
 import { MAXIMUM_RUNTIME_ITEM_BYTES } from "../../encoding/limits.js";
+import {
+  type LocalGuidance,
+  localGuidanceSchema,
+} from "../../host-protocol/advice.js";
+import { InboundItem } from "../../host-protocol/items.js";
 // safer-arch-ignore file-implicit-boundary-module: Daemon publication and host delivery share inbox operations within the caller’s SQL transaction.
 import { createIncomingTables } from "./pending.js";
 const MAXIMUM_PAGE_ITEMS = 50;
@@ -33,8 +39,13 @@ interface InboxBounds {
   readonly limit?: number;
 }
 /** Immutable classified item retained until the host accepts its delivery. */
-export interface InboxEntry extends ItemProjection {
+export interface InboxEntry extends ItemProjection, RetainedItem {
   readonly sequence: number;
+}
+/** Stored content and guidance are validated together before callers receive them. */
+export interface RetainedItem {
+  readonly item: InboundItem;
+  readonly guidance?: LocalGuidance;
 }
 /** A bounded view below a fixed inbox sequence, independent of later arrivals. */
 export interface InboxPage {
@@ -73,17 +84,12 @@ export interface EventStore {
 export function createInboxTables() {
   return Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    for (const statement of `
+    yield* sql.unsafe<Readonly<Record<string, unknown>>>(`
   CREATE TABLE runtime_events (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     canonical_state BLOB NOT NULL
   ) STRICT;
-`
-      .split(";")
-      .map((part) => part.trim())
-      .filter((part) => part.length > 0)) {
-      yield* sql.unsafe<Readonly<Record<string, unknown>>>(statement);
-    }
+`);
     yield* createIncomingTables();
   }).pipe(storeOperation, Effect.withSpan("createInboxTables"));
 }
@@ -95,15 +101,20 @@ export function readInboxItem(deliveryToken: DeliveryToken) {
       "SELECT published_sequence AS sequence, published_item AS canonical_item, canonical_guidance, acknowledged FROM incoming_items WHERE delivery_token = ? AND published_item IS NOT NULL",
       [deliveryToken],
     ))[0];
-    return row === undefined
-      ? undefined
-      : {
-          deliveryToken,
-          sequence: readInteger(row, "sequence"),
-          canonicalItem: readBytes(row, "canonical_item"),
-          ...guidanceBytes(row),
-          acknowledged: readInteger(row, "acknowledged") === 1,
-        };
+    if (row === undefined) {
+      return undefined;
+    }
+    const projection = {
+      canonicalItem: readBytes(row, "canonical_item"),
+      ...guidanceBytes(row),
+    };
+    return {
+      deliveryToken,
+      sequence: readInteger(row, "sequence"),
+      ...projection,
+      ...(yield* decodeItemProjection(projection)),
+      acknowledged: readInteger(row, "acknowledged") === 1,
+    };
   }).pipe(storeOperation, Effect.withSpan("readInboxItem"));
 }
 /**
@@ -112,7 +123,7 @@ export function readInboxItem(deliveryToken: DeliveryToken) {
  * @returns Whether this call inserted the binding.
  */
 export function putInboxItem(
-  item: Omit<InboxEntry, "sequence">,
+  item: ItemProjection,
 ): Effect.Effect<StoreMutation, EndpointStoreError, SqlClient.SqlClient> {
   return Effect.gen(function* () {
     const database = yield* SqlClient.SqlClient;
@@ -195,7 +206,14 @@ export function readInbox(
       "SELECT published_sequence AS sequence, delivery_token, published_item AS canonical_item, canonical_guidance FROM incoming_items WHERE acknowledged=0 AND published_item IS NOT NULL AND published_sequence>? AND published_sequence<=? ORDER BY published_sequence LIMIT ?",
       [after, through, limit + 1],
     );
-    const items = collectPage(rows, limit);
+    const items = yield* Effect.forEach(
+      collectPage(rows, limit),
+      (entry) =>
+        decodeItemProjection(entry).pipe(
+          Effect.map((view) => ({ ...entry, ...view })),
+        ),
+      { concurrency: 1 },
+    );
     const last = items.at(-1);
     return {
       items,
@@ -286,25 +304,53 @@ export function readHistoryViews(
   return Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const views: HistoryView[] = [];
+    const retained = new Map<DeliveryToken, Omit<HistoryView, "message">>();
     for (const message of messages) {
       const row = (yield* sql.unsafe<Readonly<Record<string, unknown>>>(
         "SELECT i.delivery_token,i.published_item AS canonical_item,i.canonical_guidance FROM message_visibility v JOIN incoming_items i USING(delivery_token) WHERE v.author_agent_id=? AND v.msg_id=? AND i.published_item IS NOT NULL",
         [message.authorAgentId, message.msgId],
       ))[0];
       if (row !== undefined) {
-        views.push({
-          message,
-          deliveryToken: yield* Schema.decodeUnknown(DeliveryToken)(
-            readText(row, "delivery_token"),
-          ),
-          canonicalItem: readBytes(row, "canonical_item"),
-          ...guidanceBytes(row),
-        });
+        const deliveryToken = yield* Schema.decodeUnknown(DeliveryToken)(
+          readText(row, "delivery_token"),
+        );
+        let view = retained.get(deliveryToken);
+        if (view === undefined) {
+          const projection = {
+            canonicalItem: readBytes(row, "canonical_item"),
+            ...guidanceBytes(row),
+          };
+          view = {
+            deliveryToken,
+            ...(yield* decodeItemProjection(projection)),
+          };
+          retained.set(deliveryToken, view);
+        }
+        views.push({ message, ...view });
       }
     }
     return views;
   }).pipe(storeOperation, Effect.withSpan("readHistoryViews"));
 }
+/** Retained projections share one item and guidance decoder across delivery and history. */
+export function decodeItemProjection(
+  projection: Pick<ItemProjection, "canonicalItem" | "canonicalGuidance">,
+): Effect.Effect<RetainedItem, EndpointStoreError> {
+  return Effect.gen(function* () {
+    return {
+      item: yield* decodeRuntimeValue(InboundItem, projection.canonicalItem),
+      ...(projection.canonicalGuidance === undefined
+        ? {}
+        : {
+            guidance: yield* decodeRuntimeValue(
+              localGuidanceSchema,
+              projection.canonicalGuidance,
+            ),
+          }),
+    };
+  }).pipe(Effect.withSpan("decodeItemProjection"));
+}
+
 function requireSequence(value: number): number {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new StoreSignal("invalid-continuation");
@@ -343,8 +389,8 @@ function pageLimit(input: InboxBounds, after: number, through: number): number {
 function collectPage(
   rows: ReadonlyArray<Readonly<Record<string, unknown>>>,
   limit: number,
-): readonly InboxEntry[] {
-  const items: InboxEntry[] = [];
+): ReadonlyArray<Omit<InboxEntry, "item" | "guidance">> {
+  const items: Array<Omit<InboxEntry, "item" | "guidance">> = [];
   let bytes = 0;
   for (const row of rows) {
     const canonicalItem = readBytes(row, "canonical_item");
@@ -376,9 +422,7 @@ function guidanceBytes(
   return value === undefined ? {} : { canonicalGuidance: value };
 }
 /** A saved permitted projection of the same authored message. */
-export interface HistoryView {
-  readonly message: MessageReference;
+export interface HistoryView extends RetainedItem {
   readonly deliveryToken: DeliveryToken;
-  readonly canonicalItem: Uint8Array;
-  readonly canonicalGuidance?: Uint8Array;
+  readonly message: MessageReference;
 }

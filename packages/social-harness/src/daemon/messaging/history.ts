@@ -21,10 +21,7 @@ import {
   AgentAddress,
   GroupAddress,
 } from "../../communication/records/values.js";
-import { decodeRuntimeValue } from "../../communication/store/index.js";
 import { compareAscii } from "../../encoding/identifier.js";
-import { localGuidanceSchema } from "../../host-protocol/advice.js";
-import { InboundItem } from "../../host-protocol/items.js";
 import {
   listLocalResultConversations,
   localResultBoundary,
@@ -116,8 +113,20 @@ function listConversations(
     ) {
       return yield* new HostHistoryError({ reason: "history-gap" });
     }
-    const results = yield* allResultAddresses();
-    const merged = [...new Set([...addresses, ...results])].sort(compareAscii);
+    const results = yield* listLocalResultConversations(
+      request.afterAddress,
+    ).pipe(Effect.catchTag("EndpointStoreError", storeFailure));
+    const resultAddresses = yield* Schema.decodeUnknown(
+      Schema.Array(addressSchema),
+    )(results.addresses).pipe(
+      Effect.catchTag(
+        "ParseError",
+        () => new HostHistoryError({ reason: "history-gap" }),
+      ),
+    );
+    const merged = [...new Set([...addresses, ...resultAddresses])].sort(
+      compareAscii,
+    );
     const remaining =
       request.afterAddress === undefined
         ? merged
@@ -127,7 +136,7 @@ function listConversations(
     return {
       kind: "page",
       addresses: remaining.slice(0, 50),
-      hasMore: remaining.length > 50,
+      hasMore: results.hasMore || remaining.length > 50,
     };
   });
 }
@@ -151,10 +160,12 @@ function readHistory(
       .readHistory(state.query)
       .pipe(Effect.mapError(communicationFailure));
     const views = yield* readHistoryViews(
-      page.messages.map((message) => ({
-        authorAgentId: message.author.agentId,
-        msgId: message.msgId,
-      })),
+      page.messages
+        .filter((message) => message.author.agentId !== me.agentId)
+        .map((message) => ({
+          authorAgentId: message.author.agentId,
+          msgId: message.msgId,
+        })),
     ).pipe(Effect.catchTag("EndpointStoreError", storeFailure));
     const records = yield* historyRecords(me, page.messages, views);
     if (page.continuation !== null) {
@@ -204,9 +215,19 @@ function resultsPage(
       through: state.through,
       limit,
     }).pipe(Effect.catchTag("EndpointStoreError", storeFailure));
-    const results = yield* Effect.forEach(page.items, savedResult, {
-      concurrency: 1,
-    });
+    const results: HistoryRecord[] = [];
+    for (const view of page.items) {
+      const { item, guidance } = view;
+      if (item.kind !== "collectiveResult" && item.kind !== "operationFailed") {
+        return yield* new HostHistoryError({ reason: "history-gap" });
+      }
+      results.push({
+        kind: "result",
+        deliveryToken: view.deliveryToken,
+        item,
+        ...(guidance === undefined ? {} : { guidance }),
+      });
+    }
     return {
       kind: "page",
       records: [...records, ...results],
@@ -255,35 +276,6 @@ function allConversations(
       afterConversationId = last.conversationId;
     }
   });
-}
-
-function allResultAddresses() {
-  return Effect.gen(function* () {
-    const addresses: Address[] = [];
-    let after = "";
-    for (;;) {
-      const page = yield* listLocalResultConversations(after).pipe(
-        Effect.catchTag("EndpointStoreError", storeFailure),
-      );
-      const parsed = yield* Schema.decodeUnknown(Schema.Array(addressSchema))(
-        page.addresses,
-      );
-      addresses.push(...parsed);
-      if (!page.hasMore) {
-        return addresses;
-      }
-      const last = page.addresses.at(-1);
-      if (last === undefined) {
-        return yield* new HostHistoryError({ reason: "history-gap" });
-      }
-      after = last;
-    }
-  }).pipe(
-    Effect.catchTag(
-      "ParseError",
-      () => new HostHistoryError({ reason: "history-gap" }),
-    ),
-  );
 }
 
 function conversationAddress(
@@ -386,30 +378,36 @@ function historyRecords(
   messages: readonly Message[],
   views: readonly HistoryView[],
 ) {
-  const tokens = new Set<string>();
-  return Effect.forEach(
-    messages,
-    (message) => {
+  return Effect.gen(function* () {
+    const records: HistoryRecord[] = [];
+    const tokens = new Set<string>();
+    for (const message of messages) {
       if (message.author.agentId === me.agentId) {
-        return visibleSent(message).pipe(
-          Effect.map((visible): readonly HistoryRecord[] =>
-            visible ? [{ kind: "sent", message }] : [],
-          ),
-        );
+        if (yield* visibleSent(message)) {
+          records.push({ kind: "sent", message });
+        }
+        continue;
       }
       const view = views.find(
         (candidate) =>
           candidate.message.authorAgentId === message.author.agentId &&
           candidate.message.msgId === message.msgId,
       );
-      if (view === undefined || tokens.has(view.deliveryToken)) {
-        return Effect.succeed<readonly HistoryRecord[]>([]);
+      if (view !== undefined && !tokens.has(view.deliveryToken)) {
+        tokens.add(view.deliveryToken);
+        const { item, guidance } = view;
+        if (item.kind === "multicast" || item.kind === "collectiveRequest") {
+          records.push({
+            kind: "received",
+            message: view.message,
+            item,
+            ...(guidance === undefined ? {} : { guidance }),
+          });
+        }
       }
-      tokens.add(view.deliveryToken);
-      return receivedRecord(view);
-    },
-    { concurrency: 1 },
-  ).pipe(Effect.map((records) => records.flat()));
+    }
+    return records;
+  });
 }
 
 function visibleSent(message: Message) {
@@ -417,56 +415,6 @@ function visibleSent(message: Message) {
     Effect.map((value) => Option.isNone(value) || value.value.kind !== "close"),
     Effect.catchTag("CollectivePartInvalidError", () => Effect.succeed(false)),
   );
-}
-
-function receivedRecord(view: HistoryView) {
-  return Effect.gen(function* () {
-    const item = yield* decodeRuntimeValue(InboundItem, view.canonicalItem);
-    if (item.kind === "collectiveResult" || item.kind === "operationFailed") {
-      return [];
-    }
-    const guidance =
-      view.canonicalGuidance === undefined
-        ? undefined
-        : yield* decodeRuntimeValue(
-            localGuidanceSchema,
-            view.canonicalGuidance,
-          );
-    return [
-      {
-        kind: "received",
-        message: view.message,
-        item,
-        ...(guidance === undefined ? {} : { guidance }),
-      } satisfies HistoryRecord,
-    ];
-  }).pipe(Effect.catchTag("EndpointStoreError", storeFailure));
-}
-
-function savedResult(
-  view: Effect.Effect.Success<
-    ReturnType<typeof readLocalResultPage>
-  >["items"][number],
-) {
-  return Effect.gen(function* () {
-    const item = yield* decodeRuntimeValue(InboundItem, view.canonicalItem);
-    if (item.kind !== "collectiveResult" && item.kind !== "operationFailed") {
-      return yield* new HostHistoryError({ reason: "history-gap" });
-    }
-    const guidance =
-      view.canonicalGuidance === undefined
-        ? undefined
-        : yield* decodeRuntimeValue(
-            localGuidanceSchema,
-            view.canonicalGuidance,
-          );
-    return {
-      kind: "result",
-      deliveryToken: view.deliveryToken,
-      item,
-      ...(guidance === undefined ? {} : { guidance }),
-    } satisfies HistoryRecord;
-  }).pipe(Effect.catchTag("EndpointStoreError", storeFailure));
 }
 
 function communicationFailure(error: CommunicationError): HostHistoryError {

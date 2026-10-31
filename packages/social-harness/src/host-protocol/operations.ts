@@ -80,9 +80,7 @@ export const decodePollResult = Schema.decodeUnknown(pollResultSchema);
 
 /** Read-only content lookup never acknowledges or retries delivery. */
 export const readEventRequestSchema = exactStruct({
-  eventId: Schema.propertySignature(
-    Schema.encodedBoundSchema(DeliveryToken),
-  ).annotations({
+  eventId: Schema.propertySignature(DeliveryToken).annotations({
     description:
       "The eventId of an org.social-harness/inbox.item event, or one a host's wakeup carries from an inbox item; retained content remains readable after acknowledgment.",
   }),
@@ -184,10 +182,6 @@ export type HarnessReadInboxResult = typeof inboxResultSchema.Type;
 export const decodeHarnessReadInboxResult =
   Schema.decodeUnknown(inboxResultSchema);
 
-/** Decoded delivery acknowledgment arguments owned by the daemon. */
-export type HarnessAcknowledgeDeliveryRequest =
-  typeof harnessAcknowledgeDeliveryRequestSchema.Type;
-
 /** Validated semantic input of one send. */
 export type HarnessSendRequest = typeof harnessSendArgumentsSchema.Type;
 
@@ -249,20 +243,6 @@ export type HarnessSendResult = SendResult;
 /** One stable pending inbound item emitted by the daemon. */
 export type HarnessMessageReadyEvent =
   typeof harnessMessageReadyEventSchema.Type;
-
-/**
- * Decode one exact delivery acknowledgment request.
- * @param value Untrusted tool arguments.
- * @returns The validated request.
- */
-export function decodeHarnessAcknowledgeDeliveryRequest(
-  value: unknown,
-): Effect.Effect<HarnessAcknowledgeDeliveryRequest, ParseResult.ParseError> {
-  return Schema.decodeUnknown(harnessAcknowledgeDeliveryRequestSchema)(
-    value,
-    exactParseOptions,
-  );
-}
 
 /**
  * Decode one exact pending-delivery notification payload.
