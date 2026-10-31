@@ -118,6 +118,13 @@ type Check =
       readonly act: string;
       readonly q: string;
     }
+  | { readonly kind: "run-from-one"; readonly p: string }
+  | {
+      readonly kind: "run-after-latest";
+      readonly p: string;
+      readonly q: string;
+      readonly act: string;
+    }
   | {
       readonly kind: "present-when";
       readonly p: string;
@@ -292,6 +299,24 @@ function parseCheck(text: string): Check | undefined {
       q: noRange[2] ?? "",
     };
   }
+  const runFromOne = /^:([a-z-]+) is a run of numbers starting at 1$/u.exec(
+    part,
+  );
+  if (runFromOne !== null) {
+    return { kind: "run-from-one", p: runFromOne[1] ?? "" };
+  }
+  const runAfter =
+    /^:([a-z-]+) is a run of numbers starting after the largest of :([a-z-]+) of the latest ([a-z-]+)$/u.exec(
+      part,
+    );
+  if (runAfter !== null) {
+    return {
+      kind: "run-after-latest",
+      p: runAfter[1] ?? "",
+      q: runAfter[2] ?? "",
+      act: runAfter[3] ?? "",
+    };
+  }
   const numberIn =
     /^:([a-z-]+) is a number in the latest ([a-z-]+) :([a-z-]+)$/u.exec(part);
   if (numberIn !== null) {
@@ -454,7 +479,9 @@ export function codeFixedParameters(
       check.kind === "one-more" ||
       check.kind === "none-or-number-in" ||
       check.kind === "largest-since" ||
-      check.kind === "within-every"
+      check.kind === "within-every" ||
+      check.kind === "run-from-one" ||
+      check.kind === "run-after-latest"
         ? [check.p]
         : [],
     );
@@ -870,6 +897,25 @@ function checkErrors(
           slotKey(latest(check.act)?.values.get(check.q) ?? "\u0000")
           ? []
           : [`:${check.p} differs from :${check.q} of the latest ${check.act}`];
+      case "run-from-one":
+      case "run-after-latest": {
+        const start =
+          check.kind === "run-from-one"
+            ? 1
+            : Math.max(
+                0,
+                ...numbersOf(latest(check.act)?.values.get(check.q)).map(
+                  Number,
+                ),
+              ) + 1;
+        const numbers = numbersOf(act.values.get(check.p)).map(Number);
+        return numbers.length > 0 &&
+          numbers.every((n, index) => n === start + index)
+          ? []
+          : [
+              `:${check.p} is not a run of numbers starting at ${String(start)}`,
+            ];
+      }
       case "is-number":
         return (act.values.get(check.p) ?? "").trim() === String(check.n)
           ? []
