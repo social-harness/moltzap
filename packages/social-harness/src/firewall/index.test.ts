@@ -1,22 +1,40 @@
 /** @file Editable policies retain fixed-rule protection and complete state across restart. */
 import { live as it } from "@effect/vitest";
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Tests create exact operator configuration and rule files around real persistent edits.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect } from "vitest";
+import { testAgentView } from "../__tests__/agent-card-fixtures.js";
 import {
   stateDirectory,
   withDaemonStore,
 } from "../__tests__/store-schema-fixtures.js";
+import {
+  decodeRuntimeValue,
+  encodeRuntimeValue,
+} from "../communication/store/index.js";
 import { readCredential } from "../daemon/credentials.js";
+import {
+  firewallCheckSchema,
+  Message,
+  MessageContext,
+  type MessageMiddleware,
+} from "./check.js";
 import {
   loadMessagePolicy,
   MAXIMUM_BEHAVIOR_BYTES,
   policyInstallationError,
 } from "./config.js";
-import { makeFirewall } from "./index.js";
+import {
+  type FirewallOptions,
+  makeFirewall,
+  type PreparedFirewallCheck,
+} from "./index.js";
+import { readFirewallPolicy, writeFirewallPolicy } from "./store/index.js";
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Indexed safe errors and atomic policy state are the public edit contract. */
+
+// @agent-code-guard/regression-only: Construction and restart regressions protect fixed rules, immutable provenance and retained-result privacy.
 
 const FORMAT = "org.social-harness/message-policy/v2";
 
@@ -432,6 +450,174 @@ function replaceAndReopen(
         return yield* reopened.readPolicy();
       }),
     );
+  });
+}
+
+it("omits provider traces from the completed result while preserving its judgment", () =>
+  withDaemonStore(stateDirectory(), () =>
+    Effect.gen(function* () {
+      const trace = { format: "test-provider/v1", data: "private response" };
+      const middleware: MessageMiddleware = {
+        id: "privacy",
+        revision: "v1",
+        rules: [{ id: "privacy" }],
+        check: () =>
+          Effect.succeed({
+            findings: [{ ruleId: "privacy", outcome: "violation" }],
+            expectations: [],
+            trace,
+          }),
+      };
+      const firewall = yield* makeFirewall(codeOptions(middleware));
+      const [checked] = yield* firewall.check([yield* preparedCheck()]);
+      const completed = yield* Effect.fromNullable(checked);
+      expect(completed.result.judgment).toBe("reject");
+      expect(completed.result.checks[0]?.trace).toEqual(trace);
+      expect(completed.completion.admit).toBe(false);
+      const retained = yield* decodeRuntimeValue(
+        firewallCheckSchema,
+        completed.completion.canonicalResult,
+      );
+      expect(retained.checks).toHaveLength(1);
+      expect(retained.checks[0]).not.toHaveProperty("trace");
+      expect(retained.checks[0]).toMatchObject({
+        findings: [{ ruleId: "privacy", outcome: "violation" }],
+      });
+    }),
+  ));
+
+it("captures immutable installation provenance and distinguishes provider model changes", () =>
+  withDaemonStore(stateDirectory(), () =>
+    Effect.gen(function* () {
+      const registration = {
+        id: "model-policy",
+        revision: "v1",
+        rules: [{ id: "privacy" }],
+        provenance: { format: "provider", data: "model-one" },
+        check: () =>
+          Effect.succeed({
+            findings: [{ ruleId: "privacy", outcome: "violation" as const }],
+            expectations: [],
+          }),
+      };
+      const first = yield* makeFirewall(codeOptions(registration));
+      registration.provenance.data = "model-two";
+      const second = yield* makeFirewall(codeOptions(registration));
+      const candidate = yield* preparedCheck();
+      const original = yield* retainedInstallation(first, candidate);
+      const changed = yield* retainedInstallation(second, candidate);
+      expect(original.installation.incoming[0]?.provenance.data).toBe(
+        "model-one",
+      );
+      expect(changed.installation.incoming[0]?.provenance.data).toBe(
+        "model-two",
+      );
+      expect(original.configurationDigest).not.toBe(
+        changed.configurationDigest,
+      );
+    }),
+  ));
+
+function retainedInstallation(
+  firewall: Effect.Effect.Success<ReturnType<typeof makeFirewall>>,
+  candidate: PreparedFirewallCheck,
+) {
+  return Effect.gen(function* () {
+    const [checked] = yield* firewall.check([candidate]);
+    return yield* decodeRuntimeValue(
+      Schema.Struct({
+        configurationDigest: Schema.String,
+        installation: Schema.Struct({
+          incoming: Schema.Array(
+            Schema.Struct({
+              provenance: Schema.Struct({ data: Schema.String }),
+            }),
+          ),
+        }),
+      }),
+      (yield* Effect.fromNullable(checked)).completion.canonicalInput,
+    );
+  });
+}
+
+function codeOptions(middleware: MessageMiddleware): FirewallOptions {
+  return {
+    incoming: [middleware],
+    outgoing: [middleware],
+    mode: "enforcement",
+    facts: [],
+    codeDigest: "a".repeat(64),
+    settings: {
+      timeoutMilliseconds: 1_000,
+      middlewareTimeoutMilliseconds: 100,
+      maximumInputBytes: 100_000,
+      maximumResultBytes: 100_000,
+    },
+  };
+}
+
+function preparedCheck() {
+  return Effect.gen(function* () {
+    const local = testAgentView("alice");
+    const peer = testAgentView("bob");
+    const message = new Message({
+      id: "draft",
+      sender: local.agentId,
+      recipients: [peer.agentId],
+      text: "Hello",
+    });
+    return {
+      direction: "outgoing",
+      message,
+      agents: [local, peer],
+      canonicalCandidate: yield* encodeRuntimeValue(message),
+      context: new MessageContext({
+        agentId: local.agentId,
+        principal: local.principalId,
+        participants: [{ agentId: peer.agentId, principal: peer.principalId }],
+        history: [],
+        facts: [],
+        gaps: [],
+      }),
+    } satisfies PreparedFirewallCheck;
+  });
+}
+
+it("refuses unknown stored editable properties as persistence failures", () =>
+  Effect.gen(function* () {
+    const configuration = yield* options(fixture().path);
+    yield* withDaemonStore(stateDirectory(), () =>
+      refuseUnknownStoredProperty(configuration),
+    );
+  }));
+
+function refuseUnknownStoredProperty(
+  configuration: Parameters<typeof makeFirewall>[0],
+) {
+  return Effect.gen(function* () {
+    yield* makeFirewall(configuration);
+    const reopened = yield* makeFirewall(configuration);
+    expect((yield* reopened.readPolicy()).rules).toContainEqual(INITIAL);
+    const bytes = yield* Effect.fromNullable(yield* readFirewallPolicy());
+    const saved = yield* decodeRuntimeValue(
+      Schema.Struct({
+        format: Schema.String,
+        rules: Schema.Array(
+          Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+        ),
+      }),
+      bytes,
+    );
+    const first = yield* Effect.fromNullable(saved.rules[0]);
+    yield* writeFirewallPolicy(
+      yield* encodeRuntimeValue({
+        ...saved,
+        rules: [{ ...first, unexpected: true }, ...saved.rules.slice(1)],
+      }),
+    );
+    expect(yield* Effect.flip(makeFirewall(configuration))).toMatchObject({
+      reason: "persistence-failed",
+    });
   });
 }
 /* eslint-enable agent-code-guard/no-hardcoded-assertion-literals -- Restore defaults after policy edit contract assertions. */

@@ -1,38 +1,46 @@
 /** @file Saved decisions explain completed message checks without exposing private evidence. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Effect, Queue, Schema } from "effect";
+import { Effect } from "effect";
 import { expect } from "vitest";
-import type { TextRule } from "../../firewall/config.js";
+import type { TextRule } from "../config.js";
+import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
-  fixture,
-  type Fixture,
-  incomingThrough,
-  outgoingThrough,
-  revise,
-  rule,
-  settings,
-} from "../../__tests__/firewall-runtime-fixtures.js";
-import { withDaemonStore } from "../../__tests__/store-schema-fixtures.js";
-import { MessageAddressInput } from "../../communication/records/values.js";
+  stateDirectory,
+  withDaemonStore,
+} from "../../__tests__/store-schema-fixtures.js";
 import {
-  decodeRuntimeValue,
   encodeRuntimeValue,
+  recover,
 } from "../../communication/store/index.js";
 import {
   type DecisionProvider,
   DecisionProviderError,
   type DecisionRequest,
+  Message,
+  MessageContext,
   type MessageMiddleware,
   MiddlewareError,
-  type MiddlewareInput,
   type MiddlewareResult,
-} from "../../firewall/check.js";
-import { type FirewallOptions, makeFirewall } from "../../firewall/index.js";
-import { readDecisions } from "../../firewall/store/index.js";
-import { agentViewOf } from "../../identity/cards.js";
+} from "../check.js";
+import {
+  type FirewallOptions,
+  makeFirewall,
+  type PreparedFirewallCheck,
+} from "../index.js";
+import { readDecisions, saveCheckDecision } from "./index.js";
 
-// @agent-code-guard/regression-only: Reads decisions retained by real admission through SQLite and the protocol engine.
+// @agent-code-guard/regression-only: Real completed checks and SQL reads preserve rule attribution, historical advice and peer decisions across restart.
+
+const settings = {
+  timeoutMilliseconds: 10_000,
+  middlewareTimeoutMilliseconds: 8_000,
+  maximumInputBytes: 1_000_000,
+  maximumResultBytes: 100_000,
+};
+const alice = testAgentView("alice");
+const bob = testAgentView("bob");
+const carol = testAgentView("carol");
 
 const textSettings = {
   minimumProbability: 0.5,
@@ -72,32 +80,22 @@ const contacts = {
   feedback: { nextAction: "stop", text: "Only known contacts may write." },
 } as const;
 
-function contactsPolicy(
-  outcome: "pass" | "violation",
-  seen: MiddlewareInput[] = [],
-) {
-  return codePolicy(
-    [contacts],
-    { findings: [{ ruleId: contacts.id, outcome }], expectations: [] },
-    seen,
-  );
+function contactsPolicy(outcome: "pass" | "violation") {
+  return codePolicy([contacts], {
+    findings: [{ ruleId: contacts.id, outcome }],
+    expectations: [],
+  });
 }
 
-/** A code middleware of `rules` returning `result`, recording what it checked. */
 function codePolicy(
   rules: MessageMiddleware["rules"],
   result: MiddlewareResult,
-  seen: MiddlewareInput[] = [],
 ): MessageMiddleware {
   return {
     id: "contacts-code",
     revision: "test-v1",
     rules,
-    check: (input) =>
-      Effect.sync(() => {
-        seen.push(input);
-        return result;
-      }),
+    check: () => Effect.succeed(result),
   };
 }
 
@@ -207,21 +205,56 @@ function text(
   };
 }
 
-/** Check one incoming message through the editable firewall `configure` returns, then read its feed. */
-function decideIncoming(configure: (subject: Fixture) => FirewallOptions) {
+/** The completed assessment and its SQL projection use the production firewall boundary. */
+function decideIncoming(configuration: FirewallOptions) {
+  return withDaemonStore(stateDirectory(), () =>
+    Effect.gen(function* () {
+      const firewall = yield* makeFirewall(configuration);
+      const [checked] = yield* firewall.check([
+        yield* preparedMessage("incoming"),
+      ]);
+      yield* saveCheckDecision(
+        (yield* Effect.fromNullable(checked)).completion,
+      );
+      return yield* readDecisions({});
+    }),
+  );
+}
+
+function preparedMessage(direction: "incoming" | "outgoing") {
   return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const editable = yield* subject.run(makeFirewall(configure(subject)));
-    const runtime = yield* incomingThrough(subject, editable);
-    yield* runtime.runPass;
-    yield* Queue.take(runtime.completed);
-    return yield* subject.run(readDecisions({}));
+    const message = new Message({
+      id: "candidate",
+      sender: direction === "incoming" ? bob.agentId : alice.agentId,
+      recipients:
+        direction === "incoming"
+          ? [alice.agentId]
+          : [bob.agentId, carol.agentId],
+      text: "Choose a meeting time.",
+    });
+    return {
+      direction,
+      message,
+      context: new MessageContext({
+        agentId: alice.agentId,
+        principal: alice.principalId,
+        participants: [bob, carol].map((agent) => ({
+          agentId: agent.agentId,
+          principal: agent.principalId,
+        })),
+        history: [],
+        facts: [],
+        gaps: [],
+      }),
+      agents: [alice, bob, carol],
+      canonicalCandidate: yield* encodeRuntimeValue(message),
+    } satisfies PreparedFirewallCheck;
   });
 }
 
 it("names the fixed natural-language rule whose settled judgment blocked a message", () =>
   Effect.gen(function* () {
-    const feed = yield* decideIncoming(() =>
+    const feed = yield* decideIncoming(
       options(
         [],
         text(decisionProvider([privacy], "violation"), {
@@ -249,7 +282,7 @@ it("names the fixed natural-language rule whose settled judgment blocked a messa
 
 it("names the editable rule whose valid uncertain judgment carries registered guidance", () =>
   Effect.gen(function* () {
-    const feed = yield* decideIncoming(() =>
+    const feed = yield* decideIncoming(
       options(
         [],
         text(decisionProvider([review], "unresolved"), {
@@ -276,7 +309,7 @@ it("names the editable rule whose valid uncertain judgment carries registered gu
 
 it("names the rule whose valid uncertain applicability carries registered guidance", () =>
   Effect.gen(function* () {
-    const feed = yield* decideIncoming(() =>
+    const feed = yield* decideIncoming(
       options([], text(nearTieProvider, { initial: [announce] })),
     );
 
@@ -298,7 +331,7 @@ it("names the rule whose valid uncertain applicability carries registered guidan
 
 it("reports an unreachable decision provider as the cause of a hold", () =>
   Effect.gen(function* () {
-    const feed = yield* decideIncoming(() =>
+    const feed = yield* decideIncoming(
       options([], text(unreachable, { fixed: [review] })),
     );
 
@@ -324,7 +357,7 @@ it("reports a code middleware that timed out as the cause of a hold", () =>
       check: () => Effect.fail(new MiddlewareError({ reason: "timeout" })),
     };
 
-    const feed = yield* decideIncoming(() => options([timedOut]));
+    const feed = yield* decideIncoming(options([timedOut]));
 
     expect(feed.decisions).toMatchObject([
       {
@@ -339,9 +372,7 @@ it("reports a code middleware that timed out as the cause of a hold", () =>
 
 it("names the code rule that blocked a message", () =>
   Effect.gen(function* () {
-    const feed = yield* decideIncoming(() =>
-      options([contactsPolicy("violation")]),
-    );
+    const feed = yield* decideIncoming(options([contactsPolicy("violation")]));
 
     expect(feed.decisions).toMatchObject([
       {
@@ -363,7 +394,7 @@ it("names both norms whose expectations conflict", () =>
     const reply = { id: "reply" } as const;
     const wait = { id: "wait" } as const;
 
-    const feed = yield* decideIncoming(() =>
+    const feed = yield* decideIncoming(
       options([
         codePolicy([reply, wait], {
           findings: [
@@ -392,7 +423,7 @@ it("names both norms whose expectations conflict", () =>
 
 it("names code and natural-language rules that both blocked, reading the cause from the natural-language one", () =>
   Effect.gen(function* () {
-    const feed = yield* decideIncoming(() =>
+    const feed = yield* decideIncoming(
       options(
         [contactsPolicy("violation")],
         text(decisionProvider([privacy], "violation"), {
@@ -416,7 +447,7 @@ it("names code and natural-language rules that both blocked, reading the cause f
 
 it("reports an admission no rule qualified as the default, deciding by no rule", () =>
   Effect.gen(function* () {
-    const feed = yield* decideIncoming(() => options([contactsPolicy("pass")]));
+    const feed = yield* decideIncoming(options([contactsPolicy("pass")]));
 
     expect(feed.decisions).toMatchObject([
       {
@@ -431,77 +462,41 @@ it("reports an admission no rule qualified as the default, deciding by no rule",
 
 it("retains refused first-message peers after restart without an admitted conversation", () =>
   Effect.gen(function* () {
-    const reviser = codePolicy([rule], revise);
+    const reviser = contactsPolicy("violation");
     const saved = yield* Effect.scoped(refuseFirstGroupMessage(reviser));
     const recovered = yield* readRefusedDecisions(saved.directory);
     expect(recovered.decisions).toEqual(saved.decisions);
     expect(recovered.memberships).toEqual([]);
   }));
 
-it("refuses unknown stored editable properties as persistence failures", () =>
-  Effect.gen(function* () {
-    const subject = yield* fixture;
-    const configured = options(
-      [],
-      text(decisionProvider(), { initial: [review] }),
-    );
-    yield* subject.run(makeFirewall(configured));
-    const reopened = yield* subject.run(makeFirewall(configured));
-    expect((yield* reopened.readPolicy()).rules).toContainEqual(
-      expect.objectContaining(review),
-    );
-    const bytes = yield* Effect.fromNullable(
-      yield* subject.run(subject.store.readFirewallPolicy()),
-    );
-    const saved = yield* decodeRuntimeValue(
-      Schema.Struct({
-        format: Schema.String,
-        rules: Schema.Array(
-          Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-        ),
-      }),
-      bytes,
-    );
-    const first = yield* Effect.fromNullable(saved.rules[0]);
-    yield* subject.run(
-      subject.store.writeFirewallPolicy(
-        yield* encodeRuntimeValue({
-          ...saved,
-          rules: [{ ...first, unexpected: true }, ...saved.rules.slice(1)],
-        }),
-      ),
-    );
-    expect(
-      yield* Effect.flip(subject.run(makeFirewall(configured))),
-    ).toMatchObject({ reason: "persistence-failed" });
-  }));
-
 it("keeps the deciding rules recorded before a later edit removes them", () =>
-  Effect.gen(function* () {
-    const subject = yield* fixture;
-    const provider = decisionProvider([privacy], "violation");
-    const editable = yield* subject.run(
-      makeFirewall(options([], text(provider, {}))),
-    );
-    const runtime = yield* incomingThrough(subject, editable);
-    yield* editable.updatePolicy({ add: [privacy] });
-    yield* runtime.runPass;
-    yield* Queue.take(runtime.completed);
-    yield* editable.updatePolicy({ remove: [privacy.id] });
-
-    expect((yield* subject.run(readDecisions({}))).decisions).toMatchObject([
-      {
-        outcome: "reject",
-        decidedBy: arrayContaining([
-          expect.objectContaining({
-            ruleId: privacy.id,
-            from: "editable",
-            advice: privacy.feedback.text,
-          }),
-        ]),
-      },
-    ]);
-  }));
+  withDaemonStore(stateDirectory(), () =>
+    Effect.gen(function* () {
+      const firewall = yield* makeFirewall(
+        options([], text(decisionProvider([privacy], "violation"), {})),
+      );
+      yield* firewall.updatePolicy({ add: [privacy] });
+      const [checked] = yield* firewall.check([
+        yield* preparedMessage("incoming"),
+      ]);
+      yield* saveCheckDecision(
+        (yield* Effect.fromNullable(checked)).completion,
+      );
+      yield* firewall.updatePolicy({ remove: [privacy.id] });
+      expect((yield* readDecisions({})).decisions).toMatchObject([
+        {
+          outcome: "reject",
+          decidedBy: arrayContaining([
+            expect.objectContaining({
+              ruleId: privacy.id,
+              from: "editable",
+              advice: privacy.feedback.text,
+            }),
+          ]),
+        },
+      ]);
+    }),
+  ));
 
 /** Containment matchers remain unknown rather than leaking Vitest's any into feed fields. */
 function arrayContaining(values: readonly unknown[]): unknown {
@@ -509,10 +504,10 @@ function arrayContaining(values: readonly unknown[]): unknown {
 }
 
 function readRefusedDecisions(directory: string) {
-  return withDaemonStore(directory, (store) =>
+  return withDaemonStore(directory, () =>
     Effect.gen(function* () {
       const { decisions } = yield* readDecisions({});
-      const { memberships } = yield* store.recover();
+      const { memberships } = yield* recover();
       return { decisions, memberships };
     }),
   );
@@ -520,40 +515,39 @@ function readRefusedDecisions(directory: string) {
 
 function refuseFirstGroupMessage(reviser: MessageMiddleware) {
   return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const editable = yield* subject.run(makeFirewall(options([reviser])));
-    const delivery = yield* outgoingThrough(subject, editable);
-    yield* Effect.flip(
-      delivery.operations.send({
-        input: {
-          to: Schema.decodeUnknownSync(MessageAddressInput)("group:carol,bob"),
-          text: "Hello",
-        },
+    const directory = stateDirectory();
+    const feed = yield* withDaemonStore(directory, () =>
+      Effect.gen(function* () {
+        const firewall = yield* makeFirewall(options([reviser]));
+        const [checked] = yield* firewall.check([
+          yield* preparedMessage("outgoing"),
+        ]);
+        yield* saveCheckDecision(
+          (yield* Effect.fromNullable(checked)).completion,
+        );
+        expect((yield* recover()).memberships).toEqual([]);
+        return yield* readDecisions({});
       }),
     );
-    expect((yield* subject.run(subject.store.recover())).memberships).toEqual(
-      [],
-    );
-    const feed = yield* subject.run(readDecisions({}));
     expect(feed.decisions.slice(0, 1)).toMatchObject([
       {
         direction: "outgoing",
-        peer: agentViewOf(subject.remote.card),
+        peer: bob,
         outcome: "reject",
         cause: "code",
         decidedBy: arrayContaining([
           expect.objectContaining({
-            ruleId: rule.id,
+            ruleId: contacts.id,
             from: "code",
-            advice: rule.feedback.text,
+            advice: contacts.feedback.text,
           }),
         ]),
       },
     ]);
     expect(feed.decisions.map((decision) => decision.peer)).toEqual([
-      agentViewOf(subject.remote.card),
-      agentViewOf(subject.third.card),
+      bob,
+      carol,
     ]);
-    return { directory: subject.directory, decisions: feed.decisions };
+    return { directory, decisions: feed.decisions };
   });
 }
