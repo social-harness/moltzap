@@ -1,4 +1,4 @@
-/** @file Collective operations through real Client storage, admission and send preparation. */
+/** @file Local result publication retains checked answers, advice and failure identity. */
 
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Duration, Effect, Fiber, Queue, Schema } from "effect";
@@ -16,15 +16,11 @@ import type { FirewallOptions } from "../../firewall/index.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
-import { collectiveKey } from "../../__tests__/collective-operation-fixtures.js";
 import {
   admitPending,
-  answerBob,
   bob,
   carol,
   collectiveContent,
-  formSchema,
-  gatherRequestContent,
   group,
   holdMarked,
   type IncomingRuntime,
@@ -32,7 +28,6 @@ import {
   question,
   seedRequest,
   sendInput,
-  unfinishedIntents,
 } from "../../__tests__/firewall-collective-fixtures.js";
 import {
   addConversation,
@@ -51,13 +46,9 @@ import {
   encodeRuntimeValue,
 } from "../../communication/store/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
-import {
-  renderCollectiveRequest,
-  renderCollectiveRequestBody,
-  renderOutcome,
-} from "../../host-protocol/render.js";
+import { renderOutcome } from "../../host-protocol/render.js";
 
-// @agent-code-guard/regression-only: Exercises collective admission, refusal and evidence through SQLite and the protocol engine.
+// @agent-code-guard/regression-only: Real SQLite and the protocol engine verify admission and host-visible publication.
 
 const resultId = collectiveOperationId(
   testAgentView("agent:alice").agentId,
@@ -65,13 +56,16 @@ const resultId = collectiveOperationId(
 );
 
 type ResultItem = Extract<InboundItem, { readonly kind: "collectiveResult" }>;
+
 type FailureItem = Extract<InboundItem, { readonly kind: "operationFailed" }>;
+
 type Outcome = ResultItem["outcomes"][number]["outcome"];
 
 /** The result item alone, so a test reads its outcomes without narrowing. */
 const resultItem = Schema.typeSchema(InboundItem).pipe(
   Schema.filter((item): item is ResultItem => item.kind === "collectiveResult"),
 );
+
 const failureItem = Schema.typeSchema(InboundItem).pipe(
   Schema.filter((item): item is FailureItem => item.kind === "operationFailed"),
 );
@@ -199,117 +193,6 @@ function readEventItem(runtime: IncomingRuntime, token?: DeliveryToken) {
     ),
     Effect.map((event) => event.item),
   );
-}
-
-function withholdsAHeldRequest() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    yield* seedRequest(subject, Date.now() + 60_000, `${marker} ${question}`);
-    const runtime = yield* incomingFixture(subject, holdMarked(), {}, false);
-    yield* admitPending(runtime);
-
-    const refusal = yield* Effect.flip(
-      runtime.delivery.operations.send({ input: answerBob({ slot: "mon" }) }),
-    );
-
-    expect(runtime.published).toEqual([]);
-    expect((yield* runtime.delivery.operations.readInbox({})).items).toEqual(
-      [],
-    );
-    expect(refusal).toMatchObject({ failure: { kind: "request-none" } });
-    expect(yield* unfinishedIntents(subject)).toEqual([]);
-  });
-}
-
-function showsAHeldRequestInGuidanceMode() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    yield* seedRequest(subject, Date.now() + 60_000, `${marker} ${question}`);
-    const runtime = yield* incomingFixture(
-      subject,
-      holdMarked(),
-      { mode: "guidance" },
-      false,
-    );
-    yield* admitPending(runtime);
-
-    const answering = yield* runtime.delivery.operations
-      .send({ input: answerBob({ slot: "mon" }) })
-      .pipe(Effect.forkScoped);
-    yield* Deferred.await(subject.outbound);
-
-    expect(runtime.published.map((event) => event.item)).toMatchObject([
-      { kind: "collectiveRequest", from: testAgentView(bob), to: bob },
-    ]);
-    expect(yield* unfinishedIntents(subject)).toHaveLength(1);
-    yield* Fiber.interrupt(answering);
-  });
-}
-
-/** The one request the subscription delivered. */
-function deliveredRequest(runtime: IncomingRuntime) {
-  const [delivered] = runtime.published;
-  return delivered?.item.kind === "collectiveRequest"
-    ? Effect.succeed(delivered.item)
-    : Effect.dieMessage("expected the delivered request");
-}
-
-function checksARequestAsItsQuestion() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const deadlineAt = Date.now() + 60_000;
-    const firstMessage = yield* seedIncoming(subject, true);
-    yield* subject.run(
-      appendCertifiedMessage(subject, firstMessage, [
-        ...(yield* gatherRequestContent(deadlineAt, question)),
-        { type: "data", value: { agenda: ["mon", "tue"] } },
-      ]),
-    );
-    const seen: MiddlewareInput[] = [];
-    const runtime = yield* incomingFixture(
-      subject,
-      holdMarked(seen),
-      {},
-      false,
-    );
-    yield* admitPending(runtime);
-
-    const message = yield* Effect.fromNullable(seen[0]?.event.message);
-    const delivered = yield* deliveredRequest(runtime);
-    const modelText = renderCollectiveRequest(delivered, question);
-    expect(message.text).toBe(renderCollectiveRequestBody(delivered));
-    expect(modelText.startsWith(`${message.text}\n`)).toBe(true);
-    expect(message.operation).toEqual({
-      kind: "request",
-      op: "gather",
-      operationId: collectiveOperationId(testAgentView(bob).agentId),
-      deadlineAt,
-    });
-    expect(seen[0]?.context.now).toEqual(expect.any(Number));
-    expect((yield* auditChecks(subject))[0]?.input.message).toMatchObject({
-      sender: subject.remote.card.agentId,
-    });
-  });
-}
-
-function withholdsARequestThatExpiresDuringItsCheck() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const deadlineAt = Date.now() + 3_000;
-    yield* seedRequest(subject, deadlineAt, question);
-    const slow = policy(() =>
-      Effect.sleep(
-        Duration.millis(Math.max(0, deadlineAt - Date.now()) + 50),
-      ).pipe(Effect.as(pass)),
-    );
-    const runtime = yield* incomingFixture(subject, slow, {}, false);
-    yield* admitPending(runtime);
-
-    expect(runtime.published).toEqual([]);
-    expect(yield* auditChecks(subject)).toMatchObject([
-      { disposition: "withheld", result: { judgment: "allow" } },
-    ]);
-  });
 }
 
 function withholdsOneAnswerFromEveryRuntimeRead() {
@@ -553,104 +436,6 @@ function leavesTheResultInLaterEvidence() {
 }
 
 /**
- * A request whose deadline lies past the last instant a date can represent,
- * as a hostile peer could message it, then a plain message after it.
- */
-function seedUnrenderableRequest(subject: Fixture) {
-  return Effect.gen(function* () {
-    const firstMessage = yield* seedIncoming(subject, true);
-    const hostile = yield* subject.run(
-      appendCertifiedMessage(subject, firstMessage, [
-        { type: "text", text: question },
-        {
-          type: "data",
-          value: {
-            [collectiveKey]: {
-              kind: "operation",
-              op: "gather",
-              operationId: collectiveOperationId(testAgentView(bob).agentId),
-              deadlineAt: 9_000_000_000_000_000,
-              requestedSchema: formSchema,
-            },
-          },
-        },
-      ]),
-    );
-    return yield* subject.run(
-      appendCertifiedMessage(subject, hostile, "A later message"),
-    );
-  }).pipe(Effect.withSpan("seedUnrenderableRequest"));
-}
-
-function checksPastAnUnrenderableDeadline() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    yield* seedUnrenderableRequest(subject);
-    const seen: MiddlewareInput[] = [];
-    const runtime = yield* incomingFixture(
-      subject,
-      holdMarked(seen),
-      {},
-      false,
-    );
-    yield* admitPending(runtime);
-
-    expect(runtime.published.map((event) => event.item)).toMatchObject([
-      {
-        kind: "multicast",
-        message: { content: [{ text: "A later message" }] },
-      },
-    ]);
-    expect(seen.at(-1)?.context.history.at(-1)).toMatchObject({
-      visibility: "assessor",
-    });
-    expect(seen.at(-1)?.context.history.at(-1)?.operation).toBeUndefined();
-  });
-}
-
-function retiresARequestThatExpiresBeforeItsCheck() {
-  return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const deadlineAt = Date.now() + 3_000;
-    const firstMessage = yield* seedIncoming(subject, true);
-    const earlier = yield* subject.run(
-      appendCertifiedMessage(subject, firstMessage, "Earlier"),
-    );
-    yield* subject.run(
-      appendCertifiedMessage(
-        subject,
-        earlier,
-        yield* gatherRequestContent(deadlineAt, question),
-      ),
-    );
-    const runtime = yield* incomingFixture(
-      subject,
-      policy((input) =>
-        input.event.message.operation === undefined
-          ? Effect.sleep(
-              Duration.millis(Math.max(0, deadlineAt - Date.now()) + 50),
-            ).pipe(Effect.as(pass))
-          : Effect.dieMessage("a request past its deadline is never checked"),
-      ),
-      {},
-      false,
-    );
-    yield* admitPending(runtime);
-    yield* Queue.take(runtime.completed);
-
-    const refusal = yield* Effect.flip(
-      runtime.delivery.operations.send({ input: answerBob({ slot: "mon" }) }),
-    );
-
-    expect(runtime.published.map((event) => event.item.kind)).toEqual([
-      "multicast",
-    ]);
-    expect(yield* auditChecks(subject)).toHaveLength(1);
-    expect(refusal).toMatchObject({ failure: { kind: "request-none" } });
-  });
-}
-
-/**
  * Bob's request reaches alice's runtime neither shown nor held: its check
  * allows it but outlasts its deadline. A result naming it then follows.
  */
@@ -855,34 +640,7 @@ function keepsTwoFailuresOfOneOperationApart() {
   });
 }
 
-describe("received requests under a firewall", () => {
-  it(
-    "withholds a request an enforcing check holds, so it cannot be answered",
-    withholdsAHeldRequest,
-  );
-  it(
-    "shows a held request in guidance mode, answerable",
-    showsAHeldRequestInGuidanceMode,
-  );
-  it(
-    "checks a request as exactly the question a model reads, before its answer instructions and without its data parts",
-    checksARequestAsItsQuestion,
-  );
-  it(
-    "does not present a request whose deadline passes while it is checked",
-    withholdsARequestThatExpiresDuringItsCheck,
-  );
-  it(
-    "retires a request whose deadline passes before its check starts, without checking it",
-    retiresARequestThatExpiresBeforeItsCheck,
-  );
-  it(
-    "checks later messages past a request whose deadline no date can represent",
-    checksPastAnUnrenderableDeadline,
-  );
-});
-
-describe("collective results under a firewall", () => {
+describe("result publication", () => {
   it(
     "withholds one answer from every runtime read while the result's other answers stay",
     withholdsOneAnswerFromEveryRuntimeRead,
@@ -921,7 +679,7 @@ describe("collective results under a firewall", () => {
   );
 });
 
-describe("collective operation failures under a firewall", () => {
+describe("operation failure publication", () => {
   it(
     "admits an operation failure without inference",
     admitsAFailureWithoutInference,
