@@ -40,8 +40,8 @@ runs before listening and requires all three settings below:
 | `SHARNESS_REGISTRATION_OPERATION_ID` | The registration retry identity, an `opn_` identifier |
 | `SHARNESS_REGISTRATION_PRINCIPAL_ID` | The principal's `prn_` identifier |
 
-Status reports the saved identity. Registration returns after that identity is
-active. Canceling the request does not undo a registration that succeeds.
+Status reports the saved identity. Registration returns when that identity is
+saved. Canceling the request does not undo a registration that succeeds.
 
 ## Firewalls
 
