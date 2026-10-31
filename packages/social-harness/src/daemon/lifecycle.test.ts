@@ -8,6 +8,7 @@ import {
 import { Data, Deferred, Effect, Fiber } from "effect";
 import { expect } from "vitest";
 import {
+  type Fixture,
   makeFixture,
   runtimeDependencies,
 } from "../__tests__/daemon-runtime-fixtures.js";
@@ -68,124 +69,141 @@ const acquireClient = (address: URL) => {
   );
 };
 
-// @agent-code-guard/regression-only: an unregistered process serves authenticated registration and status before network activation.
+const runRegistrationFixture = (
+  fixture: Fixture,
+  dependencies: DaemonRuntimeDependencies,
+) =>
+  runDaemonRuntime(
+    { bootstrap: fixture.bootstrap, registration: { kind: "unregistered" } },
+    dependencies,
+  ).pipe(
+    Effect.scoped,
+    Effect.provideService(Registry, {
+      register: () =>
+        Effect.succeed({ kind: "registered", agentCard: fixture.localCard }),
+      lookup: unusedNetwork,
+    }),
+    Effect.provideService(Router, { send: unusedNetwork, poll: unusedNetwork }),
+    Effect.forkScoped,
+  );
+
+const startupStatus = Effect.gen(function* () {
+  const fixture = yield* makeFixture;
+  const ready = yield* Deferred.make<URL>();
+  const daemon = yield* runDaemonRuntime(
+    { bootstrap: fixture.bootstrap, registration: { kind: "unregistered" } },
+    runtimeDependencies(listener(ready)),
+  ).pipe(withoutNetwork, Effect.forkScoped);
+  const address = yield* Deferred.await(ready).pipe(
+    Effect.raceFirst(Fiber.join(daemon)),
+  );
+  const client = yield* acquireClient(address);
+  const status = yield* Effect.tryPromise(() =>
+    client.callTool({ name: "status", arguments: {} }),
+  );
+  yield* Fiber.interrupt(daemon);
+  return status.structuredContent;
+});
+
+const listenerFailure = Effect.gen(function* () {
+  const fixture = yield* makeFixture;
+  return yield* runDaemonRuntime(
+    { bootstrap: fixture.bootstrap, registration: { kind: "unregistered" } },
+    runtimeDependencies(() => Effect.fail(new ListenerTestFailure())),
+  ).pipe(withoutNetwork, Effect.flip);
+});
+
+const registersBeforeCommunicationStarts = Effect.gen(function* () {
+  const fixture = yield* makeFixture;
+  const ready = yield* Deferred.make<URL>();
+  const starting = yield* Deferred.make<undefined>();
+  const stopped = yield* Deferred.make<undefined>();
+  const daemon = yield* runRegistrationFixture(fixture, {
+    ...runtimeDependencies(listener(ready)),
+    makeWorker: () =>
+      Deferred.succeed(starting, undefined).pipe(
+        Effect.zipRight(Effect.never),
+        Effect.onInterrupt(() => Deferred.succeed(stopped, undefined)),
+      ),
+  });
+  const address = yield* Deferred.await(ready).pipe(
+    Effect.raceFirst(Fiber.join(daemon)),
+  );
+  const client = yield* acquireClient(address);
+  const registered = yield* Effect.tryPromise(() =>
+    client.callTool({ name: "register", arguments: fixture.registerRequest }),
+  );
+  yield* Deferred.await(starting);
+  const tools = yield* Effect.tryPromise(() => client.listTools());
+  const status = yield* Effect.tryPromise(() =>
+    client.callTool({ name: "status", arguments: {} }),
+  );
+  yield* Fiber.interrupt(daemon);
+  yield* Deferred.await(stopped);
+  return {
+    registration: registered.structuredContent,
+    status: status.structuredContent,
+    tools: tools.tools.map(({ name }) => name),
+    agentName: fixture.localCard.agentName,
+  };
+});
+
+const communicationStartupFailure = Effect.gen(function* () {
+  const fixture = yield* makeFixture;
+  return yield* runDaemonRuntime(
+    {
+      bootstrap: fixture.bootstrap,
+      registration: { kind: "active", agentCard: fixture.localCard },
+    },
+    {
+      ...runtimeDependencies(() => Effect.void),
+      makeWorker: () => Effect.fail(new RouterWorkerTransportError()),
+    },
+  ).pipe(withoutNetwork, Effect.flip);
+});
+
+// @agent-code-guard/regression-only: lifecycle regressions cover saved registration, startup failure and cancellation over real loopback HTTP.
 it("serves authenticated status before registration over HTTP", () =>
-  withDaemonStore(stateDirectory(), () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeFixture;
-      const ready = yield* Deferred.make<URL>();
-      const daemon = yield* runDaemonRuntime(
-        {
-          bootstrap: fixture.bootstrap,
-          registration: { kind: "unregistered" },
-        },
-        runtimeDependencies(listener(ready)),
-      ).pipe(withoutNetwork, Effect.forkScoped);
-      const address = yield* Deferred.await(ready).pipe(
-        Effect.raceFirst(Fiber.join(daemon)),
-      );
-      const client = yield* acquireClient(address);
-      const status = yield* Effect.tryPromise(() =>
-        client.callTool({ name: "status", arguments: {} }),
-      );
-      expect(status.structuredContent).toEqual({ kind: "unregistered" });
-      yield* Fiber.interrupt(daemon);
+  withDaemonStore(
+    stateDirectory(),
+    Effect.fn(function* () {
+      expect(yield* startupStatus).toEqual({ kind: "unregistered" });
     }),
   ));
+
 it("reports listener acquisition failure without activating communication", () =>
-  withDaemonStore(stateDirectory(), () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeFixture;
-      const error = yield* runDaemonRuntime(
-        {
-          bootstrap: fixture.bootstrap,
-          registration: { kind: "unregistered" },
-        },
-        runtimeDependencies(() => Effect.fail(new ListenerTestFailure())),
-      ).pipe(withoutNetwork, Effect.flip);
-      expect(error).toEqual(new DaemonRuntimeError({ phase: "listener" }));
+  withDaemonStore(
+    stateDirectory(),
+    Effect.fn(function* () {
+      expect(yield* listenerFailure).toEqual(
+        new DaemonRuntimeError({ phase: "listener" }),
+      );
     }),
   ));
 
 it("returns saved registration while communication startup waits", () =>
-  withDaemonStore(stateDirectory(), () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeFixture;
-      const ready = yield* Deferred.make<URL>();
-      const starting = yield* Deferred.make<undefined>();
-      const stopped = yield* Deferred.make<undefined>();
-      const daemon = yield* runDaemonRuntime(
-        {
-          bootstrap: fixture.bootstrap,
-          registration: { kind: "unregistered" },
-        },
-        {
-          ...runtimeDependencies(listener(ready)),
-          makeWorker: () =>
-            Deferred.succeed(starting, undefined).pipe(
-              Effect.zipRight(Effect.never),
-              Effect.onInterrupt(() => Deferred.succeed(stopped, undefined)),
-            ),
-        },
-      ).pipe(
-        Effect.scoped,
-        Effect.provideService(Registry, {
-          register: () =>
-            Effect.succeed({
-              kind: "registered",
-              agentCard: fixture.localCard,
-            }),
-          lookup: unusedNetwork,
-        }),
-        Effect.provideService(Router, {
-          send: unusedNetwork,
-          poll: unusedNetwork,
-        }),
-        Effect.forkScoped,
-      );
-      const address = yield* Deferred.await(ready).pipe(
-        Effect.raceFirst(Fiber.join(daemon)),
-      );
-      const client = yield* acquireClient(address);
-      const registered = yield* Effect.tryPromise(() =>
-        client.callTool({
-          name: "register",
-          arguments: fixture.registerRequest,
-        }),
-      );
-      expect(registered.structuredContent).toMatchObject({
+  withDaemonStore(
+    stateDirectory(),
+    Effect.fn(function* () {
+      const result = yield* registersBeforeCommunicationStarts;
+      expect(result.registration).toMatchObject({
         kind: "registered",
-        agent: { agentName: fixture.localCard.agentName },
+        agent: { agentName: result.agentName },
       });
-      yield* Deferred.await(starting);
-      const tools = yield* Effect.tryPromise(() => client.listTools());
-      expect(tools.tools.map(({ name }) => name)).toContain(HARNESS_SEND_TOOL);
-      const status = yield* Effect.tryPromise(() =>
-        client.callTool({ name: "status", arguments: {} }),
-      );
-      expect(status.structuredContent).toMatchObject({
+      expect(result.tools).toContain(HARNESS_SEND_TOOL);
+      expect(result.status).toMatchObject({
         kind: "active",
-        agent: { agentName: fixture.localCard.agentName },
+        agent: { agentName: result.agentName },
       });
-      yield* Fiber.interrupt(daemon);
-      yield* Deferred.await(stopped);
     }),
   ));
 
 it("stops the daemon when independent communication startup fails", () =>
-  withDaemonStore(stateDirectory(), () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeFixture;
-      const error = yield* runDaemonRuntime(
-        {
-          bootstrap: fixture.bootstrap,
-          registration: { kind: "active", agentCard: fixture.localCard },
-        },
-        {
-          ...runtimeDependencies(() => Effect.void),
-          makeWorker: () => Effect.fail(new RouterWorkerTransportError()),
-        },
-      ).pipe(withoutNetwork, Effect.flip);
-      expect(error).toEqual(new DaemonRuntimeError({ phase: "listener" }));
+  withDaemonStore(
+    stateDirectory(),
+    Effect.fn(function* () {
+      expect(yield* communicationStartupFailure).toEqual(
+        new DaemonRuntimeError({ phase: "listener" }),
+      );
     }),
   ));

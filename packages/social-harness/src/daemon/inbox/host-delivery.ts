@@ -159,8 +159,6 @@ type DeliveryContext = HostDeliveryInput & {
   readonly inboxUpdates: PubSub.PubSub<undefined>;
 };
 
-const notRegistered = Effect.fail({ reason: "not-registered" });
-
 /**
  * Record one completed `send` in the history export with its input and how it
  * ended: the messages certified by its return, or the error it returned.
@@ -382,26 +380,19 @@ const acknowledgeDelivery =
   (input: DeliveryContext): DeliveryOperations["acknowledgeDelivery"] =>
   (deliveryToken) =>
     input.state.gate.withPermits(1)(
-      Effect.suspend(() =>
-        input.collectives() === undefined
-          ? Effect.fail(
-              new DeliveryAcknowledgeError({ reason: "unknown-delivery" }),
-            )
-          : acknowledgeInboxItem(deliveryToken)
-              .pipe(Effect.provideService(SqlClient.SqlClient, input.sql))
-              .pipe(
-                Effect.catchTag("EndpointStoreError", (error) =>
-                  Effect.fail(
-                    new DeliveryAcknowledgeError({
-                      reason:
-                        error.reason === "not-found"
-                          ? "unknown-delivery"
-                          : "persistence-failed",
-                    }),
-                  ),
-                ),
-                Effect.tap(() => forgetDelivery(input.state, deliveryToken)),
-              ),
+      acknowledgeInboxItem(deliveryToken).pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+        Effect.catchTag("EndpointStoreError", (error) =>
+          Effect.fail(
+            new DeliveryAcknowledgeError({
+              reason:
+                error.reason === "not-found"
+                  ? "unknown-delivery"
+                  : "persistence-failed",
+            }),
+          ),
+        ),
+        Effect.tap(() => forgetDelivery(input.state, deliveryToken)),
       ),
     );
 
@@ -693,15 +684,11 @@ function deliveryOperations(input: DeliveryContext): DeliveryOperations {
         Effect.provideService(SqlClient.SqlClient, input.sql),
       ),
     readEvent: ({ eventId }: { readonly eventId: string }) =>
-      input.collectives() === undefined
-        ? notRegistered
-        : readRuntimeEvent(eventId).pipe(
-            Effect.provideService(SqlClient.SqlClient, input.sql),
-          ),
+      readRuntimeEvent(eventId).pipe(
+        Effect.provideService(SqlClient.SqlClient, input.sql),
+      ),
     readInbox: (request: HarnessReadInboxRequest) =>
-      input.collectives() === undefined
-        ? notRegistered
-        : readAndExportInbox(input, request),
+      readAndExportInbox(input, request),
     acknowledgeDelivery: acknowledgeDelivery(input),
   });
 }

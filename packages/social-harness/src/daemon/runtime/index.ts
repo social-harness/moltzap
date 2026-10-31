@@ -347,24 +347,21 @@ function daemonDelivery(
   });
 }
 
-/** Registered callers wait for communication; unregistered calls retain their existing refusals. */
+/** Sends wait for communication startup while inbox operations use saved state. */
 function deliveryOperations(
   environment: DaemonEnvironment,
   ready: Deferred.Deferred<undefined>,
 ): HostDelivery["operations"] {
   const operations = environment.delivery.operations;
-  const afterStartup = <A, E>(operation: () => Effect.Effect<A, E>) =>
-    Effect.suspend(() =>
-      environment.state.registration.kind === "unregistered"
-        ? operation()
-        : Deferred.await(ready).pipe(Effect.flatMap(operation)),
-    );
   return {
     ...operations,
-    send: (request) => afterStartup(() => operations.send(request)),
-    readEvent: (request) => afterStartup(() => operations.readEvent(request)),
-    readInbox: (request) => afterStartup(() => operations.readInbox(request)),
-    acknowledgeDelivery: (token) =>
-      afterStartup(() => operations.acknowledgeDelivery(token)),
+    send: (request) =>
+      Effect.suspend(() =>
+        environment.state.registration.kind === "unregistered"
+          ? operations.send(request)
+          : Deferred.await(ready).pipe(
+              Effect.zipRight(operations.send(request)),
+            ),
+      ),
   };
 }

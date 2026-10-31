@@ -1,5 +1,5 @@
 /**
- * @file Host operations over one service's delivery: registration gating, the
+ * @file Host operations over one service's delivery: communication startup, the
  * send export, local-item reads and acknowledgment, the webhook view's receipt
  * and inbox reads, and the pending-delivery passes that publish to a
  * subscriber.
@@ -87,28 +87,26 @@ const makeFixture = () =>
 
 const deliveryFixture = makeFixture();
 
-/**
- * An unregistered service refuses every host operation with its closed
- * reason and records nothing; the active layer is read on each call, so a
- * layer installed after construction serves the next send.
- */
-const refusesUntilRegistered = () =>
+/** Saved inbox items remain readable while communication starts. */
+const readsInboxBeforeCommunicationStarts = () =>
   Effect.gen(function* () {
     const { delivery, records, slot } = yield* deliveryFixture;
     const { operations } = delivery;
     expect(yield* Effect.flip(operations.send({ input }))).toEqual(
       new SendError({ reason: "not-registered" }),
     );
-    expect(yield* Effect.flip(operations.readInbox({}))).toEqual({
-      reason: "not-registered",
-    });
+    expect(records).toEqual([]);
+    yield* delivery.queueLocalItem(failure);
+    const page = yield* operations.readInbox({});
+    expect(page.items.map((entry) => entry.item)).toEqual([failure]);
     expect(
-      yield* Effect.flip(operations.readEvent({ eventId: "dlv_absent" })),
-    ).toEqual({ reason: "not-registered" });
+      yield* operations.readEvent({
+        eventId: page.items[0]?.deliveryToken ?? unboundToken,
+      }),
+    ).toMatchObject({ item: failure });
     expect(
       (yield* Effect.flip(operations.acknowledgeDelivery(unboundToken))).reason,
     ).toBe("unknown-delivery");
-    expect(records).toEqual([]);
     slot.collectives = {
       send: () =>
         Effect.succeed({ kind: "collective", operationId, msgIds: [msgId] }),
@@ -293,8 +291,8 @@ const releasesTheGateWhenAPassFails = () =>
 
 describe("host delivery", () => {
   it(
-    "refuses host operations until a collective layer is active",
-    refusesUntilRegistered,
+    "reads saved inbox items before communication starts",
+    readsInboxBeforeCommunicationStarts,
   );
   it("records each completed send in the history export", exportsEachSend);
   it(
