@@ -3,11 +3,11 @@
 import type * as SqlClient from "@effect/sql/SqlClient";
 import { Clock, Effect, Exit, Fiber } from "effect";
 import type { SendError } from "../conversations/errors.js";
-import type { InboundMessage } from "../conversations/message.js";
 import type { RecordHash } from "../records/index.js";
 import type { CollectiveResultItem } from "./inbound.js";
 import type { CertifiedMessage } from "./ports.js";
 import type { ResponseValue } from "./wire/index.js";
+import { type Message, replyAddress } from "../message.js";
 import { type AgentAddress, agentAddressOf } from "../records/values.js";
 import * as Store from "../store/index.js";
 import { encodeRuntimeValue, EndpointStoreError } from "../store/index.js";
@@ -211,7 +211,7 @@ export function recordCountedAnswer(
         Effect.gen(function* () {
           const { message } = certified;
           const member = open.members.find(
-            (candidate) => candidate.agentId === message.sender.agentId,
+            (candidate) => candidate.agentId === message.author.agentId,
           );
           if (
             state.gathers.get(value.operationId) !== open ||
@@ -225,13 +225,15 @@ export function recordCountedAnswer(
             operationId: value.operationId,
             member: agentAddressOf(member),
             recordHash: certified.recordHash,
+            authorAgentId: message.author.agentId,
+            msgId: message.msgId,
           };
           if (!(yield* retainCountedAnswer(state, open, answer))) {
             return;
           }
           const outcome = yield* outcomeOfResponse(open.requestedSchema, value);
           open.outcomes.set(answer.member, outcome);
-          open.answerHashes.set(answer.member, answer.recordHash);
+          open.answers.set(answer.member, answer);
         }),
       ),
     )
@@ -408,9 +410,9 @@ function freezeResult(
       const selection = yield* encodeRuntimeValue({
         kind: "result",
         ...closure,
-        answers: [...open.answerHashes].map(([member, recordHash]) => ({
+        answers: [...open.answers].map(([member, answer]) => ({
           member,
-          recordHash,
+          recordHash: answer.recordHash,
         })),
       });
       yield* Store.finalizeCollectiveOperation(operationId, selection);
@@ -485,15 +487,12 @@ function retainCountedAnswer(
   });
 }
 
-function answeredInConversation(
-  open: OpenGather,
-  message: InboundMessage,
-): boolean {
+function answeredInConversation(open: OpenGather, message: Message): boolean {
   switch (open.op) {
     case "gather":
-      return message.kind === "direct";
+      return message.recipients.length === 1;
     case "all_gather":
-      return message.kind === "group" && message.address === open.to;
+      return message.recipients.length > 1 && replyAddress(message) === open.to;
     default: {
       const exhaustive: never = open.op;
       return exhaustive;

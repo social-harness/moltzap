@@ -4,9 +4,11 @@ import type { PreparedSend } from "../conversations/index.js";
 import type { CollectiveMemberOutcome } from "./inbound.js";
 import type { CollectivePorts } from "./ports.js";
 import type { ReceivedRequest } from "./received-request.js";
+import type { CountedAnswer } from "./shared-answers.js";
 import { encodeCanonical } from "../../encoding/canonical-json.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { AgentView } from "../../identity/cards.js";
+import { MessageReference } from "../message.js";
 import { Content, MsgId, RecordHash } from "../records/index.js";
 import { AgentAddress, MessageAddressInput } from "../records/values.js";
 import {
@@ -58,15 +60,15 @@ const collectiveSelection = Schema.Union(
     kind: Schema.Literal("close"),
     ...collectiveClosure.fields,
     msgId: MsgId,
-    included: Schema.Array(RecordHash),
+    included: Schema.Array(MessageReference),
   }),
   exactStruct({ kind: Schema.Literal("refused", "invalid-close") }),
 );
 
 /**
  * A gather or all_gather this endpoint started, before its deadline timer is
- * running. `answerHashes` holds the certified record of each counted answer,
- * which an all_gather's close lists.
+ * running. Counted answer identities select the close; their private record
+ * hashes retain the evidence used when presenting the result.
  */
 export interface GatherRequest {
   readonly op: Extract<
@@ -78,7 +80,7 @@ export interface GatherRequest {
   readonly members: Members;
   readonly requestedSchema: FormModeSchema;
   readonly outcomes: Map<AgentAddress, CollectiveMemberOutcome>;
-  readonly answerHashes: Map<AgentAddress, RecordHash>;
+  readonly answers: Map<AgentAddress, CountedAnswer>;
 }
 
 /**

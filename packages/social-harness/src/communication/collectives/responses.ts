@@ -3,11 +3,12 @@
 import type * as SqlClient from "@effect/sql/SqlClient";
 import { Clock, Effect, Either, Option, Schema } from "effect";
 import type { CollectiveSendError } from "./ports.js";
-import type { CertifiedAnswer } from "./shared-answers.js";
+import type { RecordedAnswer } from "./shared-answers.js";
 import type { CollectiveState } from "./state.js";
 import { SendError } from "../conversations/errors.js";
 import {
   type BindHold,
+  type EngineSentMessage,
   type PreparedSend,
   preparedSendData,
   resolutionFailure,
@@ -121,14 +122,7 @@ export function answer(
         onFailure: (error) =>
           settleUncertifiedAnswer(state, request, value, error),
         onSuccess: (sent) =>
-          Effect.ignore(
-            settleAnswer(
-              state,
-              operationId,
-              request,
-              Option.some({ recordHash: sent.recordHash, response: value }),
-            ),
-          ),
+          Effect.ignore(recordOwnAnswer(state, request, value, sent)),
       }),
       Effect.onInterrupt(() => settleUncertifiedAnswer(state, request, value)),
     );
@@ -177,12 +171,10 @@ export function restoreResponse(
           Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
         ),
       );
-      yield* settleAnswer(
-        state,
-        response.operationId,
-        request,
-        Option.some({ recordHash, response }),
-      ).pipe(
+      yield* recordOwnAnswer(state, request, response, {
+        msgId: intent.msgId,
+        recordHash,
+      }).pipe(
         Effect.catchTag("CollectiveEmitError", () =>
           Effect.fail(new EndpointStoreError({ reason: "persistence" })),
         ),
@@ -289,18 +281,30 @@ function observeResponse(
   msgId: MsgId,
 ): Effect.Effect<void, never, SqlClient.SqlClient> {
   return state.ports.observeMessage(msgId).pipe(
-    Effect.flatMap((sent) =>
-      settleAnswer(
-        state,
-        response.operationId,
-        request,
-        Option.some({ recordHash: sent.recordHash, response }),
-      ),
-    ),
+    Effect.flatMap((sent) => recordOwnAnswer(state, request, response, sent)),
     Effect.ignore,
     Effect.interruptible,
     Effect.forkIn(state.ports.scope),
     Effect.asVoid,
+  );
+}
+
+/** A member's own certified answer participates in the same close selection as peer answers. */
+function recordOwnAnswer(
+  state: CollectiveState,
+  request: ReceivedRequest,
+  response: ResponseValue,
+  sent: EngineSentMessage,
+) {
+  return settleAnswer(
+    state,
+    response.operationId,
+    request,
+    Option.some({
+      authorAgentId: state.ports.self.agentId,
+      ...sent,
+      response,
+    }),
   );
 }
 
@@ -317,7 +321,7 @@ function settleAnswer(
   state: CollectiveState,
   operationId: CollectiveId,
   request: ReceivedRequest,
-  certified: Option.Option<CertifiedAnswer>,
+  certified: Option.Option<RecordedAnswer>,
 ): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     if (request.state === "closed") {

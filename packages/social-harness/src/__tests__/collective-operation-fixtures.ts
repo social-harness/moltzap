@@ -16,7 +16,7 @@ import {
   type EngineSendInput,
   RecipientResolutionError,
 } from "../communication/conversations/index.js";
-import { InboundMessage } from "../communication/conversations/message.js";
+import { Message } from "../communication/message.js";
 import { MsgId, RecordHash } from "../communication/records/index.js";
 import { AgentAddress } from "../communication/records/values.js";
 import { digest, testAgentView } from "./agent-card-fixtures.js";
@@ -207,12 +207,11 @@ export const makeLayer = (
  * @returns The decoded inbound message.
  */
 export const directMessage = (sender: string, content: unknown) =>
-  Schema.decodeUnknownSync(InboundMessage)({
-    kind: "direct",
+  Schema.decodeUnknownSync(Message)({
     msgId: msgId(9),
-    address: sender,
-    sender: testAgentView(sender),
     content,
+    author: testAgentView(sender),
+    recipients: [testAgentView("agent:alice")],
   });
 
 /**
@@ -268,7 +267,7 @@ export const answerMessage = (
  */
 export const classifyMessage = (
   layer: CollectiveOperations,
-  message: InboundMessage,
+  message: Message,
 ) =>
   layer.classify({
     message,

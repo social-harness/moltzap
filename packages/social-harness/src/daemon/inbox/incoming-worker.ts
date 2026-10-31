@@ -123,7 +123,9 @@ function checkPendingMessage(
       case "multicast":
         return yield* checkMessage(input, environment, entry, item);
       case "collectiveRequest": {
-        if ((yield* Clock.currentTimeMillis) >= item.deadlineAt) {
+        if (
+          (yield* Clock.currentTimeMillis) >= item.message.content.deadlineAt
+        ) {
           yield* retireFirewallItem(entry.deliveryToken);
           return yield* input.showDisposition(
             entry.deliveryToken,
@@ -161,7 +163,7 @@ function checkMessage(
     }
     const expired =
       item.kind === "collectiveRequest" &&
-      (yield* Clock.currentTimeMillis) >= item.deadlineAt;
+      (yield* Clock.currentTimeMillis) >= item.message.content.deadlineAt;
     const disposition = yield* saveMessageDecision(
       {
         deliveryToken: entry.deliveryToken,

@@ -5,6 +5,7 @@ import type {
   MessageAddressInput,
 } from "../communication/records/values.js";
 import type { InboundItem } from "./items.js";
+import { replyAddress } from "../communication/message.js";
 import { type LocalGuidance, renderLocalGuidance } from "./advice.js";
 
 type CollectiveRequestItem = Extract<
@@ -66,7 +67,7 @@ export function groupMembers(address: MessageAddressInput): readonly string[] {
  * Only the last line differs by host, since each host's model sends the
  * answer through its own tool.
  * @param item The delivered question.
- * @param howToAnswer The host's sentence naming the tool that sends the answer to `item.to`.
+ * @param howToAnswer The host's sentence naming the tool that sends the answer to its conversation.
  * @param guidance Optional local instructions accompanying the peer question.
  * @returns The text of the model's turn.
  */
@@ -76,7 +77,7 @@ export function renderCollectiveRequest(
   guidance?: LocalGuidance,
 ): string {
   const body = renderCollectiveRequestBody(item);
-  const operationId = JSON.stringify(item.operationId);
+  const operationId = JSON.stringify(item.message.content.operationId);
   const answerInstructions = [
     `Answer with: {"action":"accept","operationId":${operationId},"content":{...}} where content matches the form, or {"action":"decline","operationId":${operationId}}`,
     howToAnswer,
@@ -101,13 +102,13 @@ export function renderCollectiveRequestBody(
   item: CollectiveRequestItem,
 ): string {
   const asked =
-    item.op === "all_gather"
-      ? `all_gather from agent:${item.from.agentName} to ${item.to}`
-      : `gather from agent:${item.from.agentName}`;
+    item.message.content.op === "all_gather"
+      ? `all_gather from agent:${item.message.author.agentName} to ${replyAddress(item.message)}`
+      : `gather from agent:${item.message.author.agentName}`;
   return [
-    `${asked}, open until ${new Date(item.deadlineAt).toISOString()}.`,
-    `Question: ${item.question}`,
-    `Form: ${JSON.stringify(item.requestedSchema)}`,
+    `${asked}, open until ${new Date(item.message.content.deadlineAt).toISOString()}.`,
+    `Question: ${item.message.content.question}`,
+    `Form: ${JSON.stringify(item.message.content.requestedSchema)}`,
   ].join("\n");
 }
 

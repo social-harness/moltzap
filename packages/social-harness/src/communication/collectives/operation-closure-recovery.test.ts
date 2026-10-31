@@ -281,7 +281,16 @@ function verifyRecoveredClose(
         kind: "close",
         operationId: interrupted.operation.operationId,
         ...metadata,
-        included: [interrupted.answer.actionCertifiedRecord.recordHash],
+        included: [
+          {
+            authorAgentId:
+              interrupted.answer.actionCertifiedRecord.recordCore.action
+                .messageIntent.authorAgentId,
+            msgId:
+              interrupted.answer.actionCertifiedRecord.recordCore.action
+                .messageIntent.msgId,
+          },
+        ],
       }),
     );
     return metadata;

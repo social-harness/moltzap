@@ -16,7 +16,7 @@ import { HistoryExportRecord, makeHistoryExport } from "./host-traffic-log.js";
 const decodeLine = Schema.decodeUnknownSync(
   Schema.parseJson(HistoryExportRecord),
 );
-const POST_ID = Schema.decodeUnknownSync(MsgId)(digest("msg_", 5));
+const MESSAGE_ID = Schema.decodeUnknownSync(MsgId)(digest("msg_", 5));
 const AT = DateTime.unsafeMake("2026-09-01T12:00:00.000Z");
 const NO_SPACE = "ENOSPC: no space left on device";
 
@@ -26,11 +26,10 @@ function inbound(): HistoryExportRecord {
     item: Schema.decodeUnknownSync(InboundItem)({
       kind: "multicast",
       message: {
-        kind: "direct",
-        msgId: POST_ID,
-        address: "agent:bob",
-        sender: testAgentView("agent:bob"),
+        msgId: MESSAGE_ID,
         content: [{ type: "text", text: "hello" }],
+        author: testAgentView("agent:bob"),
+        recipients: [testAgentView("agent:alice")],
       },
     }),
     at: AT,
@@ -46,7 +45,7 @@ function outbound(): HistoryExportRecord {
   return {
     kind: "outbound",
     input,
-    outcome: { kind: "sent", msgIds: [POST_ID] },
+    outcome: { kind: "sent", msgIds: [MESSAGE_ID] },
     at: AT,
   };
 }

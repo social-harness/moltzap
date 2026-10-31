@@ -25,7 +25,7 @@ import {
   type TextRule,
 } from "./config.js";
 import {
-  type Firewall,
+  type FirewallOperations,
   type FirewallOptions,
   makeFirewall,
   type PreparedFirewallCheck,
@@ -164,7 +164,7 @@ function rejectOversizedEdit(
 }
 
 function expectChecks(
-  installed: Firewall,
+  installed: FirewallOperations,
   requests: readonly DecisionRequest[],
 ) {
   return Effect.gen(function* () {

@@ -8,7 +8,7 @@ import type { OpenRequest, ReceivedRequest } from "./received-request.js";
 import type { HeldClose } from "./shared-answers.js";
 import { AgentCard, AgentView } from "../../identity/cards.js";
 import { preparedSendData } from "../conversations/index.js";
-import { InboundMessage } from "../conversations/message.js";
+import { Message } from "../message.js";
 import { AgentAddress, Content, RecordHash } from "../records/index.js";
 import * as Store from "../store/index.js";
 import {
@@ -250,7 +250,7 @@ function restoreLocal(
     yield* validatePreparedRequests(state, descriptor);
     return {
       operationId,
-      open: { ...descriptor, outcomes: new Map(), answerHashes: new Map() },
+      open: { ...descriptor, outcomes: new Map(), answers: new Map() },
       content: descriptor.content,
       deadlineAt: descriptor.deadlineAt,
       waitUntil: descriptor.waitUntil,
@@ -346,7 +346,7 @@ function replayMessage(
   hash: string,
 ) {
   return Effect.gen(function* () {
-    const message = yield* decodeRuntimeValue(InboundMessage, canonicalMessage);
+    const message = yield* decodeRuntimeValue(Message, canonicalMessage);
     const recordHash = yield* storedValue(RecordHash, hash);
     yield* actions
       .classify({ message, recordHash })

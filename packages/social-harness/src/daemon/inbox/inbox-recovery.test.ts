@@ -25,7 +25,7 @@ import {
 } from "../../__tests__/store-schema-fixtures.js";
 import { encodeCollectiveContent } from "../../communication/collectives/wire/index.js";
 import { SendError } from "../../communication/conversations/errors.js";
-import { InboundMessage } from "../../communication/conversations/message.js";
+import { Message, replyAddress } from "../../communication/message.js";
 import { RecordHash } from "../../communication/records/index.js";
 import { AgentAddress } from "../../communication/records/values.js";
 import {
@@ -43,11 +43,8 @@ const operationId = collectiveOperationId(testAgentView(sender).agentId, 8);
 const { foundation, record } = storedConversation("pending-request");
 const recordHash = Schema.decodeUnknownSync(RecordHash)(record.recordHash);
 const message = () =>
-  Schema.decodeUnknownSync(InboundMessage)({
-    kind: "direct",
+  Schema.decodeUnknownSync(Message)({
     msgId: record.msgId,
-    address: sender,
-    sender: testAgentView(sender),
     content: [
       { type: "text", text: "Please answer" },
       {
@@ -67,6 +64,8 @@ const message = () =>
         },
       },
     ],
+    author: testAgentView(sender),
+    recipients: [testAgentView("agent:alice")],
   });
 const response = {
   to: sender,
@@ -94,7 +93,7 @@ function makeCollectives(scope: Scope.Scope) {
   });
 }
 
-function seedRequest(store: TestStore, request: InboundMessage) {
+function seedRequest(store: TestStore, request: Message) {
   return Effect.gen(function* () {
     yield* store.bindIdentity({
       agentId: testAgentView(self).agentId,
@@ -102,10 +101,10 @@ function seedRequest(store: TestStore, request: InboundMessage) {
     });
     yield* store.putConversationFoundation(foundation);
     yield* store.applyCertifiedRecord(
-      { ...record, authorAgentId: request.sender.agentId },
+      { ...record, authorAgentId: request.author.agentId },
       {
         recipientAgentId: testAgentView(self).agentId,
-        canonicalMessage: yield* encodeCanonical(InboundMessage, request),
+        canonicalMessage: yield* encodeCanonical(Message, request),
       },
     );
   });
@@ -259,13 +258,13 @@ function groupRequest() {
       },
       "Which day?",
     );
-    return Schema.decodeUnknownSync(InboundMessage)({
-      kind: "group",
+    return Schema.decodeUnknownSync(Message)({
       msgId: record.msgId,
-      sender: testAgentView(sender),
-      address: group,
-      members: ["agent:alice", "agent:bob", "agent:carol"].map(testAgentView),
       content,
+      author: testAgentView(sender),
+      recipients: ["agent:alice", "agent:bob", "agent:carol"]
+        .map(testAgentView)
+        .filter((member) => member.agentId !== testAgentView(sender).agentId),
     });
   });
 }
@@ -273,10 +272,11 @@ function groupRequest() {
 function delayedCloseHistory() {
   return Effect.gen(function* () {
     const request = yield* groupRequest();
-    const answer = Schema.decodeUnknownSync(InboundMessage)({
+    const answer = Schema.decodeUnknownSync(Message)({
       ...request,
       msgId: digest("msg_", 42),
-      sender: testAgentView("agent:carol"),
+      author: testAgentView("agent:carol"),
+      recipients: [testAgentView("agent:alice"), testAgentView("agent:bob")],
       content: yield* encodeCollectiveContent({
         kind: "response",
         operationId,
@@ -284,7 +284,7 @@ function delayedCloseHistory() {
         content: { answer: "Monday" },
       }),
     });
-    const close = Schema.decodeUnknownSync(InboundMessage)({
+    const close = Schema.decodeUnknownSync(Message)({
       ...request,
       msgId: digest("msg_", 43),
       content: yield* encodeCollectiveContent({
@@ -292,7 +292,9 @@ function delayedCloseHistory() {
         closedAt: 60_000,
         closedBy: "deadline",
         operationId,
-        included: [Schema.decodeUnknownSync(RecordHash)(answerHash)],
+        included: [
+          { authorAgentId: answer.author.agentId, msgId: answer.msgId },
+        ],
       }),
     });
     return { request, answer, close };
@@ -336,12 +338,12 @@ function restoringLayer(
 
 function appendMessage(
   store: TestStore,
-  message: InboundMessage,
+  message: Message,
   hash: string,
   previousRecordHash: string,
 ) {
   const actionHash = `action:${hash}`;
-  return encodeCanonical(InboundMessage, message).pipe(
+  return encodeCanonical(Message, message).pipe(
     Effect.flatMap((canonicalMessage) =>
       store.applyCertifiedRecord(
         {
@@ -349,7 +351,7 @@ function appendMessage(
           recordHash: hash,
           previousRecordHash,
           msgId: message.msgId,
-          authorAgentId: message.sender.agentId,
+          authorAgentId: message.author.agentId,
           actionHash,
           canonicalRecordCore: bytes(hash),
           actionEvidence: record.actionEvidence.map((evidence) => ({
@@ -483,14 +485,14 @@ itOnClock(
     Effect.gen(function* () {
       const path = stateDirectory();
       const emitted: InboundItem[] = [];
-      const request = Schema.decodeUnknownSync(InboundMessage)({
+      const request = Schema.decodeUnknownSync(Message)({
         ...(yield* groupRequest()),
         msgId: digest("msg_", 81),
       });
       const requestHash = Schema.decodeUnknownSync(RecordHash)(
         digest("rch_", 82),
       );
-      const earlyClose = Schema.decodeUnknownSync(InboundMessage)({
+      const earlyClose = Schema.decodeUnknownSync(Message)({
         ...request,
         msgId: record.msgId,
         content: yield* encodeCollectiveContent({
@@ -513,9 +515,9 @@ itOnClock(
 interface OrderedRequest {
   readonly path: string;
   readonly emitted: InboundItem[];
-  readonly request: InboundMessage;
+  readonly request: Message;
   readonly requestHash: RecordHash;
-  readonly earlyClose: InboundMessage;
+  readonly earlyClose: Message;
 }
 
 function retainCloseBeforeRequest(context: OrderedRequest) {
@@ -555,12 +557,12 @@ function assertUnknownCloseAfterReopen(context: OrderedRequest) {
         yield* Effect.flip(
           layer.send({
             ...response,
-            to: request.address,
+            to: replyAddress(request),
             collectiveResponse: { ...response.collectiveResponse, operationId },
           }),
         ),
       ).toMatchObject({ reason: "network-unavailable" });
-      const close = Schema.decodeUnknownSync(InboundMessage)({
+      const close = Schema.decodeUnknownSync(Message)({
         ...earlyClose,
         msgId: digest("msg_", 83),
       });
@@ -578,7 +580,7 @@ itOnClock(
   () =>
     Effect.gen(function* () {
       const path = stateDirectory();
-      const request = Schema.decodeUnknownSync(InboundMessage)({
+      const request = Schema.decodeUnknownSync(Message)({
         ...(yield* groupRequest()),
         content: yield* encodeCollectiveContent(
           {
@@ -602,7 +604,7 @@ itOnClock(
     }),
 );
 
-function consumeRejectedRequest(path: string, request: InboundMessage) {
+function consumeRejectedRequest(path: string, request: Message) {
   return withDaemonStore(path, (store) =>
     Effect.gen(function* () {
       yield* seedRequest(store, request);
@@ -618,7 +620,7 @@ function consumeRejectedRequest(path: string, request: InboundMessage) {
   );
 }
 
-function reopenRejectedRequest(path: string, request: InboundMessage) {
+function reopenRejectedRequest(path: string, request: Message) {
   return withDaemonStore(path, (store) =>
     Effect.gen(function* () {
       const layer = yield* restoringLayer(store, yield* Scope.Scope, []);
@@ -626,7 +628,7 @@ function reopenRejectedRequest(path: string, request: InboundMessage) {
       expect(
         yield* Effect.flip(
           layer.send({
-            to: request.address,
+            to: replyAddress(request),
             collectiveResponse: { operationId, action: "decline" },
           }),
         ),

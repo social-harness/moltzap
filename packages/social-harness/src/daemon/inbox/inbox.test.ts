@@ -37,21 +37,31 @@ const failure = Schema.decodeUnknownSync(InboundItem)({
   to: "agent:bob",
   error: "request unavailable",
 });
-const requestConversation = "group:alice,bob,carol";
 const request = Schema.decodeUnknownSync(InboundItem)({
   kind: "collectiveRequest",
-  op: "all_gather",
-  operationId: collectiveOperationId(testAgentView("agent:alice").agentId, 2),
-  msgId: digest("msg_", 2),
-  from: testAgentView("agent:bob"),
-  to: requestConversation,
-  question: "Answer independently",
-  requestedSchema: {
-    type: "object",
-    properties: { answer: { type: "string" } },
-    required: ["answer"],
+  message: {
+    msgId: digest("msg_", 2),
+    author: testAgentView("agent:bob"),
+    recipients: ["alice", "bob", "carol"]
+      .map(testAgentView)
+      .filter(
+        (member) => member.agentId !== testAgentView("agent:bob").agentId,
+      ),
+    content: {
+      op: "all_gather",
+      operationId: collectiveOperationId(
+        testAgentView("agent:alice").agentId,
+        2,
+      ),
+      question: "Answer independently",
+      requestedSchema: {
+        type: "object",
+        properties: { answer: { type: "string" } },
+        required: ["answer"],
+      },
+      deadlineAt: 4_000_000_000_000,
+    },
   },
-  deadlineAt: 4_000_000_000_000,
 });
 
 /** A collective layer this file's deliveries never send through. */

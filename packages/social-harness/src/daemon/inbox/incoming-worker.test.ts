@@ -374,7 +374,7 @@ function showsAHeldRequestInGuidanceMode() {
     yield* Deferred.await(subject.outbound);
 
     expect(runtime.published.map((event) => event.item)).toMatchObject([
-      { kind: "collectiveRequest", from: testAgentView(bob), to: bob },
+      { kind: "collectiveRequest", message: { author: testAgentView(bob) } },
     ]);
     expect(yield* unfinishedIntents(subject)).toHaveLength(1);
     yield* Fiber.interrupt(answering);

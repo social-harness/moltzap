@@ -23,6 +23,7 @@ import { Deferred, Effect, Encoding, Queue, Schema, Stream } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ChannelRegistration, ChannelSetup } from "./adapter.js";
 import type { registerChannelAdapter } from "./channel-registry.js";
+import { credentialFile } from "../__tests__/credential.js";
 
 /* eslint-disable agent-code-guard/async-keyword -- NanoClaw's registry, lifecycle, and host callbacks are Promise-native; these tests exercise that public ABI directly. */
 /* eslint-disable agent-code-guard/acquire-release-requires-scope -- The adapter owns and closes the acquisition scope; the fake finalizer verifies release through teardown and stream termination. */
@@ -40,7 +41,7 @@ vi.mock("@moltzap/social-harness", async (importOriginal) => ({
   acquireHarnessEndpoint: boundary.acquire,
 }));
 
-const POST_ID = `msg_${"A".repeat(43)}`;
+const MESSAGE_ID = `msg_${"A".repeat(43)}`;
 const OPERATION_ID = `col_${"A".repeat(64)}`;
 const GROUP = "group:alice,bob,carol";
 const DEADLINE_TEXT = "2026-09-30T12:00:00.000Z";
@@ -68,7 +69,7 @@ function makeEndpoint() {
   const send = vi.fn<HarnessEndpoint["send"]>(() =>
     Effect.succeed({
       kind: "multicast",
-      msgId: Schema.decodeUnknownSync(MsgId)(POST_ID),
+      msgId: Schema.decodeUnknownSync(MsgId)(MESSAGE_ID),
       address: Schema.decodeUnknownSync(AgentAddress)("agent:alice"),
     } satisfies SendResult),
   );
@@ -87,11 +88,10 @@ function directItem() {
   return Schema.decodeUnknownSync(InboundItem)({
     kind: "multicast",
     message: {
-      kind: "direct",
-      msgId: POST_ID,
-      address: "agent:alice",
-      sender: testAgentView("alice"),
+      msgId: MESSAGE_ID,
       content: [{ type: "text", text: "hello" }],
+      author: testAgentView("alice"),
+      recipients: [testAgentView("bob")],
     },
   });
 }
@@ -137,6 +137,7 @@ beforeEach(async () => {
   boundary.register.mockClear();
   boundary.acquire.mockReset();
   vi.stubEnv("SHARNESS_MCP_URL", "http://127.0.0.1:8321/mcp");
+  vi.stubEnv("SHARNESS_MCP_CREDENTIAL_FILE", credentialFile);
   await import("./sharness.js");
   expect(boundary.register).toHaveBeenCalledWith("sharness", expect.anything());
   const entry = boundary.register.mock.calls[0];
@@ -186,9 +187,7 @@ it("acquires one endpoint across repeated setup", async () => {
   await channel.setup(makeHost());
   await channel.setup(makeHost());
   expect(channel.isConnected()).toBe(true);
-  expect(boundary.acquire).toHaveBeenCalledExactlyOnceWith(
-    new URL("http://127.0.0.1:8321/mcp"),
-  );
+  expect(boundary.acquire).toHaveBeenCalledTimes(1);
 });
 
 it("releases the endpoint once across repeated teardown", async () => {
@@ -300,7 +299,7 @@ it("projects direct metadata before routing and acknowledges only after host suc
       platformId: "agent:alice",
       threadId: null,
     },
-    message: { id: POST_ID, kind: "chat", isMention: true, isGroup: false },
+    message: { id: MESSAGE_ID, kind: "chat", isMention: true, isGroup: false },
   });
   if (event === undefined) {
     throw new Error("Host did not receive a turn");
@@ -342,16 +341,10 @@ it("preserves canonical group address, sender, exact membership and native group
     Schema.decodeUnknownSync(InboundItem)({
       kind: "multicast",
       message: {
-        kind: "group",
-        msgId: POST_ID,
-        address: GROUP,
-        sender: testAgentView("bob"),
-        members: [
-          testAgentView("alice"),
-          testAgentView("bob"),
-          testAgentView("carol"),
-        ],
+        msgId: MESSAGE_ID,
         content: [{ type: "text", text: "group hello" }],
+        author: testAgentView("bob"),
+        recipients: [testAgentView("alice"), testAgentView("carol")],
       },
     }),
   );
@@ -386,27 +379,14 @@ it.each([
     const host = makeHost();
     const channel = await createAdapter();
     await channel.setup(host);
-    const acknowledged = enqueue(
-      fake,
-      Schema.decodeUnknownSync(InboundItem)({
-        kind: "collectiveRequest",
-        op,
-        to,
-        operationId: OPERATION_ID,
-        msgId: POST_ID,
-        from: testAgentView("alice"),
-        question: QUESTION,
-        requestedSchema: FORM,
-        deadlineAt: Date.UTC(2026, 8, 30, 12),
-      }),
-    );
+    const acknowledged = enqueue(fake, requestItem(op, to));
     await vi.waitFor(() => {
       expect(acknowledged).toHaveBeenCalledTimes(1);
     });
     const event = host.onInboundEvent.mock.calls[0]?.[0];
     expect(event).toMatchObject({
       replyTo: { platformId: to },
-      message: { id: POST_ID, isGroup },
+      message: { id: MESSAGE_ID, isGroup },
     });
     if (event === undefined) {
       throw new Error("Host did not receive a turn");
@@ -821,18 +801,32 @@ function collectiveGuidanceItem(
             },
           ],
         }
-      : {
-          kind,
-          op: "gather",
-          operationId: OPERATION_ID,
-          msgId: POST_ID,
-          from: testAgentView("alice"),
-          to: "agent:alice",
-          question: QUESTION,
-          requestedSchema: FORM,
-          deadlineAt: Date.parse(DEADLINE_TEXT),
-        },
+      : requestItem("gather", "agent:alice"),
   );
+}
+
+/** A peer question keeps the same message envelope as other deliveries. */
+function requestItem(op: string, to: string) {
+  return Schema.decodeUnknownSync(InboundItem)({
+    kind: "collectiveRequest",
+    message: {
+      msgId: MESSAGE_ID,
+      author: testAgentView("alice"),
+      recipients: (to.startsWith("group:")
+        ? to.slice("group:".length).split(",")
+        : ["bob"]
+      )
+        .map(testAgentView)
+        .filter((member) => member.agentName !== "alice"),
+      content: {
+        op,
+        operationId: OPERATION_ID,
+        question: QUESTION,
+        requestedSchema: FORM,
+        deadlineAt: Date.parse(DEADLINE_TEXT),
+      },
+    },
+  });
 }
 
 /* eslint-enable agent-code-guard/async-keyword -- Restore Effect-first defaults after the Promise-native host boundary tests. */

@@ -15,6 +15,7 @@ import {
   type PreparedSend,
   preparedSendData,
 } from "../communication/conversations/index.js";
+import { replyAddress } from "../communication/message.js";
 import {
   deriveConversationId,
   hashMembershipDescriptor,
@@ -259,7 +260,7 @@ function retainCertifiedInput(engine: StubEngine, input: CertifiedMessage) {
   return engine.database.run(
     Effect.gen(function* () {
       const descriptor = yield* stubMembership(engine, {
-        to: input.message.address,
+        to: replyAddress(input.message),
         content: input.message.content,
       });
       const foundation = yield* messageFoundation(descriptor);
@@ -277,7 +278,7 @@ function retainCertifiedInput(engine: StubEngine, input: CertifiedMessage) {
         ...foundation,
         ...(previousRecordHash === undefined ? {} : { previousRecordHash }),
         recordHash: input.recordHash,
-        authorAgentId: input.message.sender.agentId,
+        authorAgentId: input.message.author.agentId,
         msgId: input.message.msgId,
         canonicalRecordCore: yield* encodeRuntimeValue(input.message),
         actionEvidence: fixture.actionEvidence.map((row) => ({

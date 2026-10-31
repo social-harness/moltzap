@@ -6,7 +6,7 @@ import type { EnginePendingMessage } from "../communication/conversations/index.
 import type { PendingOffer } from "../daemon/inbox/deliver-pending.js";
 import type { HarnessMessageReadyEvent } from "../host-protocol/operations.js";
 import type { TestCollectiveOperations as CollectiveOperations } from "./collective-send.js";
-import { InboundMessage } from "../communication/conversations/message.js";
+import { Message } from "../communication/message.js";
 import { RecordHash } from "../communication/records/index.js";
 import { DeliveryToken } from "../communication/store/index.js";
 import { digest, testAgentView } from "./agent-card-fixtures.js";
@@ -23,12 +23,11 @@ export function pendingMessage(byte: number): EnginePendingMessage {
       digest("dlv_", byte),
     ),
     recordHash: Schema.decodeUnknownSync(RecordHash)(digest("rch_", byte)),
-    message: Schema.decodeUnknownSync(InboundMessage)({
-      kind: "direct",
+    message: Schema.decodeUnknownSync(Message)({
       msgId: digest("msg_", byte),
-      address: "agent:bob",
-      sender: testAgentView("agent:bob"),
       content: [{ type: "text", text: `delivery ${String(byte)}` }],
+      author: testAgentView("agent:bob"),
+      recipients: [testAgentView("agent:alice")],
     }),
   };
 }

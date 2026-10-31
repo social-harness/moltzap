@@ -11,7 +11,7 @@ import type {
   EngineSendInput,
   EngineSentMessage,
 } from "../conversations/index.js";
-import type { InboundMessage } from "../conversations/message.js";
+import type { Message } from "../message.js";
 import type { DeliveryToken, EndpointStoreError } from "../store/index.js";
 import type { CollectiveEmitError, CollectiveError } from "./contracts.js";
 import type { InboundItem } from "./inbound.js";
@@ -86,7 +86,7 @@ export interface CollectivePorts {
 
 /** One certified remote message with the hash of its certified record. */
 export interface CertifiedMessage {
-  readonly message: InboundMessage;
+  readonly message: Message;
   readonly recordHash: RecordHash;
 }
 

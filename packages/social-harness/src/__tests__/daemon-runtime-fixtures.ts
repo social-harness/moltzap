@@ -7,7 +7,7 @@ import {
   type EnginePendingMessage,
   makeEndpointEngine,
 } from "../communication/conversations/index.js";
-import { InboundMessage } from "../communication/conversations/message.js";
+import { Message } from "../communication/message.js";
 import { RecordHash } from "../communication/records/index.js";
 import { makeRouterWorker, Router } from "../communication/router/index.js";
 import { DeliveryToken } from "../communication/store/index.js";
@@ -18,6 +18,7 @@ import {
 } from "../daemon/lifecycle.js";
 import { makeHarnessMcpHttpHandler } from "../daemon/mcp/tools.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
+import { Firewall } from "../firewall/index.js";
 import { managementRegisterRequestSchema } from "../host-protocol/index.js";
 import { AgentCard, type VerifiedAgentCard } from "../identity/cards.js";
 import { AgentSigningAuthority, Ed25519PublicKey } from "../identity/keys.js";
@@ -50,12 +51,11 @@ export interface Fixture {
 const makePendingMessage = Effect.all({
   deliveryToken: Schema.decodeUnknown(DeliveryToken)(digest("dlv_", 4)),
   recordHash: Schema.decodeUnknown(RecordHash)(digest("rch_", 6)),
-  message: Schema.decodeUnknown(InboundMessage)({
-    kind: "direct",
+  message: Schema.decodeUnknown(Message)({
     msgId: digest("msg_", 5),
-    address: "agent:bob",
-    sender: testAgentView("agent:bob"),
     content: [{ type: "text", text: "certified" }],
+    author: testAgentView("agent:bob"),
+    recipients: [testAgentView("agent:alice")],
   }),
 });
 
@@ -145,6 +145,7 @@ export const runRegisteredFixture = (
     },
     dependencies,
   ).pipe(
+    Effect.provide(Firewall.layer()),
     Effect.provideService(Registry, {
       register: () =>
         Effect.dieMessage("Registered fixture attempted registration"),

@@ -28,6 +28,7 @@ import {
 import { AgentCard } from "../../identity/cards.js";
 import { AgentSigningAuthority } from "../../identity/keys.js";
 import { wireVersions } from "../../identity/wire-version.js";
+import { Message } from "../message.js";
 import {
   type DecodedOuterBody,
   type MessageAddressInput,
@@ -44,7 +45,6 @@ import {
   resumeEngineFolds,
 } from "./certification/index.js";
 import { DeliveryAcknowledgeError, ListenError, SendError } from "./errors.js";
-import { InboundMessage } from "./message.js";
 import { makeOutbox } from "./outbox.js";
 import { recoverEngineState } from "./restore.js";
 import {
@@ -117,7 +117,7 @@ export class EngineOutboundError extends Data.TaggedError(
 export interface EnginePendingMessage {
   readonly deliveryToken: DeliveryToken;
   readonly recordHash: RecordHash;
-  readonly message: InboundMessage;
+  readonly message: Message;
 }
 
 /** Stable private engine capability consumed by daemon composition. */
@@ -418,7 +418,7 @@ const readPendingMessages = (): Effect.Effect<
         deliveries,
         (delivery) =>
           Effect.all({
-            message: decodeCanonical(InboundMessage, delivery.canonicalMessage),
+            message: decodeCanonical(Message, delivery.canonicalMessage),
             recordHash: Schema.decodeUnknown(RecordHash)(delivery.recordHash),
           }).pipe(
             Effect.mapError(listenRepresentationFailure),

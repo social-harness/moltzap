@@ -1,25 +1,7 @@
 /**
- * @file The public Client is one addressed structural endpoint whose sends are
- * operations or collective responses and whose inbound deliveries are tagged
- * items. An operation carries an address, text and an optional collective
- * operation, multicast by default or a gather or all_gather with its deadline
- * and schema; a response names the conversation whose open request it
- * answers, and may name that request's id. One parser reads either from a
- * message's text, so native channel adapters accept the same grammar. Each
- * inbound delivery carries one item plus transport-only acknowledgment: a multicast
- * with the certified direct or complete-group message, a collective request
- * naming the conversation it arrived in, a collective result, each naming
- * its operation, or an operation failure. A result's question or a member's
- * answer can be `withheld` by the local firewall, and local guidance is
- * either one check's or one per checked text of a result; each of its
- * instructions names a settled expectation or an unsettled norm judgment's
- * choice and probability. A send returns a collecting operation's id or the
- * id of the request a response answered, the message a multicast or response
- * created with its conversation's canonical address, and its check's
- * guidance, and fails with a closed send reason or a collective failure. The exported send-result decoder yields that same
- * result type. Adapters compile against this surface, so any change these
- * canaries catch is a breaking release. Client renders local guidance as text
- * for both adapters, keeping registered instructions apart from quoted peers.
+ * @file Public messages retain author, recipients and content in every direction.
+ * These canaries pin the supported host boundary so adapters compile against the
+ * same messages, collective items, guidance and delivery operations.
  */
 
 import type { DateTime, Effect, Either, Scope, Stream, Types } from "effect";
@@ -33,20 +15,19 @@ import type {
   ContentPart,
   decodeHarnessSendResult,
   DeliveryAcknowledgeError,
-  DirectMessage,
   FirewallSendError,
   GroupAddress,
-  GroupMessage,
   HarnessEndpoint,
   HarnessEndpointOptions,
   HistoryExportRecord,
   InboundDelivery,
   InboundItem,
-  InboundMessage,
   JsonValue,
   ListenError,
   LocalGuidance,
+  Message,
   MessageAddressInput,
+  MessageReference,
   MessageTextError,
   MsgId,
   parseMessageText,
@@ -114,20 +95,15 @@ type ExpectedSendResult =
       address?: never;
       guidance?: ExpectedCheckedGuidance;
     }>;
-type ExpectedDirectMessage = Readonly<{
-  kind: "direct";
+type ExpectedMessageHeader = Readonly<{
   msgId: MsgId;
-  address: AgentAddress;
-  sender: AgentView;
-  content: Content;
+  author: AgentView;
+  recipients: readonly [AgentView, ...AgentView[]];
 }>;
-type ExpectedGroupMessage = Readonly<{
-  kind: "group";
+type ExpectedMessage = ExpectedMessageHeader & Readonly<{ content: Content }>;
+type ExpectedMessageReference = Readonly<{
+  authorAgentId: AgentView["agentId"];
   msgId: MsgId;
-  address: GroupAddress;
-  sender: AgentView;
-  members: readonly [AgentView, AgentView, AgentView, ...AgentView[]];
-  content: Content;
 }>;
 type ExpectedWithheld = Readonly<{
   kind: "withheld";
@@ -145,17 +121,19 @@ type ExpectedOutcomeEntry = Readonly<{
   outcome: ExpectedMemberOutcome;
 }>;
 type ExpectedInboundItem =
-  | Readonly<{ kind: "multicast"; message: InboundMessage }>
+  | Readonly<{ kind: "multicast"; message: Message }>
   | Readonly<{
       kind: "collectiveRequest";
-      op: "gather" | "all_gather";
-      operationId: CollectiveId;
-      msgId: MsgId;
-      from: AgentView;
-      to: MessageAddressInput;
-      question: string;
-      requestedSchema: ExpectedRequestedSchema;
-      deadlineAt: number;
+      message: ExpectedMessageHeader &
+        Readonly<{
+          content: Readonly<{
+            op: "gather" | "all_gather";
+            operationId: CollectiveId;
+            question: string;
+            requestedSchema: ExpectedRequestedSchema;
+            deadlineAt: number;
+          }>;
+        }>;
     }>
   | Readonly<{
       kind: "collectiveResult";
@@ -260,14 +238,9 @@ type SendResultDecoderIsExact = Expect<
 type InboundItemIsExact = Expect<
   Types.Equals<InboundItem, ExpectedInboundItem>
 >;
-type DirectMessageIsExact = Expect<
-  Types.Equals<DirectMessage, ExpectedDirectMessage>
->;
-type GroupMessageIsExact = Expect<
-  Types.Equals<GroupMessage, ExpectedGroupMessage>
->;
-type InboundMessageIsExact = Expect<
-  Types.Equals<InboundMessage, DirectMessage | GroupMessage>
+type MessageIsExact = Expect<Types.Equals<Message, ExpectedMessage>>;
+type MessageReferenceIsExact = Expect<
+  Types.Equals<MessageReference, ExpectedMessageReference>
 >;
 type DeliveryIsExact = Expect<Types.Equals<InboundDelivery, ExpectedDelivery>>;
 type EndpointIsExact = Expect<Types.Equals<HarnessEndpoint, ExpectedEndpoint>>;
@@ -377,9 +350,8 @@ export type HarnessEndpointCanaries = [
   InboundItemIsExact,
   LocalGuidanceIsExact,
   GuidanceRenderingIsExact,
-  DirectMessageIsExact,
-  GroupMessageIsExact,
-  InboundMessageIsExact,
+  MessageIsExact,
+  MessageReferenceIsExact,
   DeliveryIsExact,
   EndpointIsExact,
   ContentIsNonempty,

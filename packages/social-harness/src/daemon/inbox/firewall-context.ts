@@ -3,7 +3,10 @@
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Clock, Effect, Option, Schema } from "effect";
 import { createHash } from "node:crypto";
-import type { Firewall, PreparedFirewallCheck } from "../../firewall/index.js";
+import type {
+  FirewallOperations,
+  PreparedFirewallCheck,
+} from "../../firewall/index.js";
 import type {
   FirewallEvidence,
   FirewallHistoryEntry,
@@ -15,7 +18,10 @@ import {
   readCollectiveValue,
   withoutCollectivePart,
 } from "../../communication/collectives/index.js";
-import { renderGroupAddress } from "../../communication/conversations/address.js";
+import {
+  messageFromIntent,
+  messageMembers,
+} from "../../communication/message.js";
 import {
   Content,
   deriveConversationId,
@@ -56,7 +62,7 @@ import { readFirewallEvidence } from "./evidence.js";
 /** The daemon supplies verified attribution and its existing durable evidence capability. */
 export interface FirewallEnvironment {
   readonly sql: SqlClient.SqlClient;
-  readonly firewall: Firewall;
+  readonly firewall: FirewallOperations;
   readonly localAgentCard: VerifiedAgentCard;
 }
 
@@ -338,26 +344,27 @@ function projectRequest(
     { readonly kind: "operation"; readonly op: "gather" | "all_gather" }
   >,
 ): Effect.Effect<ProjectedText, EndpointStoreError> {
-  const { intent, cards, localAgentId } = message;
-  const author = cards.find((card) => card.agentId === intent.authorAgentId);
-  if (author === undefined) {
-    return Effect.fail(new EndpointStoreError({ reason: "corrupt" }));
-  }
-  return Effect.all([
-    Effect.succeed(AgentView.make(author)),
-    conversationAddress(cards, localAgentId),
-  ]).pipe(
-    Effect.flatMap(([from, to]) =>
+  const { intent, cards } = message;
+  return messageFromIntent(
+    cards.map((card) => AgentView.make(card)),
+    intent,
+  ).pipe(
+    Effect.catchTag("ParseError", () =>
+      Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
+    ),
+    Effect.flatMap((shared) =>
       requestText({
         kind: "collectiveRequest",
-        op: value.op,
-        operationId: value.operationId,
-        msgId: intent.msgId,
-        from,
-        to,
-        question: questionText(intent.content),
-        requestedSchema: value.requestedSchema,
-        deadlineAt: value.deadlineAt,
+        message: {
+          ...shared,
+          content: {
+            op: value.op,
+            operationId: value.operationId,
+            question: questionText(intent.content),
+            requestedSchema: value.requestedSchema,
+            deadlineAt: value.deadlineAt,
+          },
+        },
       }),
     ),
     Effect.map(
@@ -433,31 +440,6 @@ function evidenceGaps(evidence: FirewallEvidence): string[] {
   ];
 }
 
-/**
- * The canonical address of a conversation from the local agent's side: the
- * other member's `agent:` address for a direct conversation, the complete
- * `group:` address otherwise. Local evidence is kept under it.
- * @param cards The conversation's members' cards.
- * @param localAgentId The local agent, whose side the address is from.
- * @returns The address hosts and local evidence name the conversation by.
- */
-function conversationAddress(
-  cards: readonly AgentCard[],
-  localAgentId: string,
-): Effect.Effect<MessageAddressInput, EndpointStoreError> {
-  if (cards.length === 2) {
-    const other = cards.find((card) => card.agentId !== localAgentId);
-    return other === undefined
-      ? Effect.fail(new EndpointStoreError({ reason: "corrupt" }))
-      : Effect.succeed(agentAddressOf(other));
-  }
-  return renderGroupAddress(cards.map((card) => card.agentName)).pipe(
-    Effect.map(({ address }): MessageAddressInput => address),
-    Effect.catchTag("ParseError", () =>
-      Effect.fail(new EndpointStoreError({ reason: "corrupt" })),
-    ),
-  );
-}
 /** One input joins exact candidate bytes with the permitted verified conversation view. */
 export const prepareMessageCheck = Effect.fn("prepareMessageCheck")(function* (
   environment: FirewallEnvironment,
@@ -568,7 +550,6 @@ function outgoingCards(
 /** The whole fixed gather is assessed once, using the same question each prepared request carries. */
 function gatherMessage(
   local: VerifiedAgentCard,
-  to: MessageAddressInput,
   intent: typeof MessageIntent.Type,
   cards: readonly AgentCard[],
 ) {
@@ -586,23 +567,17 @@ function gatherMessage(
       return yield* new EndpointStoreError({ reason: "invalid-input" });
     }
     const value = part.value;
+    const projected = yield* projectRequest(
+      { intent, cards, localAgentId: local.agentId },
+      value,
+    );
     return yield* decodeMessage({
       id: hashedId(`${local.agentId}:${value.operationId}`),
       sender: local.agentId,
       recipients: cards
         .filter((card) => card.agentId !== local.agentId)
         .map((card) => card.agentId),
-      text: yield* requestText({
-        kind: "collectiveRequest",
-        op: "gather",
-        operationId: value.operationId,
-        msgId: intent.msgId,
-        from: AgentView.make(local),
-        to,
-        question: questionText(intent.content),
-        requestedSchema: value.requestedSchema,
-        deadlineAt: value.deadlineAt,
-      }),
+      text: projected.text,
       operation: {
         kind: "request",
         op: "gather",
@@ -651,16 +626,13 @@ function sameRequest(
   const operation = candidate.message.operation;
   const sameOperation =
     operation?.kind === "request" &&
-    operation.operationId === item.operationId &&
-    operation.op === item.op;
-  return (
-    sameOperation &&
-    sameMessage({ msgId: item.msgId, sender: item.from }, candidate)
-  );
+    operation.operationId === item.message.content.operationId &&
+    operation.op === item.message.content.op;
+  return sameOperation && sameMessage(item.message, candidate);
 }
 
 function sameMessage(
-  message: { readonly msgId: string; readonly sender: AgentView },
+  message: { readonly msgId: string; readonly author: AgentView },
   candidate: DecodedRecord,
 ): boolean {
   return (
@@ -668,7 +640,7 @@ function sameMessage(
     candidate.cards.some(
       (card) =>
         card.agentId === candidate.intent.authorAgentId &&
-        Schema.equivalence(AgentView)(AgentView.make(card), message.sender),
+        Schema.equivalence(AgentView)(AgentView.make(card), message.author),
     )
   );
 }
@@ -677,13 +649,11 @@ function sameAudience(
   message: Extract<InboundItem, { kind: "multicast" }>["message"],
   cards: readonly AgentCard[],
 ): boolean {
-  if (message.kind === "direct") {
-    return cards.length === 2;
-  }
   const expected = cards.map((card) => AgentView.make(card));
+  const members = messageMembers(message);
   return (
-    expected.length === message.members.length &&
-    message.members.every((member) =>
+    expected.length === members.length &&
+    members.every((member) =>
       expected.some((card) => Schema.equivalence(AgentView)(card, member)),
     )
   );
@@ -702,12 +672,7 @@ export const prepareOutgoingCheck = Effect.fn("prepareOutgoingCheck")(
       maximumRecords: environment.firewall.configuration.maximumHistoryRecords,
     }).pipe(Effect.provideService(SqlClient.SqlClient, environment.sql));
     const message = candidate.gather
-      ? yield* gatherMessage(
-          environment.localAgentCard,
-          candidate.to,
-          intent,
-          cards,
-        )
+      ? yield* gatherMessage(environment.localAgentCard, intent, cards)
       : (yield* messageProjection(
           intent,
           cards,

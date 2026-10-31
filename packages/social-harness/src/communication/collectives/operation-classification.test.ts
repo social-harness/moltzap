@@ -153,14 +153,18 @@ function deliversARequestMessageAsACollectiveRequestItem() {
     expect(item).toEqual(
       Option.some({
         kind: "collectiveRequest",
-        op: "gather",
-        operationId: requestId,
-        msgId: msgId(9),
-        from: testAgentView("agent:bob"),
-        to: "agent:bob",
-        question: questionText,
-        requestedSchema: slotSchema,
-        deadlineAt: 60_000,
+        message: {
+          msgId: msgId(9),
+          author: testAgentView("agent:bob"),
+          recipients: [testAgentView("agent:alice")],
+          content: {
+            op: "gather",
+            operationId: requestId,
+            question: questionText,
+            requestedSchema: slotSchema,
+            deadlineAt: 60_000,
+          },
+        },
       }),
     );
   });
@@ -182,7 +186,7 @@ function rejectsAnOperationClaimedByAnotherRequester() {
     const layer = yield* makeLayer(newObserved());
     const takenOver = yield* classifyMessage(
       layer,
-      requestMessage("agent:mallory", 60_000),
+      requestMessage("agent:carol", 60_000),
     );
     const honest = yield* classifyMessage(
       layer,

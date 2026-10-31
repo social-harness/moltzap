@@ -24,6 +24,7 @@ import {
   type MiddlewareResult,
 } from "../check.js";
 import {
+  Firewall,
   type FirewallOptions,
   makeFirewall,
   type PreparedFirewallCheck,
@@ -209,7 +210,7 @@ function text(
 function decideIncoming(configuration: FirewallOptions) {
   return withDaemonStore(stateDirectory(), () =>
     Effect.gen(function* () {
-      const firewall = yield* makeFirewall(configuration);
+      const firewall = yield* Firewall;
       const [checked] = yield* firewall.check([
         yield* preparedMessage("incoming"),
       ]);
@@ -217,7 +218,7 @@ function decideIncoming(configuration: FirewallOptions) {
         (yield* Effect.fromNullable(checked)).completion,
       );
       return yield* readDecisions({});
-    }),
+    }).pipe(Effect.provide(Firewall.layer(configuration))),
   );
 }
 
@@ -467,6 +468,30 @@ it("retains refused first-message peers after restart without an admitted conver
     const recovered = yield* readRefusedDecisions(saved.directory);
     expect(recovered.decisions).toEqual(saved.decisions);
     expect(recovered.memberships).toEqual([]);
+  }));
+
+it("reads saved decisions after restarting without a configured policy", () =>
+  Effect.gen(function* () {
+    const saved = yield* Effect.scoped(
+      refuseFirstGroupMessage(contactsPolicy("violation")),
+    );
+    const retained = yield* withDaemonStore(
+      saved.directory,
+      Effect.fn(function* () {
+        const firewall = yield* Firewall;
+        expect(yield* firewall.readPolicy().pipe(Effect.flip)).toMatchObject({
+          reason: "not-configured",
+        });
+        expect(
+          yield* firewall.updatePolicy({ remove: [] }).pipe(Effect.flip),
+        ).toMatchObject({ reason: "not-configured" });
+        expect(
+          yield* firewall.check([yield* preparedMessage("incoming")]),
+        ).toEqual([]);
+        return yield* firewall.readDecisions({});
+      }, Effect.provide(Firewall.layer())),
+    );
+    expect(retained.decisions).toEqual(saved.decisions);
   }));
 
 it("keeps the deciding rules recorded before a later edit removes them", () =>

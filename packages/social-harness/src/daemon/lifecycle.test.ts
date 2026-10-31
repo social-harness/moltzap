@@ -24,6 +24,7 @@ import {
   Router,
   RouterWorkerTransportError,
 } from "../communication/router/index.js";
+import { Firewall } from "../firewall/index.js";
 import { HARNESS_SEND_TOOL } from "../host-protocol/names.js";
 import { Registry } from "../identity/registry/index.js";
 import {
@@ -37,6 +38,7 @@ const unusedNetwork = () =>
   Effect.dieMessage("Unregistered daemon accessed the network");
 const withoutNetwork = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
+    Effect.provide(Firewall.layer()),
     Effect.provideService(Registry, {
       register: unusedNetwork,
       lookup: unusedNetwork,
@@ -78,6 +80,7 @@ const runRegistrationFixture = (
     dependencies,
   ).pipe(
     Effect.scoped,
+    Effect.provide(Firewall.layer()),
     Effect.provideService(Registry, {
       register: () =>
         Effect.succeed({ kind: "registered", agentCard: fixture.localCard }),

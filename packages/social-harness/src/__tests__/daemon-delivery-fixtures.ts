@@ -6,13 +6,13 @@ import type { MessageMiddleware, MiddlewareResult } from "../firewall/check.js";
 import type { InboundItem } from "../host-protocol/items.js";
 import type { HarnessMessageReadyEvent } from "../host-protocol/operations.js";
 
-import { InboundMessage } from "../communication/conversations/message.js";
+import { Message } from "../communication/message.js";
 import { AgentAddress, RecordHash } from "../communication/records/index.js";
 import { decodeRuntimeValue } from "../communication/store/index.js";
 import { makeHostDelivery } from "../daemon/inbox/host-delivery.js";
 import { noHistoryExport } from "../daemon/inbox/host-traffic-log.js";
 import {
-  type Firewall,
+  type FirewallOperations,
   type FirewallOptions,
   makeFirewall,
 } from "../firewall/index.js";
@@ -89,7 +89,7 @@ const makeTestFirewall = (
  * built over it, as the daemon composes them. Requests the layer classifies
  * wait for admission; items it emits are queued privately and recorded.
  */
-const makeDelivery = (subject: Fixture, firewall: Firewall) =>
+const makeDelivery = (subject: Fixture, firewall: FirewallOperations) =>
   Effect.gen(function* () {
     const { local, engine } = subject;
     const environment = {
@@ -219,7 +219,7 @@ function pendingMessages(subject: Fixture) {
                 entry.recordHash,
               ),
               message: yield* decodeRuntimeValue(
-                InboundMessage,
+                Message,
                 entry.canonicalMessage,
               ),
             };

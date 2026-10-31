@@ -10,7 +10,7 @@ import {
 } from "./values.js";
 /** Only an empty database or the current stored format can be opened. */
 export type StoreOpening = "create" | "reopen";
-const SCHEMA_VERSION = 17;
+const SCHEMA_VERSION = 18;
 const collectiveSchemaSql = `
   CREATE TABLE collective_answers (
     operation_id TEXT NOT NULL REFERENCES collective_operations(operation_id),

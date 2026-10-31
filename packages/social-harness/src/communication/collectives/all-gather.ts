@@ -1,13 +1,13 @@
 /** @file Shared group results wait for one certified close and its exact answer records. */
 
 import type * as SqlClient from "@effect/sql/SqlClient";
-import { Effect, Exit, Option, Schema } from "effect";
-import type { InboundMessage } from "../conversations/message.js";
+import { Effect, Exit, Schema } from "effect";
 import type { CollectiveResultItem } from "./inbound.js";
 import type { CertifiedMessage, ResultProvenance } from "./ports.js";
 import type { OpenRequest, ReceivedRequest } from "./received-request.js";
 import type { CollectiveState, GatherRequest, OpenGather } from "./state.js";
 import { SendError } from "../conversations/errors.js";
+import { type Message, replyAddress } from "../message.js";
 import { MsgId } from "../records/index.js";
 import { agentAddressOf } from "../records/values.js";
 import * as Store from "../store/index.js";
@@ -39,7 +39,7 @@ type CloseValue = Extract<CollectiveValue, { readonly kind: "close" }>;
 const contentInvalid = () => new SendError({ reason: "content-invalid" });
 
 /**
- * Send an all_gather's close, listing the certified record of every answer
+ * Send an all_gather's close, listing the message identity of every answer
  * its result counts, and emit the result once the close is certified. A close
  * already bound stays pending on its original message until certification.
  * `close` records the operation's `collective.closed` span once
@@ -80,7 +80,7 @@ export function closeAllGather(
 export function countedProvenance(open: GatherRequest): ResultProvenance {
   return {
     answers: open.members.map(agentAddressOf).flatMap((member) => {
-      const recordHash = open.answerHashes.get(member);
+      const recordHash = open.answers.get(member)?.recordHash;
       return recordHash === undefined ? [] : [{ member, recordHash }];
     }),
   };
@@ -95,12 +95,14 @@ export function recordPeerAnswer(
   const { message } = certified;
   if (
     request.state === "closed" ||
-    message.kind !== "group" ||
-    message.address !== request.to
+    message.recipients.length <= 1 ||
+    replyAddress(message) !== request.to
   ) {
     return;
   }
-  keepFirstAnswer(request.shared, agentAddressOf(message.sender), {
+  keepFirstAnswer(request.shared, agentAddressOf(message.author), {
+    authorAgentId: message.author.agentId,
+    msgId: message.msgId,
     recordHash: certified.recordHash,
     response: value,
   });
@@ -109,19 +111,19 @@ export function recordPeerAnswer(
 /** Only the requester's first close in the original group selects the result. */
 export function receiveClose(
   state: CollectiveState,
-  message: InboundMessage,
+  message: Message,
   value: CloseValue,
 ): Effect.Effect<void, CollectiveEmitError, SqlClient.SqlClient> {
   return Effect.suspend(() => {
     const request = state.requests.get(value.operationId);
     if (
       request?.kind !== "all_gather" ||
-      message.kind !== "group" ||
-      message.address !== request.to ||
-      message.sender.agentId !== request.from.agentId
+      message.recipients.length <= 1 ||
+      replyAddress(message) !== request.to ||
+      message.author.agentId !== request.from.agentId
     ) {
       return Effect.logWarning(
-        `consumed close ${message.msgId} from ${agentAddressOf(message.sender)}: it closes no all_gather this endpoint was asked by its sender`,
+        `consumed close ${message.msgId} from ${agentAddressOf(message.author)}: it closes no all_gather this endpoint was asked by its sender`,
       );
     }
     if (request.state === "closed" || request.shared.heldClose !== undefined) {
@@ -204,11 +206,12 @@ function sendClose(
 ) {
   const { operationId, closedAt, closedBy } = result;
   return Effect.gen(function* () {
-    const included = open.members
-      .map(agentAddressOf)
-      .flatMap((member) =>
-        Option.toArray(Option.fromNullable(open.answerHashes.get(member))),
-      );
+    const included = open.members.map(agentAddressOf).flatMap((member) => {
+      const answer = open.answers.get(member);
+      return answer === undefined
+        ? []
+        : [{ authorAgentId: answer.authorAgentId, msgId: answer.msgId }];
+    });
     const content = yield* encodeCollectiveContent({
       kind: "close",
       operationId,

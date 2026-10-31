@@ -34,7 +34,7 @@ import {
   preparedSendData,
   resolutionFailure,
 } from "../conversations/index.js";
-import { InboundMessage } from "../conversations/message.js";
+import { Message } from "../message.js";
 import { agentAddressOf } from "../records/values.js";
 import * as Store from "../store/index.js";
 import { encodeRuntimeValue, EndpointStoreError } from "../store/index.js";
@@ -116,7 +116,7 @@ export interface CollectiveOperations {
   readonly classify: MessageClassifier;
 }
 
-type MessageContent = InboundMessage["content"];
+type MessageContent = Message["content"];
 
 /** Request fanout returns only messages certified during this invocation. */
 type RequestSendOutcome = Pick<CollectiveSendOutcome, "msgIds">;
@@ -368,7 +368,7 @@ function retainPreparedGather(
       durable: yield* encodeLocalCollective(operationId, descriptor).pipe(
         Effect.mapError(contentInvalid),
       ),
-      open: { ...descriptor, outcomes: new Map(), answerHashes: new Map() },
+      open: { ...descriptor, outcomes: new Map(), answers: new Map() },
     } satisfies PreparedGather;
   });
 }
@@ -653,7 +653,7 @@ function classify(
     ),
     Effect.catchTag("CollectivePartInvalidError", (error) =>
       Effect.logWarning(
-        `consumed message ${message.msgId} from ${agentAddressOf(message.sender)}: its collective part is ${error.reason}`,
+        `consumed message ${message.msgId} from ${agentAddressOf(message.author)}: its collective part is ${error.reason}`,
       ).pipe(Effect.as(Option.none())),
     ),
   );
@@ -712,7 +712,7 @@ function operationItem(
 }
 
 function multicastItem(
-  message: InboundMessage,
+  message: Message,
   content: ReadonlyArray<MessageContent[number]>,
 ): Option.Option<InboundItem> {
   return EffectArray.isNonEmptyReadonlyArray(content)
@@ -763,14 +763,16 @@ function requestItem(
     return now < value.deadlineAt
       ? Option.some<InboundItem>({
           kind: "collectiveRequest",
-          op: value.op,
-          operationId: value.operationId,
-          msgId: message.message.msgId,
-          from: message.message.sender,
-          to: received.value.to,
-          question: received.value.question,
-          requestedSchema: value.requestedSchema,
-          deadlineAt: value.deadlineAt,
+          message: {
+            ...message.message,
+            content: {
+              op: value.op,
+              operationId: value.operationId,
+              question: received.value.question,
+              requestedSchema: value.requestedSchema,
+              deadlineAt: value.deadlineAt,
+            },
+          },
         })
       : Option.none();
   });
@@ -813,7 +815,7 @@ function sameRequestMessage(
   return (
     held.msgId === message.message.msgId &&
     held.recordHash === message.recordHash &&
-    held.from.agentId === message.message.sender.agentId
+    held.from.agentId === message.message.author.agentId
   );
 }
 
@@ -826,7 +828,7 @@ function retainRequest(
     state,
     Effect.gen(function* () {
       const canonicalRequest = yield* encodeCanonical(
-        InboundMessage,
+        Message,
         message.message,
       ).pipe(
         Effect.catchTag("ClientRepresentationError", () =>

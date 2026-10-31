@@ -4,7 +4,7 @@
  */
 
 import { NodeHttpClient } from "@effect/platform-node";
-import { Data, Duration, Effect, Layer, Option } from "effect";
+import { Context, Data, Duration, Effect, Layer, Option } from "effect";
 import type {
   EndpointStoreError,
   OutboxTooOldError,
@@ -19,7 +19,7 @@ import {
   policyInstallationError,
 } from "../firewall/config.js";
 import {
-  makeFirewall,
+  Firewall,
   type FirewallOptions as ManagedFirewallOptions,
 } from "../firewall/index.js";
 import { registrationAdmissionRefusalMessage } from "../host-protocol/index.js";
@@ -62,7 +62,8 @@ export {
   type DecisionRequest,
   type DecisionResponse,
   decodeMessagePolicy,
-  type Firewall,
+  Firewall,
+  type FirewallOperations,
   type FirewallOptions,
   type FirewallSettings,
   loadMessagePolicy,
@@ -155,12 +156,10 @@ export namespace Daemon {
         }),
       ).pipe(Effect.mapError(storageFailure));
       return yield* Effect.gen(function* () {
-        const firewall =
-          options === undefined
-            ? undefined
-            : yield* makeFirewall(options).pipe(
-                Effect.mapError((cause) => installFailure(cause, loaded)),
-              );
+        const policy = yield* Layer.build(Firewall.layer(options)).pipe(
+          Effect.mapError((cause) => installFailure(cause, loaded)),
+        );
+        const firewall = Context.get(policy, Firewall);
         const registration = yield* readDaemonRegistrationState({
           bootstrap,
         }).pipe(Effect.mapError(storageFailure));
@@ -171,8 +170,9 @@ export namespace Daemon {
         return yield* runDaemonRuntime({
           bootstrap,
           registration,
-          firewall,
+          firewall: firewall.configuration === undefined ? undefined : firewall,
         }).pipe(
+          Effect.provide(policy),
           Effect.provide(network),
           Effect.mapError(runtimeStartupFailure),
         );

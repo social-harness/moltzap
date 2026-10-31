@@ -18,7 +18,7 @@ import type {
   ResultProvenance,
 } from "../../communication/collectives/index.js";
 import type { EnginePendingMessage } from "../../communication/conversations/index.js";
-import type { Firewall } from "../../firewall/index.js";
+import type { FirewallOperations } from "../../firewall/index.js";
 import type { SendResult } from "../../host-protocol/send-result.js";
 import type {
   HistoryExportPort,
@@ -34,6 +34,7 @@ import {
   DeliveryAcknowledgeError,
   SendError,
 } from "../../communication/conversations/errors.js";
+import { replyAddress } from "../../communication/message.js";
 import {
   decodeRuntimeValue,
   type DeliveryToken,
@@ -102,7 +103,7 @@ export interface HostDeliveryInput {
   readonly historyExport: HistoryExportPort;
   /** The active collective layer, absent while the service is unregistered. */
   readonly collectives: () => ApplicationSender | undefined;
-  readonly firewall?: Firewall;
+  readonly firewall?: FirewallOperations;
   readonly firewallEnvironment?: () => FirewallEnvironment | undefined;
   /** Service lifetime, independent of any host request. */
   readonly scope: Scope.Scope;
@@ -496,8 +497,9 @@ const persistItem = (
             ? {}
             : { canonicalProvenance: yield* encodeRuntimeValue(provenance) }),
           conversation:
-            event.item.kind === "multicast"
-              ? event.item.message.address
+            event.item.kind === "multicast" ||
+            event.item.kind === "collectiveRequest"
+              ? replyAddress(event.item.message)
               : event.item.to,
         }).pipe(Effect.provideService(SqlClient.SqlClient, input.sql));
       });
@@ -534,7 +536,9 @@ const queueLocalItem =
           deliveryToken,
           canonicalItem: yield* encodeRuntimeValue(item),
           conversation:
-            item.kind === "multicast" ? item.message.address : item.to,
+            item.kind === "multicast" || item.kind === "collectiveRequest"
+              ? replyAddress(item.message)
+              : item.to,
           ...(provenance === undefined
             ? {}
             : { canonicalProvenance: yield* encodeRuntimeValue(provenance) }),

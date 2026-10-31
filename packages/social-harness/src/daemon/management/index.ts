@@ -368,7 +368,7 @@ function readHistoryPage(input: {
       Effect.mapError(persistenceFailure),
     );
     const records: HistoryRecord[] = [];
-    for (const { record, author } of verified) {
+    for (const { record, message } of verified) {
       const certified = record.actionCertifiedRecord;
       const recordHash = certified.recordHash;
       const view = views.find(
@@ -377,13 +377,12 @@ function readHistoryPage(input: {
       if (
         view === undefined &&
         input.page.authoredRecordHashes.includes(recordHash) &&
-        author.agentId === input.agentCard.agentId
+        message.author.agentId === input.agentCard.agentId
       ) {
         records.push({
           kind: "sent",
-          author: agentViewOf(author),
           recordHash,
-          content: certified.recordCore.action.messageIntent.content,
+          message,
         });
       }
       if (view !== undefined) {

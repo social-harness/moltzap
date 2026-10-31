@@ -2,14 +2,14 @@
 
 import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import type { InboundMessage } from "../communication/conversations/message.js";
+import type { Message } from "../communication/message.js";
 import { testAgentView } from "../__tests__/agent-card-fixtures.js";
 import {
   CollectiveId,
   SendInput,
 } from "../communication/collectives/contracts.js";
 import { Content, MsgId } from "../communication/records/index.js";
-import { AgentAddress, GroupAddress } from "../communication/records/values.js";
+import { AgentAddress } from "../communication/records/values.js";
 import { DeliveryToken } from "../communication/store/index.js";
 import { exactParseOptions } from "../encoding/exact.js";
 import {
@@ -27,9 +27,6 @@ const peerAddress = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
 const senderAddress = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
 const thirdAddress = Schema.decodeUnknownSync(AgentAddress)("agent:carol");
 const outsiderAddress = Schema.decodeUnknownSync(AgentAddress)("agent:dave");
-const groupAddress = Schema.decodeUnknownSync(GroupAddress)(
-  "group:alice,bob,carol",
-);
 const msgId = Schema.decodeUnknownSync(MsgId)(`msg_${"A".repeat(43)}`);
 const content = Schema.decodeUnknownSync(Content)([
   { type: "text", text: "meeting invite sent" },
@@ -65,12 +62,11 @@ function decodesExactOperationRequests(): void {
 }
 
 function decodesCanonicalDirectDelivery(): void {
-  const message: InboundMessage = {
-    kind: "direct",
+  const message: Message = {
     msgId,
-    address: senderAddress,
-    sender: testAgentView(senderAddress),
     content,
+    author: testAgentView(senderAddress),
+    recipients: [testAgentView("agent:bob")],
   };
 
   const item = { kind: "multicast", message };
@@ -102,12 +98,11 @@ function unreachableFailure(reason: string) {
 }
 
 function rejectsAnUntaggedMessage(): void {
-  const message: InboundMessage = {
-    kind: "direct",
+  const message: Message = {
     msgId,
-    address: senderAddress,
-    sender: testAgentView(senderAddress),
     content,
+    author: testAgentView(senderAddress),
+    recipients: [testAgentView("agent:bob")],
   };
 
   expect(
@@ -121,17 +116,11 @@ function rejectsAnUntaggedMessage(): void {
 }
 
 function decodesCanonicalGroupDelivery(): void {
-  const message: InboundMessage = {
-    kind: "group",
+  const message: Message = {
     msgId,
-    address: groupAddress,
-    sender: testAgentView(peerAddress),
-    members: [
-      testAgentView(senderAddress),
-      testAgentView(peerAddress),
-      testAgentView(thirdAddress),
-    ],
     content,
+    author: testAgentView(peerAddress),
+    recipients: [testAgentView(senderAddress), testAgentView(thirdAddress)],
   };
   const item = { kind: "multicast", message };
 
@@ -142,33 +131,21 @@ function decodesCanonicalGroupDelivery(): void {
 
 const inconsistentDeliveries = [
   {
-    case: "a sender whose principal differs from its member identity",
+    case: "the author repeated as a recipient",
     message: {
-      kind: "group",
       msgId,
-      address: groupAddress,
-      sender: {
-        ...testAgentView(peerAddress),
-        principalId: testAgentView(senderAddress).principalId,
-      },
-      members: [
-        testAgentView(senderAddress),
-        testAgentView(peerAddress),
-        testAgentView(thirdAddress),
-      ],
+      author: testAgentView(peerAddress),
+      recipients: [testAgentView(peerAddress)],
       content,
     },
   },
   {
-    case: "one agent operationId repeated under different member names",
+    case: "one agent id repeated under different recipient names",
     message: {
-      kind: "group",
       msgId,
-      address: groupAddress,
-      sender: testAgentView(peerAddress),
-      members: [
+      author: testAgentView(peerAddress),
+      recipients: [
         testAgentView(senderAddress),
-        testAgentView(peerAddress),
         {
           ...testAgentView(thirdAddress),
           agentId: testAgentView(senderAddress).agentId,
@@ -178,49 +155,29 @@ const inconsistentDeliveries = [
     },
   },
   {
-    case: "a direct address that is not the sender",
+    case: "recipients outside agent-name order",
     message: {
-      kind: "direct",
       msgId,
-      address: peerAddress,
-      sender: testAgentView(senderAddress),
+      author: testAgentView(peerAddress),
+      recipients: [testAgentView(thirdAddress), testAgentView(senderAddress)],
       content,
     },
   },
   {
-    case: "group members out of canonical order",
+    case: "a repeated recipient",
     message: {
-      kind: "group",
       msgId,
-      address: groupAddress,
-      sender: testAgentView(peerAddress),
-      members: [peerAddress, senderAddress, thirdAddress].map(testAgentView),
+      author: testAgentView(senderAddress),
+      recipients: [testAgentView(peerAddress), testAgentView(peerAddress)],
       content,
     },
   },
   {
-    case: "a repeated group member",
+    case: "no recipient",
     message: {
-      kind: "group",
       msgId,
-      address: groupAddress,
-      sender: testAgentView(peerAddress),
-      members: [senderAddress, peerAddress, peerAddress].map(testAgentView),
-      content,
-    },
-  },
-  {
-    case: "a sender outside the group",
-    message: {
-      kind: "group",
-      msgId,
-      address: groupAddress,
-      sender: testAgentView(outsiderAddress),
-      members: [
-        testAgentView(senderAddress),
-        testAgentView(peerAddress),
-        testAgentView(thirdAddress),
-      ],
+      author: testAgentView(outsiderAddress),
+      recipients: [],
       content,
     },
   },
@@ -339,11 +296,10 @@ describe("Harness send refusal data", () => {
 const directItem = {
   kind: "multicast",
   message: {
-    kind: "direct",
     msgId,
-    address: senderAddress,
-    sender: testAgentView(senderAddress),
     content,
+    author: testAgentView(senderAddress),
+    recipients: [testAgentView("agent:bob")],
   },
 };
 

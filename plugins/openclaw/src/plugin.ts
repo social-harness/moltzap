@@ -18,7 +18,7 @@ import {
   type HarnessEndpoint,
   type InboundDelivery,
   type InboundItem,
-  type InboundMessage,
+  type Message,
   MessageAddressInput,
   type MessageAddressInput as MessageAddressInputValue,
   type MessageTextError,
@@ -27,6 +27,7 @@ import {
   renderCollectiveResult,
   renderContent,
   renderLocalGuidance,
+  replyAddress,
   type SendInput,
   type SendResult,
 } from "@moltzap/social-harness";
@@ -669,7 +670,9 @@ function handleInboundDelivery(
             delivery.item.kind === "collectiveRequest"
               ? renderCollectiveRequest(
                   delivery.item,
-                  requestAnswerInstructions(delivery.item.to),
+                  requestAnswerInstructions(
+                    replyAddress(delivery.item.message),
+                  ),
                   guidance,
                 )
               : renderLocalGuidance(guidance, {
@@ -699,12 +702,15 @@ function inboundItemTurn(item: InboundItem): HostTurn {
     case "collectiveRequest":
       return addressedTurn(
         {
-          id: item.msgId,
+          id: item.message.msgId,
           origin: "peer",
-          sender: agentSender(item.from),
+          sender: agentSender(item.message.author),
         },
-        item.to,
-        renderCollectiveRequest(item, requestAnswerInstructions(item.to)),
+        replyAddress(item.message),
+        renderCollectiveRequest(
+          item,
+          requestAnswerInstructions(replyAddress(item.message)),
+        ),
       );
     case "collectiveResult":
       return endpointTurn(
@@ -724,21 +730,16 @@ function requestAnswerInstructions(to: MessageAddressInputValue): string {
   return `Send the answer once as the whole message text, with the message tool's reply action or send to ${to}.`;
 }
 
-function multicastTurn(message: InboundMessage): HostTurn {
-  const base = {
-    id: message.msgId,
-    origin: "peer" as const,
-    address: message.address,
-    sender: agentSender(message.sender),
-    body: renderContent(message.content),
-  };
-  return message.kind === "group"
-    ? {
-        ...base,
-        kind: "group",
-        members: message.members.map((member) => `agent:${member.agentName}`),
-      }
-    : { ...base, kind: "direct" };
+function multicastTurn(message: Message): HostTurn {
+  return addressedTurn(
+    {
+      id: message.msgId,
+      origin: "peer",
+      sender: agentSender(message.author),
+    },
+    replyAddress(message),
+    renderContent(message.content),
+  );
 }
 
 function endpointTurn(

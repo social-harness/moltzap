@@ -1823,8 +1823,9 @@ function pendingDeliveryCarriesTheCertifiedRecordHash() {
     expect(pending.map((message) => message.recordHash)).toEqual([recordHash]);
     const author = yield* requireAt(harness.identities, 0, "author identity");
     expect(pending[0]?.message).toMatchObject({
-      sender: agentViewOf(author.card),
-      members: harness.identities
+      author: agentViewOf(author.card),
+      recipients: harness.identities
+        .filter(({ card }) => card.agentId !== author.card.agentId)
         .map(({ card }) => agentViewOf(card))
         .sort((left, right) => left.agentName.localeCompare(right.agentName)),
     });

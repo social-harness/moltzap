@@ -39,11 +39,10 @@ const delivery = (byte: number): HarnessMessageReadyEvent => ({
   item: Schema.decodeUnknownSync(InboundItem)({
     kind: "multicast",
     message: {
-      kind: "direct",
       msgId: digest("msg_", byte),
-      address: "agent:bob",
-      sender: testAgentView("agent:bob"),
       content: [{ type: "text", text: `item ${String(byte)}` }],
+      author: testAgentView("agent:bob"),
+      recipients: [testAgentView("agent:alice")],
     },
   }),
 });

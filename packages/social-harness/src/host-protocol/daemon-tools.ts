@@ -1,9 +1,9 @@
 /** @file Private MCP schemas for daemon management and history reads: exact requests, and results a reader decodes additively. */
 
 import { Schema } from "effect";
+import { Message } from "../communication/message.js";
 import {
   AgentAddress,
-  Content,
   GroupAddress,
   RecordHash,
 } from "../communication/records/index.js";
@@ -30,9 +30,8 @@ const historyContinuation = Schema.NonEmptyString;
 const historyRecord = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("sent"),
-    author: AgentView,
     recordHash: RecordHash,
-    content: Content,
+    message: Message,
   }),
   Schema.Struct({
     kind: Schema.Literal("received"),

@@ -1,8 +1,9 @@
 /** @file AgentCard and SignedMessage immutability, representation, bounds, and signature tests. */
 
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { Effect, Either, Encoding, Redacted, Schema } from "effect";
 import * as fc from "fast-check";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { expect, it } from "vitest";
 import {
   AgentCardIssuedAt,
@@ -31,13 +32,13 @@ import {
   Ed25519PublicKey,
   ed25519PublicKeyThumbprintUri,
 } from "../../keys.js";
+import { WIRE_VERSION } from "../../wire-version.js";
 import {
   EnvelopeId,
   SignedMessage,
   SignedMessageSigningError,
   type SignedMessage as SignedMessageValue,
 } from "../signed-message.js";
-import cofactoredGolden from "./wire-cofactored-golden.json" with { type: "json" };
 
 const MAXIMUM_BODY_BYTES = 262_144;
 const MAXIMUM_RECIPIENTS = 128;
@@ -638,37 +639,104 @@ it("rejects the identity-point universal signature on every signed artifact", ()
     }),
   ));
 
+/** The Registry legitimately attests a canonical mixed-order agent key. */
+const makeMixedOrderCard = Effect.gen(function* () {
+  return yield* makeVerifiedCard({
+    agentId: makeAgentId(254),
+    principalId: PrincipalId.make(identifier("prn_", 253)),
+    agentName: AgentName.make("mixed-order-sender"),
+    publicKey: yield* Schema.decodeUnknown(Ed25519PublicKey)({
+      crv: "Ed25519",
+      kty: "OKP",
+      x: MIXED_ORDER_PUBLIC_KEY_X,
+    }),
+    issuedAt: yield* Schema.decodeUnknown(AgentCardIssuedAt)(
+      "2026-07-30T12:00:00Z",
+    ),
+    registrySigningAuthority: yield* makeSigningAuthority(),
+  });
+});
+
+/** For A=B+T of order-two T, odd k makes S=1+k verify only after multiplying by the cofactor. */
+function cofactoredSignature(input: Uint8Array, publicKey: Uint8Array) {
+  const order = (1n << 252n) + 27742317777372353535851937790883648493n;
+  const r = ed25519.Point.BASE.toBytes();
+  const hash = createHash("sha512")
+    .update(r)
+    .update(publicKey)
+    .update(input)
+    .digest();
+  const k = BigInt(`0x${Buffer.from(hash).reverse().toString("hex")}`) % order;
+  if (k % 2n === 0n) {
+    return undefined;
+  }
+  const scalar = Buffer.from(
+    ((1n + k) % order).toString(16).padStart(64, "0"),
+    "hex",
+  ).reverse();
+  return Buffer.concat([r, scalar]);
+}
+
+/** The body selects an odd challenge for the current card, header and emitted version. */
+function makeCofactoredMessage(agentCard: VerifiedAgentCard) {
+  return Effect.gen(function* () {
+    const header = Encoding.encodeBase64Url(
+      yield* encodeCanonicalJson({
+        alg: "Ed25519",
+        kid: yield* ed25519PublicKeyThumbprintUri(agentCard.publicKey),
+        typ: "application/vnd.sharness.signed-message+jws",
+      }),
+    );
+    const cardDigest = yield* digestAgentCard(agentCard);
+    const publicKey = yield* decodeBase64Url(agentCard.publicKey.x);
+    for (let attempt = 0; attempt < 256; attempt += 1) {
+      const payload = Encoding.encodeBase64Url(
+        yield* encodeCanonicalJson({
+          kind: "signedMessage",
+          sharnessVersion: WIRE_VERSION,
+          senderAgentId: agentCard.agentId,
+          agentCardDigest: cardDigest,
+          recipientAgentIds: [makeAgentId(0)],
+          envelopeId: makeEnvelopeId(1),
+          body: Encoding.encodeBase64Url(
+            new TextEncoder().encode(`cofactored-${attempt}`),
+          ),
+        }),
+      );
+      const input = new TextEncoder().encode(`${header}.${payload}`);
+      const signature = cofactoredSignature(input, publicKey);
+      if (signature !== undefined) {
+        const signedMessage = yield* Schema.decodeUnknown(SignedMessage)({
+          payload,
+          signatures: [
+            {
+              protected: header,
+              signature: Encoding.encodeBase64Url(signature),
+            },
+          ],
+        });
+        return { signedMessage, input, signature, publicKey };
+      }
+    }
+    return yield* Effect.dieMessage("no odd Ed25519 challenge found");
+  });
+}
+
 it("rejects a signature accepted only by cofactored Ed25519 verification", () =>
   Effect.runPromise(
     Effect.gen(function* () {
-      const registrySignerPublicKey = yield* Schema.decodeUnknown(
-        Ed25519PublicKey,
-      )(cofactoredGolden.registryKey);
-      const parsedCard = yield* Schema.decodeUnknown(AgentCard)(
-        cofactoredGolden.card,
-      );
-      const agentCard = yield* AgentCard.verify({
-        agentCard: parsedCard,
-        registrySignerPublicKey,
-      });
-      expect(agentCard.publicKey.x).toBe(MIXED_ORDER_PUBLIC_KEY_X);
-      expect(yield* digestAgentCard(agentCard)).toBe(
-        cofactoredGolden.cardDigest,
-      );
-      expect(yield* ed25519PublicKeyThumbprintUri(agentCard.publicKey)).toBe(
-        cofactoredGolden.keyId,
-      );
-
-      const signedMessage = yield* Schema.decodeUnknown(SignedMessage)(
-        cofactoredGolden.message,
-      );
-      expect(signedMessage.senderAgentId).toBe(agentCard.agentId);
-      expect(signedMessage.agentCardDigest).toBe(cofactoredGolden.cardDigest);
-      expect(new TextDecoder().decode(signedMessage.body)).toBe(
-        cofactoredGolden.bodyText,
-      );
+      const agentCard = yield* makeMixedOrderCard;
+      const candidate = yield* makeCofactoredMessage(agentCard);
+      expect(
+        ed25519.verify(
+          candidate.signature,
+          candidate.input,
+          candidate.publicKey,
+          { zip215: false },
+        ),
+      ).toBe(true);
       const result = yield* SignedMessage.verify({
-        signedMessage,
+        signedMessage: candidate.signedMessage,
         agentCard,
       }).pipe(Effect.either);
       expect(wasRejected(result)).toBe(true);

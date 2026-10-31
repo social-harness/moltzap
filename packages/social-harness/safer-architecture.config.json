@@ -111,8 +111,8 @@
       "reason": "Closed send, listen, and acknowledgment errors, read without loading the engine"
     },
     {
-      "file": "communication/conversations/message.ts",
-      "reason": "Inbound message schemas, read without loading the engine"
+      "file": "communication/message.ts",
+      "reason": "Shared message values, read without loading the engine"
     },
     {
       "file": "communication/collectives/contracts.ts",
@@ -245,10 +245,6 @@
     {
       "file": "daemon/inbox/host-delivery.ts",
       "reason": "Host delivery declares its persistence requirements and coordinates sends and inbox handoff"
-    },
-    {
-      "file": "communication/collectives/prepared.ts",
-      "reason": "Exact operation data shared by preparation, assessment projection and acceptance"
     },
     {
       "file": "firewall/check.ts",
@@ -412,8 +408,7 @@
       "entrypoints": [
         "src/communication/conversations/index.ts",
         "src/communication/conversations/address.ts",
-        "src/communication/conversations/errors.ts",
-        "src/communication/conversations/message.ts"
+        "src/communication/conversations/errors.ts"
       ],
       "reason": "Addressed send, FIRST_MESSAGE and MESSAGE certification, and recovery"
     },
@@ -518,6 +513,16 @@
         "src/daemon/launcher/index.ts"
       ],
       "reason": "The daemon launcher: chooses, verifies and installs the release each start runs, then starts its sharnessd as a child process"
+    },
+    {
+      "name": "messages",
+      "roots": [
+        "src/communication"
+      ],
+      "entrypoints": [
+        "src/communication/message.ts"
+      ],
+      "reason": "Shared message envelopes, participants and references"
     }
   ],
   "layers": [
@@ -569,6 +574,13 @@
         "communication/conversations"
       ],
       "reason": "Addressed send, FIRST_MESSAGE and MESSAGE certification, and recovery"
+    },
+    {
+      "name": "messages",
+      "folders": [
+        "communication"
+      ],
+      "reason": "Shared message envelopes, participants and references"
     },
     {
       "name": "router",

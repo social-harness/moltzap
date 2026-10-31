@@ -13,7 +13,8 @@ import { randomBytes } from "node:crypto";
 import { exactStruct } from "../../../encoding/exact.js";
 import { AgentId } from "../../../identity/identifiers.js";
 import { WIRE_VERSION } from "../../../identity/wire-version.js";
-import { Content, RecordHash } from "../../records/index.js";
+import { MessageReference } from "../../message.js";
+import { Content } from "../../records/index.js";
 import { wireProfiles } from "../../records/values.js";
 import {
   AcceptResponse,
@@ -126,12 +127,12 @@ const CollectiveResponse = Schema.Union(
   exactStruct({ ...responseHead, action: DeclineResponse.fields.action }),
 );
 
-/** The requester's completion decision and counted answers, identified by certified record hash. */
+/** The requester's completion decision and counted answer identities. */
 const CollectiveClose = exactStruct({
   kind: Schema.Literal("close"),
   operationId: CollectiveId,
   ...collectiveClosure.fields,
-  included: Schema.Array(RecordHash),
+  included: Schema.Array(MessageReference),
 });
 
 /** Every value the collective layer carries, discriminated by `kind`. */

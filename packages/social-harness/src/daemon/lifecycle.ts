@@ -8,7 +8,7 @@ import type { Router } from "../communication/router/api/client.js";
 import type { Registry } from "../identity/registry/index.js";
 import { makeEndpointEngine } from "../communication/conversations/index.js";
 import { makeRouterWorker } from "../communication/router/index.js";
-import { decisionReader } from "../firewall/index.js";
+import { Firewall } from "../firewall/index.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { packageVersion } from "../release/index.js";
 import { DaemonRuntimeError, runtimeFailure } from "./errors.js";
@@ -78,7 +78,7 @@ export const runDaemonRuntime = (
 ): Effect.Effect<
   never,
   DaemonRuntimeError,
-  Registry | Router | Scope.Scope | SqlClient.SqlClient
+  Registry | Router | Firewall | Scope.Scope | SqlClient.SqlClient
 > =>
   Effect.gen(function* () {
     const historyExport = yield* openHistoryExport(input, dependencies);
@@ -125,19 +125,18 @@ function makeHandler(
   daemon: RunningDaemon,
 ) {
   return Effect.gen(function* () {
-    const readDecisions =
-      input.firewall?.readDecisions ?? (yield* decisionReader);
+    const firewall = yield* Firewall;
     return yield* dependencies
       .makeHandler({
         implementation: DAEMON_IMPLEMENTATION,
         operations: Object.freeze({
           ...management,
-          readDecisions,
+          readDecisions: firewall.readDecisions,
           ...(input.firewall === undefined
             ? {}
             : {
-                readPolicy: input.firewall.readPolicy,
-                updatePolicy: input.firewall.updatePolicy,
+                readPolicy: firewall.readPolicy,
+                updatePolicy: firewall.updatePolicy,
               }),
           ...daemon.deliveryOperations,
           isRegistered: daemon.isRegistered,

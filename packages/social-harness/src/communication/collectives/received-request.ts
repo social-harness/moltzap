@@ -8,7 +8,6 @@
 
 import { Duration, Either, Option } from "effect";
 import type { AgentView } from "../../identity/cards.js";
-import type { InboundMessage } from "../conversations/message.js";
 import type { MsgId, RecordHash } from "../records/index.js";
 import type {
   AgentAddress,
@@ -17,6 +16,7 @@ import type {
 } from "../records/values.js";
 import type { CertifiedMessage } from "./ports.js";
 import type { SharedAnswers } from "./shared-answers.js";
+import { type Message, replyAddress } from "../message.js";
 import {
   CollectiveError,
   type CollectiveFailure,
@@ -145,24 +145,22 @@ export function receivedRequest(
   const request: ReceivedRequestFields = {
     msgId: message.msgId,
     recordHash: certified.recordHash,
-    from: message.sender,
-    to: message.address,
+    from: message.author,
+    to: replyAddress(message),
     question: questionText(message.content),
     requestedSchema: value.requestedSchema,
     deadlineAt: value.deadlineAt,
     state: "open",
   };
   if (value.op === "gather") {
-    return message.kind === "direct"
+    return message.recipients.length === 1
       ? Option.some({ ...request, kind: "gather" })
       : Option.none();
   }
-  if (message.kind !== "group") {
+  if (message.recipients.length < 2) {
     return Option.none();
   }
-  const [first, ...rest] = message.members.filter(
-    (member) => member.agentId !== message.sender.agentId,
-  );
+  const [first, ...rest] = message.recipients;
   return first === undefined
     ? Option.none()
     : Option.some({
@@ -227,12 +225,12 @@ function requestUnavailable(
  * within `RECEIVED_DEADLINE_HORIZON`.
  */
 function trustedRequest(
-  message: InboundMessage,
+  message: Message,
   value: CollectingValue,
   now: number,
 ): boolean {
   return (
     value.deadlineAt <= now + RECEIVED_DEADLINE_HORIZON &&
-    collectiveRequesterOf(value.operationId) === message.sender.agentId
+    collectiveRequesterOf(value.operationId) === message.author.agentId
   );
 }

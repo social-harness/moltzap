@@ -3,7 +3,7 @@
 import { SqlClient } from "@effect/sql";
 import { Cause, type Context, Deferred, Effect, Option, Scope } from "effect";
 import type { ListenError } from "../../communication/conversations/errors.js";
-import type { Firewall } from "../../firewall/index.js";
+import type { FirewallOperations } from "../../firewall/index.js";
 import type { AgentId } from "../../identity/identifiers.js";
 import type { DaemonBootstrap } from "../bootstrap.js";
 import {
@@ -89,7 +89,7 @@ export interface ProtocolEnvironment {
   readonly router: Context.Tag.Service<typeof Router>;
   readonly daemonScope: Scope.Scope;
   readonly fatal: Deferred.Deferred<never, DaemonRuntimeError>;
-  readonly firewall?: Firewall;
+  readonly firewall?: FirewallOperations;
 }
 
 /** How an acquired protocol reaches back into the daemon that runs it. */

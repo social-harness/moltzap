@@ -36,7 +36,7 @@ import {
   withDaemonStore,
 } from "../__tests__/store-schema-fixtures.js";
 import { verifyStoredMembership } from "../communication/conversations/index.js";
-import { InboundMessage } from "../communication/conversations/message.js";
+import { Message } from "../communication/message.js";
 import {
   deriveConversationId,
   hashMembershipDescriptor,
@@ -229,7 +229,7 @@ const savePermittedHistory = (
       (yield* store.readPendingDeliveries())[0],
     );
     const message = yield* decodeRuntimeValue(
-      InboundMessage,
+      Message,
       pending.canonicalMessage,
     );
     const item = { kind: "multicast" as const, message };
@@ -268,8 +268,10 @@ const retainsPermittedHistory = () =>
         });
         expect(page.records[1]).toMatchObject({
           kind: "sent",
-          author: { agentName: fixture.cards[0].agentName },
-          content: [{ type: "text", text: "Alice's reply" }],
+          message: {
+            author: { agentName: fixture.cards[0].agentName },
+            content: [{ type: "text", text: "Alice's reply" }],
+          },
         });
         expect(yield* operations.searchConversations({})).toEqual({
           kind: "page",

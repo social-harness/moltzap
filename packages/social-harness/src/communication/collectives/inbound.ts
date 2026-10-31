@@ -3,12 +3,8 @@
 import { Schema } from "effect";
 import { exactStruct } from "../../encoding/exact.js";
 import { AgentView } from "../../identity/cards.js";
-import { InboundMessage } from "../conversations/message.js";
-import {
-  MessageAddressInput,
-  MsgId,
-  wellFormedString,
-} from "../records/values.js";
+import { Message, MessageHeader } from "../message.js";
+import { MessageAddressInput, wellFormedString } from "../records/values.js";
 import {
   AnswerContent,
   collectiveClosure,
@@ -25,28 +21,31 @@ import {
  */
 const multicastItem = exactStruct({
   kind: Schema.Literal("multicast"),
-  message: InboundMessage,
+  message: Message,
 });
 
 /** Which collecting operation an item belongs to. */
 const collectingOp = Schema.Literal("gather", "all_gather");
 
-/**
- * A question another agent asked this one. `msgId` is the certified request
- * message's and `to` the conversation it arrived in: the requester's `agent:`
- * address for a gather, the group's `group:` address for an all_gather. The
- * member answers once with a `collectiveResponse` sent to `to`.
- */
+/** The question and answer form recognized in a received message. */
+const RequestMessage = MessageHeader.pipe(
+  Schema.extend(
+    exactStruct({
+      content: exactStruct({
+        op: collectingOp,
+        operationId: CollectiveId,
+        question: wellFormedString,
+        requestedSchema: RequestedSchema,
+        deadlineAt: EpochMillis,
+      }),
+    }),
+  ),
+  Schema.annotations({ identifier: "RequestMessage" }),
+);
+
 const collectiveRequestItem = exactStruct({
   kind: Schema.Literal("collectiveRequest"),
-  op: collectingOp,
-  operationId: CollectiveId,
-  msgId: MsgId,
-  from: AgentView,
-  to: MessageAddressInput,
-  question: wellFormedString,
-  requestedSchema: RequestedSchema,
-  deadlineAt: EpochMillis,
+  message: RequestMessage,
 });
 
 /**

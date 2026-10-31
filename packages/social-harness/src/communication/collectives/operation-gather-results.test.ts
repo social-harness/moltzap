@@ -1,9 +1,17 @@
-/** @file Pins how a requester completes a gather, and what happens when the service cannot keep what the layer emits. */
+/** @file Gather results preserve member outcomes and accepted sends when local publication fails. */
 
 import { scoped as it } from "@effect/vitest";
-import { Duration, Effect, Fiber, Option, Supervisor, TestClock } from "effect";
+import {
+  Deferred,
+  Duration,
+  Effect,
+  Fiber,
+  Option,
+  Supervisor,
+  TestClock,
+} from "effect";
 import { describe, expect } from "vitest";
-import type { CollectivePorts } from "./ports.js";
+import type { InboundItem } from "./inbound.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import {
   answerMessage,
@@ -15,30 +23,13 @@ import {
   makeLayer,
   msgId,
   newObserved,
-  type Observed,
   questionText,
   requestId,
   send,
   startGather,
   unkeptEmit,
 } from "../../__tests__/collective-operation-fixtures.js";
-import { SendError } from "../conversations/errors.js";
 import { CollectiveEmitError } from "./contracts.js";
-
-/**
- * Certify Bob's message at once and refuse Carol's after half a second, so
- * Carol's refusal lands inside the send's wait.
- */
-const refuseCarolLater =
-  (observed: Observed): CollectivePorts["sendMessage"] =>
-  (input) =>
-    input.to === "agent:carol"
-      ? Effect.sleep(Duration.millis(500)).pipe(
-          Effect.zipRight(
-            Effect.fail(new SendError({ reason: "network-unavailable" })),
-          ),
-        )
-      : certifyNext(observed, input);
 
 function consumesAMemberSAnswerRatherThanDeliveringIt() {
   return Effect.gen(function* () {
@@ -374,57 +365,48 @@ function failsASendWithItsRefusalWhenTheInboundCopyCannotBeKept() {
   });
 }
 
-/**
- * A gather whose last outcome arrives before its request sends return
- * completes when they settle; when that result cannot be kept, the send
- * still returns the operation and the request message that exists. Bob's message
- * certifies at once and he declines; Carol's message is refused later, inside
- * the send's wait.
- */
-function keepsAGatherSendWhoseSettlingResultCannotBeKept() {
+/** A failed local result publication does not replace an accepted send's outcome. */
+function keepsAcceptedSendWhenDeadlineResultCannotBeKept() {
   const observed = newObserved();
+  const attempted: InboundItem[] = [];
 
   return Effect.gen(function* () {
+    const bobCertified = yield* Deferred.make<undefined>();
     const layer = yield* makeLayer(observed, {
-      sendMessage: refuseCarolLater(observed),
-      emit: unkeptEmit,
+      refused: { "agent:carol": "slow" },
+      sendMessage: (input) =>
+        certifyNext(observed, input).pipe(
+          Effect.tap(() => Deferred.succeed(bobCertified, undefined)),
+        ),
+      emit: (item) =>
+        Effect.sync(() => attempted.push(item)).pipe(
+          Effect.zipRight(unkeptEmit()),
+        ),
     });
-    const sending = yield* Effect.fork(send(layer, gatherInput()));
-    yield* TestClock.adjust(Duration.millis(100));
+    const sending = yield* Effect.fork(send(layer, gatherInput(1)));
+    yield* Deferred.await(bobCertified);
     const { operationId } = yield* firstRequestOf(observed);
     yield* classifyMessage(
       layer,
       answerMessage("agent:bob", operationId, { action: "decline" }),
     );
-    yield* TestClock.adjust(Duration.millis(500));
-
+    yield* TestClock.adjust(Duration.seconds(1));
     const outcome = yield* Fiber.join(sending);
 
-    expect(outcome.operationId).toBe(operationId);
-    expect(outcome.msgIds).toHaveLength(1);
-  });
-}
-
-it("settles when one member answers and another request is refused", () =>
-  Effect.gen(function* () {
-    const observed = newObserved();
-    const layer = yield* makeLayer(observed, {
-      sendMessage: refuseCarolLater(observed),
+    expect(outcome).toEqual({
+      kind: "collective",
+      operationId,
+      msgIds: [msgId(101)],
     });
-    const sending = yield* Effect.fork(send(layer, gatherInput()));
-    yield* TestClock.adjust(Duration.millis(100));
-    const { operationId } = yield* firstRequestOf(observed);
-    yield* classifyMessage(
-      layer,
-      answerMessage("agent:bob", operationId, { action: "decline" }),
-    );
-    yield* TestClock.adjust(Duration.millis(400));
-    yield* Fiber.join(sending);
-    expect(observed.emitted).toMatchObject([
+    expect(attempted).toEqual([
       {
+        kind: "collectiveResult",
         operationId,
-        closedAt: 500,
-        closedBy: "settled",
+        closedAt: 1_000,
+        closedBy: "deadline",
+        op: "gather",
+        to: gatherTo,
+        question: questionText,
         outcomes: [
           { member: testAgentView("agent:bob"), outcome: { kind: "declined" } },
           {
@@ -434,7 +416,8 @@ it("settles when one member answers and another request is refused", () =>
         ],
       },
     ]);
-  }));
+  });
+}
 
 // @agent-code-guard/regression-only: examples pin how the requester completes a gather.
 describe("gather results", () => {
@@ -504,7 +487,7 @@ describe("emitted items the service cannot keep", () => {
     failsASendWithItsRefusalWhenTheInboundCopyCannotBeKept,
   );
   it(
-    "keeps a gather send's outcome when its settling result cannot be kept",
-    keepsAGatherSendWhoseSettlingResultCannotBeKept,
+    "keeps an accepted gather send when its deadline result cannot be kept",
+    keepsAcceptedSendWhenDeadlineResultCannotBeKept,
   );
 });

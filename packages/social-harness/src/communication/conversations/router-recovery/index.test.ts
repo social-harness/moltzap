@@ -1448,7 +1448,7 @@ const restartWithNonLexicalAgentOrder = () =>
     const restarted = yield* makeEndpointEngine(fixture.input).pipe(
       Effect.provideService(SqlClient.SqlClient, fixture.store.sql),
     );
-    expect((yield* restarted.readPendingMessages())[0]?.message.sender).toEqual(
+    expect((yield* restarted.readPendingMessages())[0]?.message.author).toEqual(
       agentViewOf(fixture.remote.card),
     );
 
