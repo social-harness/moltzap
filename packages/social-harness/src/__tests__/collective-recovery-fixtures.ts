@@ -6,7 +6,7 @@ import { expect } from "vitest";
 import type { InboundItem } from "../communication/collectives/inbound.js";
 import type { CollectivePorts } from "../communication/collectives/ports.js";
 import type { TestDatabase } from "./communication-test-database.js";
-import type { Fixture } from "./firewall-runtime-fixtures.js";
+import type { Fixture } from "./conversation-fixtures.js";
 import {
   type EndpointEngine,
   makeEndpointEngine,

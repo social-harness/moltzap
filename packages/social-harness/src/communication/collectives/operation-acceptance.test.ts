@@ -1,4 +1,4 @@
-/** @file Plain sends distinguish Router attachment from ownership of a bound collective message. */
+/** @file Collective messages wait for Router attachment before acceptance. */
 
 import { SqlClient } from "@effect/sql";
 import { scoped as it } from "@effect/vitest";
@@ -18,9 +18,8 @@ import {
 } from "../../__tests__/agent-card-fixtures.js";
 import { signEvidence } from "../../__tests__/certified-history-fixtures.js";
 import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
-import { engineFixture } from "../../__tests__/firewall-runtime-fixtures.js";
+import { engineFixture } from "../../__tests__/conversation-fixtures.js";
 import { pollCursor } from "../../__tests__/router-worker-fixtures.js";
-import { makeHostDelivery } from "../../daemon/inbox/host-delivery.js";
 import { WIRE_VERSION } from "../../identity/wire-version.js";
 import { makeEndpointEngine } from "../conversations/index.js";
 import {
@@ -122,11 +121,6 @@ function attachingEndpoint() {
       emit: () => Effect.void,
       scope,
     }).pipe(Effect.provideService(SqlClient.SqlClient, subject.sql));
-    const delivery = yield* makeHostDelivery({
-      collectives: () => collectives,
-      scope,
-      historyExport: { record: () => Effect.void },
-    }).pipe(Effect.provideService(SqlClient.SqlClient, subject.sql));
     return {
       store: subject.store,
       run: subject.run,
@@ -135,8 +129,7 @@ function attachingEndpoint() {
       anchor,
       attaching,
       attached,
-      send: (deadline: number) =>
-        delivery.operations.send({ input: allGatherInput(deadline) }),
+      send: (deadline: number) => collectives.send(allGatherInput(deadline)),
     };
   });
 }

@@ -26,7 +26,7 @@ import {
 import {
   engineFixture,
   type Fixture,
-} from "../../__tests__/firewall-runtime-fixtures.js";
+} from "../../__tests__/conversation-fixtures.js";
 import { withDaemonStore } from "../../__tests__/store-schema-fixtures.js";
 import {
   AgentAddress,

@@ -1,4 +1,4 @@
-/** @file Conversation windows through real delivery admission and prepared sends. */
+/** @file The daemon supplies conversation history to incoming and outgoing checks. */
 
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Queue } from "effect";
@@ -8,17 +8,19 @@ import type { MiddlewareInput } from "../index.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import {
   addConversation,
-  auditChecks,
-  destination,
   fixture,
   type Fixture,
+  seedIncoming,
+} from "../../__tests__/conversation-fixtures.js";
+import {
+  auditChecks,
+  destination,
   incomingFixture,
   outgoingFixture,
   pass,
   policy,
-  seedIncoming,
   settings,
-} from "../../__tests__/firewall-runtime-fixtures.js";
+} from "../../__tests__/daemon-delivery-fixtures.js";
 import { bytes } from "../../__tests__/store-schema-fixtures.js";
 
 // @agent-code-guard/regression-only: Exercises conversation-window and byte-bound failures through real certified history.

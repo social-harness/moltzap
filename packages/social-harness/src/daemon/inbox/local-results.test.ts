@@ -1,4 +1,4 @@
-/** @file Local result publication retains checked answers, advice and failure identity. */
+/** @file Collective results reach the host with the permitted answers and guidance. */
 
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Duration, Effect, Fiber, Queue, Schema } from "effect";
@@ -15,7 +15,6 @@ import type {
 import type { FirewallOptions } from "../../firewall/index.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
-import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
   admitPending,
   bob,
@@ -28,18 +27,21 @@ import {
   question,
   seedRequest,
   sendInput,
-} from "../../__tests__/firewall-collective-fixtures.js";
+} from "../../__tests__/collective-delivery-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
   addConversation,
-  auditChecks,
   fixture,
   type Fixture,
+  seedIncoming,
+} from "../../__tests__/conversation-fixtures.js";
+import {
+  auditChecks,
   incomingFixture,
   pass,
   policy,
   rule,
-  seedIncoming,
-} from "../../__tests__/firewall-runtime-fixtures.js";
+} from "../../__tests__/daemon-delivery-fixtures.js";
 import { bytes } from "../../__tests__/store-schema-fixtures.js";
 import {
   type DeliveryToken,
@@ -691,7 +693,7 @@ describe("operation failure publication", () => {
 });
 
 it(
-  "checks an entire result under one rule value while an owner edit completes",
+  "checks an entire result under one rule value while a rule edit completes",
   capturedResultDuringEdit,
 );
 
@@ -743,7 +745,7 @@ function capturedResultDuringEdit() {
   });
 }
 
-/** One permit leaves the second answer queued while the owner removes the deciding rule. */
+/** A second answer waits while the deciding rule changes. */
 function batchOptions(): Partial<FirewallOptions> {
   return {
     maximumConcurrentChecks: 1,

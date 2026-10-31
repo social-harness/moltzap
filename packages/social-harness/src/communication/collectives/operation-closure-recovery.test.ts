@@ -36,7 +36,7 @@ import {
 import {
   engineFixture,
   type Fixture,
-} from "../../__tests__/firewall-runtime-fixtures.js";
+} from "../../__tests__/conversation-fixtures.js";
 import {
   AgentAddress,
   type CertifiedRecord,

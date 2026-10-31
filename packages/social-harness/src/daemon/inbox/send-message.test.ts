@@ -1,21 +1,42 @@
-/** @file Host sends assess one captured draft before accepting protocol custody. */
+/** @file Outgoing messages are checked before communication accepts them. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Deferred, Effect, Fiber } from "effect";
-import { expect } from "vitest";
+import { Deferred, Duration, Effect, Fiber } from "effect";
+import { describe, expect } from "vitest";
 import type { MiddlewareInput } from "../../firewall/check.js";
+import {
+  admitPending,
+  answerBob,
+  formSchema,
+  gatherSend,
+  group,
+  holdMarked,
+  marker,
+  question,
+  seedRequest,
+  sendInput,
+  unfinishedIntents,
+} from "../../__tests__/collective-delivery-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
 import {
+  fixture,
+  type Fixture,
+  seedIncoming,
+} from "../../__tests__/conversation-fixtures.js";
+import {
+  auditChecks,
   block,
   destination,
-  fixture,
+  incomingFixture,
   outgoingFixture,
   pass,
   policy,
-  seedIncoming,
-} from "../../__tests__/firewall-runtime-fixtures.js";
+} from "../../__tests__/daemon-delivery-fixtures.js";
+import { decodeFirewallAuditEntry } from "../../firewall/store/index.js";
+import { FirewallSendError } from "../../host-protocol/advice.js";
+import { renderOutcome } from "../../host-protocol/render.js";
 
-// @agent-code-guard/regression-only: Real SQLite and the protocol engine verify admission and host-visible publication.
+// @agent-code-guard/regression-only: Real SQL and the conversation engine exercise cancellation, deadlines and accepted sends.
 
 it(
   "does not accept a cancelled draft and releases its check permit",
@@ -117,3 +138,265 @@ function captureAndWait(
       return pass;
     });
 }
+
+function refusesGatherBeforeAcceptance() {
+  return Effect.gen(function* () {
+    const subject = yield* fixture;
+    const delivery = yield* outgoingFixture(subject, holdMarked());
+
+    const refusal = yield* Effect.flip(
+      delivery.operations.send({
+        input: gatherSend(`${marker} ${question}`),
+      }),
+    );
+
+    expect(refusal).toBeInstanceOf(FirewallSendError);
+    expect(refusal).toMatchObject({ refusal: "rule-violation" });
+    expect(yield* unfinishedIntents(subject)).toEqual([]);
+    expect((yield* delivery.operations.readInbox({})).items).toEqual([]);
+    expect(yield* auditChecks(subject)).toMatchObject([
+      {
+        direction: "outgoing",
+        disposition: "withheld",
+        input: { message: { operation: { kind: "request", op: "gather" } } },
+      },
+    ]);
+  });
+}
+
+function acceptsGatherInGuidanceMode() {
+  return Effect.gen(function* () {
+    const subject = yield* fixture;
+    const delivery = yield* outgoingFixture(subject, holdMarked(), {
+      mode: "guidance",
+    });
+
+    const sending = yield* delivery.operations
+      .send({ input: gatherSend(`${marker} ${question}`) })
+      .pipe(Effect.forkScoped);
+    yield* Deferred.await(subject.outbound);
+
+    expect(yield* awaitAcceptedMessages(subject, 2)).toHaveLength(2);
+    yield* Fiber.interrupt(sending);
+  });
+}
+
+function checksAnAllGatherAsItsQuestion() {
+  return Effect.gen(function* () {
+    const subject = yield* fixture;
+    const seen: MiddlewareInput[] = [];
+    const delivery = yield* outgoingFixture(subject, holdMarked(seen));
+
+    const refusal = yield* Effect.flip(
+      delivery.operations.send({
+        input: gatherSend(`${marker} ${question}`, "all_gather"),
+      }),
+    );
+
+    expect(refusal).toMatchObject({ refusal: "rule-violation" });
+    expect(seen[0]?.event.message).toMatchObject({
+      sender: subject.local.card.agentId,
+      operation: { kind: "request", op: "all_gather" },
+    });
+    expect(seen[0]?.event.message.recipients).toEqual(
+      expect.arrayContaining([
+        subject.remote.card.agentId,
+        subject.third.card.agentId,
+      ]),
+    );
+    expect(seen[0]?.event.message.text).toContain(
+      `all_gather from agent:alice to ${group}`,
+    );
+    expect(yield* unfinishedIntents(subject)).toEqual([]);
+  });
+}
+
+function keepsARequestOpenAfterARefusedAnswer() {
+  return Effect.gen(function* () {
+    const subject = yield* fixture;
+    yield* seedRequest(subject, Date.now() + 60_000, question);
+    const seen: MiddlewareInput[] = [];
+    const runtime = yield* incomingFixture(
+      subject,
+      holdMarked(seen),
+      {},
+      false,
+    );
+    yield* admitPending(runtime);
+    const refused = { input: answerBob({ slot: "mon", note: marker }) };
+    const allowed = { kind: "answered", content: { slot: "tue" } } as const;
+
+    const first = yield* Effect.flip(runtime.delivery.operations.send(refused));
+    const answering = yield* runtime.delivery.operations
+      .send({ input: answerBob(allowed.content) })
+      .pipe(Effect.forkScoped);
+    yield* Deferred.await(subject.outbound);
+
+    expect(first).toBeInstanceOf(FirewallSendError);
+    expect(
+      seen
+        .filter((input) => input.event.direction === "outgoing")
+        .map((input) => input.event.message),
+    ).toMatchObject([
+      { operation: { kind: "answer", op: "gather" } },
+      { text: renderOutcome(allowed) },
+    ]);
+    expect(yield* unfinishedIntents(subject)).toHaveLength(1);
+    yield* Fiber.interrupt(answering);
+  });
+}
+
+function refusesAnAnswerWhoseRequestExpiresDuringItsCheck() {
+  return Effect.gen(function* () {
+    const subject = yield* fixture;
+    const deadlineAt = Date.now() + 3_000;
+    yield* seedRequest(subject, deadlineAt, question);
+    const runtime = yield* incomingFixture(
+      subject,
+      policy((input) =>
+        input.event.direction === "outgoing"
+          ? Effect.sleep(untilPast(deadlineAt)).pipe(Effect.as(pass))
+          : Effect.succeed(pass),
+      ),
+      {},
+      false,
+    );
+    yield* admitPending(runtime);
+
+    const refusal = yield* Effect.flip(
+      runtime.delivery.operations.send({ input: answerBob({ slot: "mon" }) }),
+    );
+
+    expect(refusal).toMatchObject({ failure: { kind: "request-expired" } });
+    expect(yield* unfinishedIntents(subject)).toEqual([]);
+    expect((yield* auditChecks(subject)).at(-1)).toMatchObject({
+      direction: "outgoing",
+      disposition: "admitted",
+      result: { judgment: "allow" },
+    });
+  });
+}
+
+/** Send a collecting operation that closes one second after it is sent. */
+function sendClosingInASecond(
+  delivery: Effect.Effect.Success<ReturnType<typeof outgoingFixture>>,
+  op: "gather" | "all_gather",
+) {
+  return delivery.operations.send({
+    input: sendInput({
+      to: group,
+      text: question,
+      collective: { op, deadline: 1, requestedSchema: formSchema },
+    }),
+  });
+}
+
+function failsWhenTheDeadlinePassesDuringTheCheck(op: "gather" | "all_gather") {
+  return Effect.gen(function* () {
+    const subject = yield* fixture;
+    const delivery = yield* outgoingFixture(
+      subject,
+      policy(() => Effect.sleep(Duration.millis(1_100)).pipe(Effect.as(pass))),
+    );
+
+    const failure = yield* Effect.flip(sendClosingInASecond(delivery, op));
+
+    expect(failure).toMatchObject({ failure: { kind: "deadline-passed" } });
+    expect(yield* unfinishedIntents(subject)).toEqual([]);
+    expect((yield* delivery.operations.readInbox({})).items).toEqual([]);
+  });
+}
+
+function refusesAllGatherBeforeAcceptance() {
+  return Effect.gen(function* () {
+    const subject = yield* fixture;
+    const delivery = yield* outgoingFixture(
+      subject,
+      policy(() => Effect.sleep(Duration.millis(1_100)).pipe(Effect.as(block))),
+    );
+
+    const refusal = yield* Effect.flip(
+      sendClosingInASecond(delivery, "all_gather"),
+    );
+
+    expect(refusal).toBeInstanceOf(FirewallSendError);
+    expect(yield* unfinishedIntents(subject)).toEqual([]);
+  });
+}
+
+/** The time from now until just after `at`. */
+function untilPast(at: number): Duration.Duration {
+  return Duration.millis(Math.max(0, at - Date.now()) + 50);
+}
+
+/** Wait, up to ten seconds, until the test's sends have bound `count` intents. */
+function awaitAcceptedMessages(subject: Fixture, count: number) {
+  return unfinishedIntents(subject).pipe(
+    Effect.delay(Duration.millis(10)),
+    Effect.repeat({ until: (intents) => intents.length >= count }),
+    Effect.timeoutFail({
+      duration: Duration.seconds(10),
+      onTimeout: () => new Error(`fewer than ${count} intents bound`),
+    }),
+  );
+}
+
+function doesNotAcceptCancelledGather() {
+  return Effect.gen(function* () {
+    const subject = yield* fixture;
+    const entered = yield* Deferred.make<undefined>();
+    const suspended = policy(() =>
+      Deferred.succeed(entered, undefined).pipe(Effect.zipRight(Effect.never)),
+    );
+    const delivery = yield* outgoingFixture(subject, suspended);
+    const sending = yield* delivery.operations
+      .send({ input: gatherSend(question) })
+      .pipe(Effect.forkScoped);
+    yield* Deferred.await(entered);
+    yield* Fiber.interrupt(sending);
+
+    expect(yield* unfinishedIntents(subject)).toEqual([]);
+    const attempts = yield* subject.run(subject.store.readFirewallDecisions());
+    const checks = yield* Effect.forEach(
+      attempts,
+      (entry) => decodeFirewallAuditEntry(entry),
+      { concurrency: 1 },
+    );
+    expect(checks).toEqual([]);
+  });
+}
+
+describe("checking collective sends", () => {
+  it(
+    "refuses a gather before accepting any request message",
+    refusesGatherBeforeAcceptance,
+  );
+  it(
+    "accepts gather requests in guidance mode despite policy findings",
+    acceptsGatherInGuidanceMode,
+  );
+  it(
+    "checks the all-gather question before accepting its message",
+    checksAnAllGatherAsItsQuestion,
+  );
+  it(
+    "keeps a request open after its answer is refused",
+    keepsARequestOpenAfterARefusedAnswer,
+  );
+  it(
+    "refuses an answer whose request expires during its check, keeping the check's judgment",
+    refusesAnAnswerWhoseRequestExpiresDuringItsCheck,
+  );
+  it("fails a gather whose deadline passes during its check, sending nothing", () =>
+    failsWhenTheDeadlinePassesDuringTheCheck("gather"));
+  it("fails an all_gather whose deadline passes during its check, sending nothing", () =>
+    failsWhenTheDeadlinePassesDuringTheCheck("all_gather"));
+  it(
+    "refuses an all-gather before creating its request",
+    refusesAllGatherBeforeAcceptance,
+  );
+  it(
+    "accepts no request when its check is cancelled",
+    doesNotAcceptCancelledGather,
+  );
+});

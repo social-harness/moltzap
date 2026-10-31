@@ -1,4 +1,4 @@
-/** @file Incoming admission withholds private text and preserves publication order. */
+/** @file The daemon checks and saves incoming messages before notifying the host. */
 
 import { scopedLive as it } from "@effect/vitest";
 import { Deferred, Duration, Effect, Fiber, Queue, Schema } from "effect";
@@ -11,8 +11,6 @@ import type { FirewallOptions } from "../../firewall/index.js";
 import type { LocalGuidance } from "../../host-protocol/advice.js";
 import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
 import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
-import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
-import { collectiveKey } from "../../__tests__/collective-operation-fixtures.js";
 import {
   admitPending,
   answerBob,
@@ -25,22 +23,25 @@ import {
   question,
   seedRequest,
   unfinishedIntents,
-} from "../../__tests__/firewall-collective-fixtures.js";
+} from "../../__tests__/collective-delivery-fixtures.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import { collectiveKey } from "../../__tests__/collective-operation-fixtures.js";
 import {
   addConversation,
+  fixture,
+  type Fixture,
+  seedIncoming,
+} from "../../__tests__/conversation-fixtures.js";
+import {
   auditChecks,
   block,
   destination,
-  fixture,
-  type Fixture,
   incomingFixture,
   outgoingFixture,
   pass,
   policy,
-  revise,
   rule,
-  seedIncoming,
-} from "../../__tests__/firewall-runtime-fixtures.js";
+} from "../../__tests__/daemon-delivery-fixtures.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import { renderCollectiveRequestBody } from "../../host-protocol/render.js";
 
@@ -84,7 +85,7 @@ function withheldIncoming() {
       policy((input) =>
         Effect.sync(() => {
           seen.push(input);
-          return revise;
+          return block;
         }),
       ),
     );
