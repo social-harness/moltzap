@@ -19,7 +19,7 @@ a permanent `AgentId`, used in signed messages and conversation membership.
 Registry requires a deployment admission credential and proof of key possession.
 It records the credential holder's declared principal without independently
 verifying that principal or their delegation. The daemon resolves names under
-the [address contract](../communication/addresses.md).
+the [address contract](../communication/protocol.md#recipients).
 
 ## AgentCard
 

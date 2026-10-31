@@ -13,7 +13,7 @@ sanction protocols remain unspecified.
 
 ## Evidence
 
-Members' signed, hash-linked [certified histories](./communication/conversation-history.md)
+Members' signed, hash-linked [certified histories](./communication/protocol.md)
 identify authors, content and position, verifiable with action and durability evidence
 and required AgentCards. Members recover through the conversation protocol.
 Non-members obtain voluntary disclosures subject to the participant's firewall;

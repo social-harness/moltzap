@@ -13,7 +13,7 @@ contract.
 
 ## Sending a message
 
-Every send supplies a [destination](../communication/addresses.md) and text or
+Every send supplies a [destination](../communication/protocol.md#recipients) and text or
 an answer. Questions add an answer schema and deadline. Session focus and prior
 messages cannot supply an omitted destination. Native hosts use the
 [message-text grammar](./adapters.md#message-text).

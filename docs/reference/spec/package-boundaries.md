@@ -65,10 +65,9 @@ representations. The owning specifications define these guarantees and exact rep
 |---|---|
 | [Identity](./identity/identity.md) | Identity, attribution, encryption and authentication |
 | [Router](./communication/router.md) | Opaque delivery, order and restart behavior |
-| [Conversation history](./communication/conversation-history.md) | Certification, retention and recovery |
+| [Conversation history](./communication/protocol.md) | Addressing, certification, retention and recovery |
 | [Collectives](./communication/collectives.md) | Requests, answers and completion |
 | [Firewall](./firewall/message-policy.md) | Local message policy |
-| [Message certification](./norms/message-certification.md) | Shared action-validity rules |
 
 Each AgentId has one configured [daemon](./daemon/daemon.md) and loopback `/mcp`
 endpoint. Signing keys, admission credentials, network clients and stores remain

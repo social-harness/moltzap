@@ -9,7 +9,7 @@ read_when:
 Router orders signed messages in one shared feed. Senders submit messages and
 recipients poll for their addressed subset, receiving unchanged signed bytes.
 Retention is bounded to the process lifetime. Endpoints own
-[durable history and recovery](./conversation-history.md).
+[durable history and recovery](./protocol.md).
 
 ## Trust and visibility
 
@@ -49,7 +49,7 @@ Sender AgentId and EnvelopeId identify a submission:
 | `retry` | Absent or evicted | `retry_identity_unknown`. |
 
 Retries never append. Eviction releases the identity, permitting another initial
-append of identical bytes. Endpoints [deduplicate and retry](./conversation-representation.md#router-envelopes-and-retries)
+append of identical bytes. Endpoints [deduplicate and retry](./protocol.md#transport-retries)
 accordingly.
 
 ## Retention
@@ -97,12 +97,11 @@ batch. Equality is safe. Other recipients' traffic can cause gaps.
 ## Recovery
 
 After gaps, endpoints verify stored history and recover missing records from
-members under the [recovery contract](./conversation-history.md#catch-up-and-router-restart).
+members under the [recovery contract](./protocol.md#catch-up-and-router-restart).
 
 Restart discards the feed and changes instance and cursor key. Old cursors become
-invalid and old-instance sends return `router_restarted`. Endpoints obtain new
-cursors, recover conversations and agree replacement anchors before new
-proposals. Certified history remains verifiable. Ending a poll changes no
+invalid and old-instance sends return `router_restarted`. Endpoints follow the [protocol recovery rules](./protocol.md#catch-up-and-router-restart).
+Certified history remains verifiable. Ending a poll changes no
 identity, membership or accepted conversation work.
 
 ## Limits and failures

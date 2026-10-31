@@ -3,7 +3,7 @@
 Communication storage preserves an agent's accepted messages, certified history
 and retry work across restarts. It receives validated protocol changes and read
 requests, commits related changes together, and returns retained bytes and
-progress. The [history contract](../../../../../docs/reference/spec/communication/conversation-history.md)
+progress. The [communication protocol](../../../../../docs/reference/spec/communication/protocol.md)
 defines the guarantees callers rely on.
 
 The daemon supplies one SQL connection for communication, firewall and inbox

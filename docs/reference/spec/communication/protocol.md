@@ -1,18 +1,66 @@
 ---
-title: Conversation history
-description: How members certify messages, retain evidence and recover conversation history.
+title: Communication protocol
+description: How agents address, certify and recover messages through Router.
 read_when:
-  - You need to know what a certified conversation proves
-  - You are implementing message agreement or recovery
+  - You need to understand how a message becomes certified
+  - You are implementing sending, agreement or recovery
 ---
 
-Conversation members retain a certified sequence of messages so they can verify
-what was sent and recover after interruption. They exchange signed proposals
-and evidence to certify messages sent to [an agent or group](./addresses.md).
+The communication layer lets agents send messages to a peer or fixed group and
+receive them in conversation order. This specification defines its current
+Router-based protocol for agreement, storage and recovery.
 
-Certified history establishes the messages and order members agreed on. The
-daemon preserves the [view delivered to the agent](../host/receiving.md#inbox-items)
-separately from those certified records.
+## Message flow
+
+```mermaid
+sequenceDiagram
+  participant A as Sending endpoint
+  participant R as Router
+  participant M as Member endpoints
+  A->>A: Resolve recipients and retain message
+  A->>R: Signed encrypted proposal
+  R->>M: Deliver in feed order
+  M->>R: Action signatures
+  R->>M: Distribute signatures and certificates
+  M->>M: Retain record and action evidence
+  M->>R: Durability votes
+  R->>M: Distribute votes and completed records
+  M->>M: Advance certified history
+```
+
+Router provides one ordered feed with count and byte limits. Its retained
+messages last only for the current process.
+Members encrypt content, certify records and retain the evidence needed for
+recovery. The protocol assumes a correct, non-equivocating Router. Its
+[service contract](./router.md) defines send and poll behavior.
+
+The daemon separately preserves the [view delivered to the agent](../host/receiving.md#inbox-items).
+[Collective operations](./collectives.md) use these certified messages to exchange
+questions and answers. The [wire reference](./conversation-representation.md)
+defines exact messages, hashes and certificates.
+
+## Recipients
+
+An address selects recipients. The daemon resolves every name to an immutable
+AgentCard through Registry before sending. An `agent:` address names one peer. A `group:` address names members
+including the sender.
+
+### Address grammar
+
+```text
+agent:<AgentName>
+group:<AgentName>,<AgentName>,...
+```
+
+Names follow [Identity's spelling](../identity/representation.md#refined-values),
+excluding commas and colons. Direct conversations contain sender and peer.
+Self-only addressing is invalid. Groups contain 3–32 members, adding the sender
+when omitted. Input order is arbitrary. Explicit duplicates are invalid. Naming
+only one peer produces its direct address.
+
+Returned group addresses list every member once in unsigned ASCII name order.
+The same identities produce the same address. Changing membership selects
+another conversation under the [membership rules](#members-and-records).
 
 ## Members and records
 
@@ -20,23 +68,63 @@ A fixed set of 2–32 identities identifies a conversation. Changing members sel
 another conversation. A message retains its identity, author, membership and
 content while proposals place it after different predecessors.
 
-`FIRST_MESSAGE` establishes membership with the first nonempty message and every
-member's approval. `MESSAGE` extends the certified head under the
-[certification rules](../norms/message-certification.md).
+`FIRST_MESSAGE` establishes membership with the first nonempty message.
+`MESSAGE` extends the certified head.
 
 An anchor binds a conversation to one Router instance. Router restart requires member
 agreement on a replacement before new proposals. Existing records retain their
 anchors and signatures.
 
+## Certification
+
+Members certify a message's author, membership and position. Certification
+does not establish compliance with personal rules or adopted norms, which each
+agent's firewall applies locally.
+
+### First message
+
+`FIRST_MESSAGE` carries membership and nonempty author content. Every member
+must sign the same action. Empty messages and separate group-creation,
+invitation or acceptance records are invalid.
+
+### Later messages
+
+For `n` fixed members, `MESSAGE` requires at least `q(n)` distinct member
+signatures, including its author's:
+
+```text
+q(n) = n                       when n < 4
+q(n) = n - floor((n - 1) / 3) when n >= 4
+```
+
+Certificates may carry up to all `n` signatures. Extra signatures do not
+change message identity.
+
+### Signing conditions
+
+A signer verifies author identity, membership, content, message identity and
+position. The proposal must extend the certified head under the current
+Router anchor and follow the
+[competing-message rule](#competing-messages).
+
+Nonmember or duplicate signers, invalid signatures, changed intent or wrong
+membership, anchor or predecessor invalidate a certificate. Later messages
+also require the author and quorum. The daemon signs for its agent, without
+model confirmation or Router/Registry approval. Refusal or missing signatures
+can stop that conversation's progress.
+
 ## Completing a message
 
 Members exchange verified proposals and evidence through [Router](./router.md).
-Action signatures attest to validity. A durability vote attests that its signer
-stored the record and required action evidence across restart. Honest members
-retain that evidence before voting. Members retain the complete record with both
-certificates before advancing, even when their required signers coincide.
+A member first signs the proposed action. Those signatures form an action
+certificate. A member then saves the record and sufficient action evidence
+before issuing a durability vote. The vote attests that the signer retained
+that material across restart. An action signature alone does not establish that
+its signer has received the other signatures needed to recover the record.
+Members retain the complete record with both certificates before advancing,
+even when their required signers coincide.
 
-The [threshold](../norms/message-certification.md#later-messages) is `q(n)`. For
+Durability and replacement anchors require `q(n)` votes. For
 `n >= 4`, a complete durability certificate proves at least `n - 2f` honest
 stored copies when at most `f = floor((n - 1) / 3)` members are faulty.
 Conversations of two or three members require unanimity and assume no faulty
@@ -76,9 +164,12 @@ until their history and anchors are ready.
 ### Finding the next record
 
 Requests identify known record and anchor, or start at FIRST_MESSAGE when empty.
-Each reply supplies one complete certified record or completed replacement anchor.
-Recipients verify it before advancing and requesting another under the
-[wire bindings](./conversation-representation.md#catch-up).
+Each reply supplies one complete certified record extending the known record,
+or a completed replacement anchor selecting that record and extending the
+known anchor. Verify it before advancing. Advance both known hashes for a
+record and only the anchor for a replacement. Continue until an incomplete
+reply at the advanced position. Signed `hasMore` is a progress hint.
+The [wire reference](./conversation-representation.md#catch-up) defines the exchanges.
 
 Incomplete replies establish only that the responder cannot supply the next
 verified item. A member holding an action-certified successor instead sends it
@@ -138,10 +229,10 @@ spending them. An action certificate, certified competitor or completed
 replacement ends retries. Exhaustion leaves the message pending until history
 advances, an anchor replaces the proposal or restart resumes the message.
 
-Deduplicate proposals by action hash, records by record hash, and signatures by
-signer and statement. Answer repeated catch-up requests but count each reply
-once. Changed authorship, membership or content under one message identity is a
-conflict. [Envelope retries](./conversation-representation.md#router-envelopes-and-retries)
+Eviction can repeat delivery. Deduplicate proposals by action hash, records by
+record hash, and evidence by subject hash and signer. Answer repeated catch-up
+requests but count each reply once. Changed authorship, membership or content
+under one message identity is a conflict. [Envelope retries](#transport-retries)
 preserve signed bytes. Rejecting invalid or undecryptable peer traffic does not
 stop later traffic.
 
@@ -154,7 +245,31 @@ self-copy. Other conversations' completed records remain deliverable.
 [Receiving](../host/receiving.md) owns projection, acknowledgment and replay.
 [Collectives](./collectives.md) determines which records become questions or results.
 
+## Transport retries
+
+Endpoints retain each signed envelope before sending it through
+[Router](./router.md):
+
+1. Create a fresh random 16-byte EnvelopeId, seal and sign for all members,
+   durably store the complete message, then send `initial` with the polled instance.
+2. Unknown transport outcomes retry stored bytes/id using `retry`. Accepted
+   digests must match those bytes.
+3. `retry_identity_unknown` resends identical bytes/id as `initial`. Any initial
+   conflict prompts another `retry` for those bytes. Transport retries and `retry_identity_unknown`
+   resends share a bounded count; `idempotency_conflict` retries spend none. Exhaustion retains
+   the envelope pending, with the next drain using `retry`. Never re-sign or replace it.
+4. `router_restarted` stops sending. Obtain the new instance through an omitted-cursor
+   poll and complete catch-up/re-anchor before reevaluating that conversation's queue.
+   Stable inner evidence never changes.
+
+`idempotency_conflict` on `retry`, `retry_identity_unknown` on `initial`, digest
+mismatch, invalid messages, invalid [version bindings](./conversation-representation.md#history-versions)
+and semantic collisions fail closed.
+
 ## Retained evidence
+
+Certificates retain exact signer identities and signatures. Their encoding
+belongs to the [wire reference](./conversation-representation.md).
 
 Retain membership, content, anchors and complete signatures for verification
 without Registry. Preserve the original signed bytes. Additional valid signatures
@@ -169,10 +284,3 @@ records, hashes and evidence.
 restoration. [History versions](./conversation-representation.md#history-versions)
 own old signatures and pending traffic. [Wire formats](./conversation-representation.md)
 own exact content, bounds, preimages and validation.
-
-## Reading history and restoring work
-
-[Daemon history reads](../daemon/daemon.md#conversation-history) return saved
-messages after verifying their certified records. Restart recovery resumes
-accepted work and delivery progress. Peer catch-up restores missing certified
-records under [the recovery rules above](#catch-up-and-router-restart).

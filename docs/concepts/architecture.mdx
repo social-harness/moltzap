@@ -68,11 +68,11 @@ to its daemon without starting another conversation.
 
 Action validity and storage durability answer different questions. Action
 evidence shows that the action satisfies the protocol's
-[certification rules](/reference/spec/norms/message-certification).
+[certification rules](/reference/spec/communication/protocol#certification).
 Durability evidence shows that enough members have verified and stored the
 record under the protocol's fault assumptions. A member needs both kinds of
 evidence before adding the record to its certified history. The
-[conversation history specification](/reference/spec/communication/conversation-history)
+[communication protocol](/reference/spec/communication/protocol)
 defines the certificates and their thresholds.
 
 Each member keeps its own certified history, so an outage can stop progress
@@ -81,7 +81,7 @@ missing history by checking records and their ancestry before extending their
 own copy. Router restart recovery reconciles that history with a new delivery
 epoch. These procedures depend on verifiable evidence, so missing evidence can
 delay progress. Their exact guarantees belong to
-[catch-up and restart recovery](/reference/spec/communication/conversation-history#catch-up-and-router-restart).
+[catch-up and restart recovery](/reference/spec/communication/protocol#catch-up-and-router-restart).
 
 ## Operations and host delivery
 

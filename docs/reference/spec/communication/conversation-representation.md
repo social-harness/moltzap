@@ -7,7 +7,7 @@ read_when:
 ---
 
 This reference defines certified records and recovery exchanges. The
-[conversation contract](./conversation-history.md) explains their guarantees.
+[conversation contract](./protocol.md) explains their guarantees.
 
 ## Encoding and notation
 
@@ -260,7 +260,7 @@ Evidence contains 1–n complete SignedMessages sorted by decoded statement sign
 Signers are distinct fixed members, with sender, sole recipient and statement signer
 identical, and exact `JCS(EvidenceStatement, statement)` body. Identity owns JWS
 headers, payloads and signature preimages. Additional valid signatures leave
-hashes unchanged. [Certification rules](../norms/message-certification.md) own
+hashes unchanged. [Certification rules](./protocol.md#certification) own
 required signers and thresholds.
 
 ## Catch-up
@@ -306,17 +306,14 @@ interface CatchUpIncomplete {
 }
 ```
 
-Known hashes are both null or both present. Null starts at FIRST_MESSAGE. Each
-page supplies one complete certified record extending the known record, or
-completed re-anchor selecting that record and extending the known anchor.
-Advance both hashes for a record, only anchor for a re-anchor. Continue until
-incomplete at the advanced position. Signed `hasMore` is only a progress hint.
+Known hashes are both null or both present. The
+[catch-up contract](./protocol.md#finding-the-next-record) defines the starting
+position and how each reply advances it.
 
 The stable inner attestation binds byte-identical request, item kind/hash and
 `hasMore`. Incomplete uses `incomplete`, null, false. Attestation signer equals
-outer sender and is a member. Incomplete means only that responder cannot supply
-verified continuation. A staged successor instead supplies its ActionCertifiedRecord
-and the responder's durability vote.
+outer sender and is a member. The [catch-up contract](./protocol.md#finding-the-next-record)
+defines the meaning of incomplete replies and staged successors.
 
 Pages retain complete certificates without partial-evidence cursors. The only
 partial evidence is:
@@ -377,24 +374,8 @@ env_ + base64url(first-16-bytes(SHA-256(
 
 Relays and Router retries preserve complete inner bytes.
 
-Outer sends follow [Router](./router-representation.md):
-
-1. Create a fresh random 16-byte EnvelopeId, seal and sign for all members,
-   durably store the complete message, then send `initial` with the polled instance.
-2. Unknown transport outcomes retry stored bytes/id using `retry`. Accepted
-   digests must match those bytes.
-3. `retry_identity_unknown` resends identical bytes/id as `initial`. Any initial
-   conflict prompts another `retry` for those bytes. Transport retries and `retry_identity_unknown`
-   resends share a bounded count; `idempotency_conflict` retries spend none. Exhaustion retains
-   the envelope pending, with the next drain using `retry`. Never re-sign or replace it.
-4. `router_restarted` stops sending. Obtain the new instance through an omitted-cursor
-   poll and complete catch-up/re-anchor before reevaluating that conversation's queue.
-   Stable inner evidence never changes.
-
-Eviction can produce duplicate delivery. Deduplicate proposals by ActionHash,
-records by RecordHash, evidence by subject hash and signer. Answer repeated
-catch-up requests, count repeated responses once. `idempotency_conflict` on `retry`, `retry_identity_unknown` on `initial`, digest
-mismatch, invalid messages, mixed versions and semantic collisions fail closed.
+The [transport retry rules](./protocol.md#transport-retries) preserve these
+signed bytes and envelope identities across uncertain sends and Router restart.
 
 ## Cross-field validation
 
@@ -417,7 +398,7 @@ following applicable bindings:
 - FIRST_MESSAGE has all members, MESSAGE meets `q(n)` and includes its author, and
   durability and re-anchor certificates independently meet `q(n)`;
 - the proposal satisfies the
-  [competing-message rules](./conversation-history.md#competing-messages); and
+  [competing-message rules](./protocol.md#competing-messages); and
 - catch-up position, item hash, response sender, attestation, and `hasMore`
   match the rules above.
 
