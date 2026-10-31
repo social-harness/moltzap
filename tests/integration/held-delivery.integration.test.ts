@@ -252,15 +252,14 @@ function waitForHeldDelivery(pair: HeldPair) {
 
 function releaseHeldDelivery(state: HeldDelivery) {
   return Effect.gen(function* () {
-    const { proxy, targetInbox, heldSend, senderAddress, senderAgent } = state;
+    const { proxy, targetInbox, heldSend, senderAgent } = state;
     yield* proxy.release;
     const released = yield* Queue.take(targetInbox);
     expect(released.item).toMatchObject({
       kind: "multicast",
       message: {
-        kind: "direct",
-        address: senderAddress,
-        sender: senderAgent,
+        author: senderAgent,
+        recipients: [state.targetAgent],
         content: [{ type: "text", text: heldText }],
       },
     });
@@ -273,16 +272,14 @@ function releaseHeldDelivery(state: HeldDelivery) {
 
 function replyToReleasedDelivery(state: HeldDelivery) {
   return Effect.gen(function* () {
-    const { target, senderAddress, targetAddress, targetAgent, senderInbox } =
-      state;
+    const { target, senderAddress, targetAgent, senderInbox } = state;
     yield* target.send({ to: senderAddress, text: replyText });
     const reply = yield* Queue.take(senderInbox);
     expect(reply.item).toMatchObject({
       kind: "multicast",
       message: {
-        kind: "direct",
-        address: targetAddress,
-        sender: targetAgent,
+        author: targetAgent,
+        recipients: [state.senderAgent],
         content: [{ type: "text", text: replyText }],
       },
     });
@@ -299,7 +296,6 @@ function followUpHeldDelivery(state: HeldDelivery) {
       sender,
       targetAddress,
       targetInbox,
-      senderAddress,
       senderAgent,
       senderInbox,
     } = state;
@@ -308,9 +304,8 @@ function followUpHeldDelivery(state: HeldDelivery) {
     expect(followUp.item).toMatchObject({
       kind: "multicast",
       message: {
-        kind: "direct",
-        address: senderAddress,
-        sender: senderAgent,
+        author: senderAgent,
+        recipients: [state.targetAgent],
         content: [{ type: "text", text: followUpText }],
       },
     });

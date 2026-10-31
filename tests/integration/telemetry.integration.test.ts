@@ -1,6 +1,10 @@
 /** @file Real daemons export their spans, and mark collectives and retries, over OTLP/HTTP protobuf. */
 
-import { type InboundItem, SendError } from "@moltzap/social-harness";
+import {
+  type InboundItem,
+  replyAddress,
+  SendError,
+} from "@moltzap/social-harness";
 import { Duration, Effect, Fiber } from "effect";
 import { expect, it } from "vitest";
 import {
@@ -243,7 +247,7 @@ function completeGather({ requester, member, held, group }: MarkerScenario) {
       to: requester.address,
       collectiveResponse: {
         action: "accept",
-        operationId: gatherRequest.operationId,
+        operationId: gatherRequest.message.content.operationId,
         content: { slot: "mon" },
       },
     });
@@ -251,11 +255,14 @@ function completeGather({ requester, member, held, group }: MarkerScenario) {
       to: requester.address,
       collectiveResponse: {
         action: "decline",
-        operationId: gatherRequest.operationId,
+        operationId: gatherRequest.message.content.operationId,
       },
     });
     yield* nextItem(requester);
-    return { id: gatherRequest.operationId, request: gatherRequest };
+    return {
+      id: gatherRequest.message.content.operationId,
+      request: gatherRequest,
+    };
   });
 }
 
@@ -263,7 +270,7 @@ function completeAllGather(scenario: MarkerScenario) {
   return Effect.gen(function* () {
     yield* gatherFrom(scenario.requester, scenario.group, "all_gather");
     const request = yield* answerAllGather(scenario);
-    return { id: request.operationId, request };
+    return { id: request.message.content.operationId, request };
   });
 }
 
@@ -277,7 +284,7 @@ function answerAllGather({ requester, member, held, group }: MarkerScenario) {
     yield* send(member, {
       to: group,
       collectiveResponse: {
-        operationId: allGatherRequest.operationId,
+        operationId: allGatherRequest.message.content.operationId,
         action: "accept",
         content: { slot: "tue" },
       },
@@ -285,7 +292,7 @@ function answerAllGather({ requester, member, held, group }: MarkerScenario) {
     yield* send(held, {
       to: group,
       collectiveResponse: {
-        operationId: allGatherRequest.operationId,
+        operationId: allGatherRequest.message.content.operationId,
         action: "decline",
       },
     });
@@ -293,10 +300,10 @@ function answerAllGather({ requester, member, held, group }: MarkerScenario) {
     expect(result).toEqual({
       kind: "collectiveResult",
       op: "all_gather",
-      operationId: allGatherRequest.operationId,
+      operationId: allGatherRequest.message.content.operationId,
       closedAt: anyNumber,
       closedBy: "settled",
-      to: allGatherRequest.to,
+      to: replyAddress(allGatherRequest.message),
       question,
       outcomes: [
         {
@@ -378,13 +385,18 @@ function expectProposalCertifiedAndCollectiveClosed(
           received,
           "collective.closed",
           "operationId",
-          request.operationId,
+          request.message.content.operationId,
         ).length > 0,
     );
     expect(
       attributesOf(markers(settled, "retry.settled", "id", pendingId)),
     ).toEqual([{ kind: "proposal", id: pendingId, outcome: "certified" }]);
-    expectMarked(settled, request.operationId, request, "all_gather");
+    expectMarked(
+      settled,
+      request.message.content.operationId,
+      request,
+      "all_gather",
+    );
   });
 }
 
@@ -486,8 +498,12 @@ function expectMarked(
   ]);
   expect(request).toMatchObject({
     kind: "collectiveRequest",
-    operationId: id,
-    deadlineAt: opened[0]?.attributes.deadlineAt,
+    message: {
+      content: {
+        operationId: id,
+        deadlineAt: opened[0]?.attributes.deadlineAt,
+      },
+    },
   });
   expect(opened[0]?.startTimeUnixNano).toBeLessThan(
     closed[0]?.startTimeUnixNano ?? 0n,

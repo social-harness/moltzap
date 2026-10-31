@@ -109,16 +109,22 @@ function startGatherAndExpectRequests({
     const secondRequest = yield* nextItem(second);
     expect(firstRequest).toEqual({
       kind: "collectiveRequest",
-      op: "gather",
-      operationId: started.operationId,
-      msgId: anyString,
-      from: requester.agent,
-      to: requester.address,
-      question,
-      requestedSchema: slotSchema,
-      deadlineAt: anyNumber,
+      message: {
+        msgId: anyString,
+        author: requester.agent,
+        recipients: [first.agent],
+        content: {
+          op: "gather",
+          operationId: started.operationId,
+          question,
+          requestedSchema: slotSchema,
+          deadlineAt: anyNumber,
+        },
+      },
     });
-    expect(secondRequest).toMatchObject({ operationId: started.operationId });
+    expect(secondRequest).toMatchObject({
+      message: { content: { operationId: started.operationId } },
+    });
     return started;
   });
 }

@@ -117,7 +117,7 @@ function runOpenClawScenario() {
         ),
       );
       const returned = yield* Fiber.join(callerDelivery);
-      assertReply(returned, targetAddress, scenario.target.agent);
+      assertReply(returned, scenario.target.agent, scenario.caller.agent);
 
       yield* stopGateway(abortController, runningGateway);
 
@@ -362,15 +362,18 @@ function receiveAllGather(context: AllGatherContext) {
       to: group,
       collectiveResponse: {
         action: "decline",
-        operationId: peerRequest.operationId,
+        operationId: peerRequest.message.content.operationId,
       },
     });
     const answered = yield* messageTool("reply", {
       to: group,
-      message: acceptText("tue", peerRequest.operationId),
+      message: acceptText("tue", peerRequest.message.content.operationId),
     });
     expect(answered.details).toMatchObject({ ok: true });
-    yield* assertReceivedAllGather(context, peerRequest.operationId);
+    yield* assertReceivedAllGather(
+      context,
+      peerRequest.message.content.operationId,
+    );
   });
 }
 
@@ -388,7 +391,7 @@ function sendAllGather(context: AllGatherContext) {
       to: group,
       collectiveResponse: {
         action: "accept",
-        operationId: callerRequest.operationId,
+        operationId: callerRequest.message.content.operationId,
         content: { slot: "mon" },
       },
     });
@@ -396,7 +399,7 @@ function sendAllGather(context: AllGatherContext) {
       to: group,
       collectiveResponse: {
         action: "decline",
-        operationId: peerRequest.operationId,
+        operationId: peerRequest.message.content.operationId,
       },
     });
     expect(yield* nextTurn(turns)).toMatchObject({
@@ -406,7 +409,7 @@ function sendAllGather(context: AllGatherContext) {
     const memberResult = yield* nextItem(caller.messages);
     expect(memberResult).toMatchObject({
       kind: "collectiveResult",
-      operationId: callerRequest.operationId,
+      operationId: callerRequest.message.content.operationId,
       to: group,
       outcomes: [
         {
@@ -446,15 +449,16 @@ function sendGather(
     });
     expect(request).toMatchObject({
       kind: "collectiveRequest",
-      from: context.targetAgent,
-      question: GATHER_QUESTION,
-      requestedSchema: SLOT_SCHEMA,
+      message: {
+        author: context.targetAgent,
+        content: { question: GATHER_QUESTION, requestedSchema: SLOT_SCHEMA },
+      },
     });
     yield* caller.send({
       to: context.targetAddress,
       collectiveResponse: {
         action: "accept",
-        operationId: request.operationId,
+        operationId: request.message.content.operationId,
         content: { slot: "mon" },
       },
     });
@@ -468,15 +472,14 @@ function sendGather(
 
 function assertReply(
   returned: InboundDelivery,
-  targetAddress: ReturnType<typeof directAddress>,
   targetAgent: AgentView,
+  callerAgent: AgentView,
 ): void {
   expect(returned.item).toMatchObject({
     kind: "multicast",
     message: {
-      kind: "direct",
-      address: targetAddress,
-      sender: targetAgent,
+      author: targetAgent,
+      recipients: [callerAgent],
       content: [{ type: "text", text: OPENCLAW_REPLY }],
     },
   });

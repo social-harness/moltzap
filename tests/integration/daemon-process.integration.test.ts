@@ -115,8 +115,8 @@ const deliverDirect = (input: {
       expect(inbound.item).toMatchObject({
         kind: "multicast",
         message: {
-          kind: "direct",
-          sender: input.from.agent,
+          author: input.from.agent,
+          recipients: [{ agentName: input.to.agentName }],
           content: [{ type: "text", text: input.text }],
         },
       });
@@ -763,10 +763,9 @@ function exchangeInitialMessagesAndExpectDelivery(state: ProcessScenario) {
       expect(targetInbound.item).toMatchObject({
         kind: "multicast",
         message: {
-          kind: "direct",
           msgId: sent.msgId,
-          address: callerAddress,
-          sender: callerFixture.agent,
+          author: callerFixture.agent,
+          recipients: [targetFixture.agent],
           content: [{ type: "text", text: initialText }],
         },
       });
@@ -776,9 +775,8 @@ function exchangeInitialMessagesAndExpectDelivery(state: ProcessScenario) {
       expect(callerInbound.item).toMatchObject({
         kind: "multicast",
         message: {
-          kind: "direct",
-          address: targetAddress,
-          sender: targetFixture.agent,
+          author: targetFixture.agent,
+          recipients: [callerFixture.agent],
           content: [{ type: "text", text: responseText }],
         },
       });
