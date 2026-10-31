@@ -295,10 +295,10 @@ function expectGuidedGatherAdvice({
       deadline: ANSWERED_DEADLINE_SECONDS,
     });
     expect(yield* nextItem(requester)).toMatchObject({
-      operationId: advised.operationId,
+      message: { content: { operationId: advised.operationId } },
     });
     expect(yield* nextItem(strict)).toMatchObject({
-      operationId: advised.operationId,
+      message: { content: { operationId: advised.operationId } },
     });
     yield* accept(requester, guided.address, advised.operationId, {
       slot: "mon",
@@ -353,10 +353,10 @@ function expectUnsettledGatherAdvice({
     });
     expect(unsettled.guidance?.instructions).toEqual([uncertainAdvice]);
     expect(yield* nextItem(guided)).toMatchObject({
-      operationId: unsettled.operationId,
+      message: { content: { operationId: unsettled.operationId } },
     });
     expect(yield* nextItem(strict)).toMatchObject({
-      operationId: unsettled.operationId,
+      message: { content: { operationId: unsettled.operationId } },
     });
     yield* accept(guided, requester.address, unsettled.operationId, {
       slot: "mon",
