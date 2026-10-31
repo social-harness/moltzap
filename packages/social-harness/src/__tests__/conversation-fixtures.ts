@@ -1,17 +1,20 @@
 /** @file Verified agents and real SQL for conversation engine tests. */
 import { SqlClient } from "@effect/sql";
-import { Deferred, Effect, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { generateKeyPairSync } from "node:crypto";
 
-import { makeEndpointEngine } from "../communication/conversations/index.js";
+import { messageFromIntent } from "../communication/message.js";
 import {
+  type Content,
   deriveConversationId,
   MembershipDescriptor,
+  mintMsgId,
+  type MsgId,
   verifyMembershipDescriptor,
 } from "../communication/records/index.js";
 import { RouterInstanceId } from "../communication/router/api/contract.js";
 import { encodeCanonical } from "../encoding/canonical-json.js";
-import { AgentCard } from "../identity/cards.js";
+import { AgentCard, type AgentView, agentViewOf } from "../identity/cards.js";
 import { Ed25519PublicKey } from "../identity/keys.js";
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import {
@@ -34,7 +37,8 @@ const anchor = {
   pollCursor: pollCursor(11),
 };
 
-const identities = Effect.gen(function* () {
+/** Verified signers share a Registry authority and one isolated durable store. */
+export const conversationIdentityFixture = Effect.gen(function* () {
   const registryKeys = generateKeyPairSync("ed25519");
   const local = yield* signingIdentity(1, "alice", registryKeys);
   const remote = yield* signingIdentity(2, "bob", registryKeys);
@@ -62,81 +66,42 @@ const identities = Effect.gen(function* () {
     run,
     registryKeys,
     signer,
+    anchor,
   };
-});
-
-/** Real storage and send preparation suspend network delivery at the Router boundary. */
-export const engineFixture = () =>
-  Effect.gen(function* () {
-    const known = yield* identities;
-    const { local, remote, third, signer } = known;
-    const outbound = yield* Deferred.make<undefined>();
-    const engine = yield* makeEndpointEngine({
-      localAgentCard: local.card,
-      signingAuthority: local.authority,
-      registrySignerPublicKey: signer,
-      registry: {
-        lookup: (request) =>
-          Effect.succeed({
-            kind: "found",
-            agentCard:
-              "agentName" in request &&
-              request.agentName === third.card.agentName
-                ? third.card
-                : remote.card,
-          }),
-      },
-      reportStorageFault: () => Effect.dieMessage("unexpected store fault"),
-      routerWorker: {
-        currentAnchor: Effect.succeed(anchor),
-        awaitAnchor: Effect.succeed(anchor),
-        send: () =>
-          Deferred.succeed(outbound, undefined).pipe(
-            Effect.zipRight(Effect.never),
-          ),
-      },
-    }).pipe(Effect.provideService(SqlClient.SqlClient, known.sql));
-    return { ...known, engine, outbound };
-  }).pipe(Effect.withSpan("fixture"));
-
-/** The fixture whose engine signs every proposal. */
-export const fixture = engineFixture();
+}).pipe(Effect.withSpan("conversationIdentityFixture"));
 
 /** The acquired identities and storage remain live for the test scope. */
-export type Fixture = Effect.Effect.Success<typeof fixture>;
+export type Fixture = Effect.Effect.Success<typeof conversationIdentityFixture>;
 
-/** Carol supplies an independent conversation using the same endpoint store. */
-export function addConversation(subject: Fixture, authoredLocally = false) {
+/** Each call creates a distinct send unless a retry supplies the same message id. */
+export function authoredMessage(
+  subject: Pick<Fixture, "local" | "remote">,
+  content: Content,
+  options: {
+    readonly recipients?: readonly AgentView[];
+    readonly msgId?: MsgId;
+  } = {},
+) {
   return Effect.gen(function* () {
-    const { authority, card } = subject.third;
-    const membership = yield* directMembership(
-      [subject.local.card, card],
-      subject.signer,
+    return yield* messageFromIntent(
+      [
+        agentViewOf(subject.local.card),
+        ...(options.recipients ?? [agentViewOf(subject.remote.card)]),
+      ],
+      {
+        authorAgentId: subject.local.card.agentId,
+        msgId: options.msgId ?? (yield* mintMsgId()),
+        content,
+      },
     );
-    const authors = authoredLocally
-      ? { local: { card, authority }, remote: subject.local }
-      : { local: subject.local, remote: { card, authority } };
-    const record = yield* buildCertifiedFirstMessage(
-      authors.local,
-      authors.remote,
-      membership,
-      anchor.routerInstanceId,
-    );
-    yield* storeCertifiedFirstMessage(
-      subject.store,
-      subject.local.card,
-      membership,
-      record,
-    );
-    return { membership, record, remote: { card, authority } };
-  }).pipe(
-    Effect.provideService(SqlClient.SqlClient, subject.sql),
-    Effect.withSpan("addConversation"),
-  );
+  }).pipe(Effect.orDie, Effect.withSpan("authoredMessage"));
 }
 
 /** A signed FIRST_MESSAGE seeds the default conversation without network traffic. */
-export function seedIncoming(subject: Fixture, authoredLocally = false) {
+export function seedIncoming(
+  subject: Pick<Fixture, "local" | "remote" | "membership" | "store" | "sql">,
+  authoredLocally = false,
+) {
   return Effect.gen(function* () {
     const { local, remote, membership, store } = subject;
     const record = yield* buildCertifiedFirstMessage(

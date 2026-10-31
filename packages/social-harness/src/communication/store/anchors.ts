@@ -6,7 +6,6 @@ import type {
   CompletedReanchor,
   ConversationFoundation,
   EmptyConversationRestart,
-  IdentityBinding,
   MessageIntent,
   MessageIntentBinding,
   ProposalLock,
@@ -15,8 +14,6 @@ import type {
   StoreMutation,
 } from "./types.js";
 
-import { bindIdentity as bindStoredIdentity } from "../../identity/local-store.js";
-import { bindCollectiveMessageInTransaction } from "./collective-claims.js";
 import {
   copyBytes,
   EndpointStoreError,
@@ -209,19 +206,6 @@ export function applyCatchUpReanchor(
     );
   }).pipe(storeOperation, Effect.withSpan("applyCatchUpReanchor"));
 }
-/** Protocol mutations share the identity-owned immutable binding. */
-export function bindIdentity(binding: IdentityBinding) {
-  return bindStoredIdentity(binding).pipe(
-    Effect.catchTag(
-      "IdentityError",
-      (error) =>
-        new EndpointStoreError({
-          reason:
-            error.reason === "incompatible-daemon" ? "conflict" : "persistence",
-        }),
-    ),
-  );
-}
 function validateMessageIntentBinding(binding: MessageIntentBinding): void {
   const intent = binding.intent;
   requireText(intent.conversationId);
@@ -248,9 +232,6 @@ function bindIntentWithFoundation(
         ? yield* putConversationFoundationInTransaction(binding.foundation)
         : yield* requireConversationFoundation(intent);
     const messageIntent = yield* bindMessageIntentInTransaction(intent);
-    if (binding.collective !== undefined) {
-      yield* bindCollectiveMessageInTransaction(binding.collective, intent);
-    }
     return foundation === "inserted" || messageIntent === "inserted"
       ? "inserted"
       : "existing";

@@ -1,19 +1,19 @@
 /** @file Send results describe complete successful cases across the host boundary. */
 
 import { scoped as it } from "@effect/vitest";
-import { Effect, Exit, Struct } from "effect";
+import { Clock, Effect, Exit, Struct } from "effect";
 import { describe, expect } from "vitest";
+import type { CollectiveSendOutcome } from "../communication/collectives/contracts.js";
 import { digest, testAgentView } from "../__tests__/agent-card-fixtures.js";
 import { collectiveOperationId } from "../__tests__/collective-id-fixtures.js";
 import {
-  classifyMessage,
-  gatherInput,
-  makeLayer,
-  newObserved,
-  requestId,
-  requestMessage,
-  send,
-} from "../__tests__/collective-operation-fixtures.js";
+  alice,
+  bob,
+  form,
+  openCollectives,
+  question,
+  wireMessage,
+} from "../__tests__/collective-service-fixtures.js";
 import {
   checkHarnessSendResult,
   decodeHarnessSendResult,
@@ -74,21 +74,40 @@ describe("send results", () => {
 
 function acceptsProducedResults() {
   return Effect.gen(function* () {
-    const layer = yield* makeLayer(newObserved());
-    yield* classifyMessage(layer, requestMessage("agent:bob", 60_000));
-    const response = yield* send(layer, {
-      to: "agent:bob",
-      collectiveResponse: { operationId: requestId, action: "decline" },
-    });
-    const gather = yield* send(layer, gatherInput());
-    yield* assertProducedResult(response);
-    yield* assertProducedResult(gather);
+    const fixture = yield* openCollectives();
+    const deadlineAt = (yield* Clock.currentTimeMillis) + 60_000;
+    const remoteOperation = collectiveOperationId(bob.agentId, 12);
+    const request = yield* wireMessage(
+      bob,
+      [alice],
+      {
+        kind: "operation",
+        op: "gather",
+        operationId: remoteOperation,
+        requestedSchema: form,
+        deadlineAt,
+      },
+      { byte: 13, text: "Which day works?" },
+    );
+    yield* fixture.service.receive(request);
+    const message = yield* wireMessage(
+      alice,
+      [bob],
+      {
+        kind: "response",
+        operationId: remoteOperation,
+        action: "decline",
+      },
+      { byte: 14 },
+    );
+    yield* assertProducedResult(yield* fixture.service.answer(message));
+    yield* assertProducedResult(
+      yield* fixture.service.ask(question(deadlineAt)),
+    );
   });
 }
 
-function assertProducedResult(
-  result: Effect.Effect.Success<ReturnType<typeof send>>,
-) {
+function assertProducedResult(result: CollectiveSendOutcome) {
   return Effect.gen(function* () {
     const publicResult = Struct.omit(result, "msgIds");
     expect(yield* checkHarnessSendResult(publicResult)).toEqual(publicResult);

@@ -101,21 +101,6 @@ export function recoverStoredState(
   }).pipe(storeOperation, Effect.withSpan("recoverStoredState"));
 }
 
-/** Lists only memberships whose conversations have certified history. */
-export const readCertifiedMemberships = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(`
-    SELECT state.conversation_id, membership.membership_hash,
-           membership.canonical_membership
-    FROM conversation_state AS state
-    LEFT JOIN memberships AS membership
-      ON membership.conversation_id = state.conversation_id
-    WHERE state.head_record_hash IS NOT NULL
-    ORDER BY state.conversation_id
-  `);
-  return Object.freeze(rows.map(readMembership));
-}).pipe(storeOperation, Effect.withSpan("readCertifiedMemberships"));
-
 /** Pages stop at the original certified head and can be replayed after restart. */
 export function readStoredConversation(
   request:
@@ -208,6 +193,25 @@ export function readRecentConversation(input: {
     };
   }).pipe(storeOperation, Effect.withSpan("readRecentConversation"));
 }
+/** Protocol startup needs each retained membership, including conversations without a certified head. */
+export function readMemberships(
+  conversationId?: string,
+): Effect.Effect<
+  readonly StoredMembership[],
+  EndpointStoreError,
+  SqlClient.SqlClient
+> {
+  return Effect.gen(function* () {
+    const database = yield* SqlClient.SqlClient;
+    return Object.freeze(
+      (yield* database.unsafe<Readonly<Record<string, unknown>>>(
+        `SELECT conversation_id, membership_hash, canonical_membership
+         FROM memberships ${conversationId === undefined ? "" : "WHERE conversation_id = ?"} ORDER BY conversation_id`,
+        [...(conversationId === undefined ? [] : [conversationId])],
+      )).map(readMembership),
+    );
+  }).pipe(storeOperation, Effect.withSpan("readMemberships"));
+}
 function readPositions(conversationId?: string) {
   return Effect.gen(function* () {
     const database = yield* SqlClient.SqlClient;
@@ -251,24 +255,6 @@ function readMessageIntents(
           ...(completedRecordHash === undefined ? {} : { completedRecordHash }),
         });
       }),
-    );
-  }).pipe(storeOperation);
-}
-function readMemberships(
-  conversationId?: string,
-): Effect.Effect<
-  readonly StoredMembership[],
-  EndpointStoreError,
-  SqlClient.SqlClient
-> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    return Object.freeze(
-      (yield* database.unsafe<Readonly<Record<string, unknown>>>(
-        `SELECT conversation_id, membership_hash, canonical_membership
-         FROM memberships ${conversationId === undefined ? "" : "WHERE conversation_id = ?"} ORDER BY conversation_id`,
-        [...(conversationId === undefined ? [] : [conversationId])],
-      )).map(readMembership),
     );
   }).pipe(storeOperation);
 }

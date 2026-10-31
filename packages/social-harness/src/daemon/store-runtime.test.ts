@@ -72,7 +72,7 @@ function reportsHowCurrentStoreOpens() {
     const current = yield* inspectEndpointStore(path);
     expect([absent, current]).toEqual(["create", "reopen"]);
     expect(
-      yield* withDaemonStore(path, (store) => store.readIdentity()),
+      yield* withDaemonStore(path, (store) => store.readIdentityBinding()),
     ).toEqual(identity);
   });
 }
@@ -83,7 +83,7 @@ function preservesStateAcrossRestart() {
     const before = yield* withDaemonStore(path, (store) => store.recover());
     yield* withDaemonStore(path, (store) =>
       Effect.gen(function* () {
-        expect(yield* store.readIdentity()).toEqual(identity);
+        expect(yield* store.readIdentityBinding()).toEqual(identity);
         expect(yield* store.recover()).toEqual(before);
         expect(yield* store.readEventState()).toEqual(eventState);
         expect((yield* store.readInbox()).items[0]?.canonicalItem).toEqual(

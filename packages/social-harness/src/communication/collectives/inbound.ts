@@ -10,8 +10,8 @@ import {
   collectiveClosure,
   CollectiveId,
   EpochMillis,
-  RequestedSchema,
 } from "./contracts.js";
+import { FormModeSchema } from "./wire/index.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
 
@@ -32,7 +32,7 @@ const RequestMessage = MessageHeader.pipe(
         op: collectingOp,
         operationId: CollectiveId,
         question: wellFormedString,
-        requestedSchema: RequestedSchema,
+        requestedSchema: FormModeSchema,
         deadlineAt: EpochMillis,
       }),
     }),
@@ -113,14 +113,5 @@ export const InboundItem = Schema.Union(
  * @useDeclaredType
  */
 export type InboundItem = typeof InboundItem.Type;
-
-/**
- * The result delivered when a gather or all-gather completes.
- * @useDeclaredType
- */
-export type CollectiveResultItem = Extract<
-  InboundItem,
-  { readonly kind: "collectiveResult" }
->;
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore the package naming rules after the Schema/type pairs. */

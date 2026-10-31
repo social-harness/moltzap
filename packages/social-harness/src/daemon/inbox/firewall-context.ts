@@ -7,30 +7,31 @@ import type {
   FirewallOperations,
   PreparedFirewallCheck,
 } from "../../firewall/index.js";
+import type { Ed25519PublicKey } from "../../identity/keys.js";
 import type {
   FirewallEvidence,
   FirewallHistoryEntry,
-  FirewallInboxEntry,
   FirewallLocalEntry,
-} from "../../firewall/store/index.js";
-import type { Ed25519PublicKey } from "../../identity/keys.js";
+  IncomingEntry,
+} from "./types.js";
 import {
   type CollectiveValue,
   readCollectiveValue,
 } from "../../communication/collectives/index.js";
+import { Question } from "../../communication/collectives/model.js";
 import {
   messageMembers,
+  replyAddress,
   type Message as SharedMessage,
   Message as SharedMessageSchema,
 } from "../../communication/message.js";
 import {
-  Content,
+  type Content,
   deriveConversationId,
 } from "../../communication/records/index.js";
 import {
   type AgentAddress,
   agentAddressOf,
-  type MessageAddressInput,
 } from "../../communication/records/values.js";
 import {
   decodeRuntimeValue,
@@ -42,6 +43,7 @@ import { HistoryEntry, Message, MessageContext } from "../../firewall/check.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import {
   questionText,
+  renderCollectiveQuestion,
   renderCollectiveRequestBody,
   renderContent,
   renderOutcome,
@@ -64,7 +66,7 @@ interface MessageProjection {
 }
 
 /** The text assessed for a shared message and its verified participants. */
-export interface ProjectedHistoryMessage extends MessageProjection {
+interface ProjectedHistoryMessage extends MessageProjection {
   readonly sharedMessage: SharedMessage;
   readonly cards: readonly AgentView[];
   readonly author: AgentAddress;
@@ -321,11 +323,7 @@ function decodeHistory(
       } satisfies DecodedHistory;
     }
     const decoded = yield* projectHistoryMessage(entry);
-    const shown =
-      decoded.message.operation?.kind === "answer"
-        ? entry.answer === "admitted"
-        : entry.visible;
-    const visible = shown && decoded.supported;
+    const visible = entry.visible && decoded.supported;
     return {
       entry: {
         ...messageFields(decoded.message),
@@ -370,108 +368,91 @@ export const prepareMessageCheck = Effect.fn("prepareMessageCheck")(function* (
   };
 });
 
-/** Exact messages captured by communication before the host's outgoing assessment. */
-export interface OutgoingCandidate {
-  readonly to: MessageAddressInput;
-  readonly gather: boolean;
-  readonly messages: readonly SharedMessage[];
-}
-
-/** The whole fixed gather is assessed once, using the same question each prepared request carries. */
-function gatherMessage(
-  local: VerifiedAgentCard,
-  shared: SharedMessage,
-  cards: readonly AgentView[],
-) {
-  return Effect.gen(function* () {
-    const part = yield* readCollectiveValue(shared.content).pipe(
-      Effect.catchTag("CollectivePartInvalidError", () =>
-        Effect.fail(new EndpointStoreError({ reason: "invalid-input" })),
+/** Assesses the exact outgoing message captured by the host operation. */
+export const prepareOutgoingCheck = Effect.fn("prepareOutgoingCheck")(
+  function* (environment: FirewallEnvironment, shared: SharedMessage) {
+    const canonicalCandidate = yield* encodeCanonical(
+      SharedMessageSchema,
+      shared,
+    ).pipe(
+      Effect.catchTag(
+        "ClientRepresentationError",
+        () => new EndpointStoreError({ reason: "invalid-input" }),
       ),
     );
-    if (
-      Option.isNone(part) ||
-      part.value.kind !== "operation" ||
-      part.value.op !== "gather"
-    ) {
-      return yield* new EndpointStoreError({ reason: "invalid-input" });
-    }
-    const value = part.value;
-    const projected = yield* projectRequest(shared, value);
-    return yield* decodeMessage({
-      id: hashedId(`${local.agentId}:${value.operationId}`),
-      sender: local.agentId,
-      recipients: cards
-        .filter((card) => card.agentId !== local.agentId)
-        .map((card) => card.agentId),
-      text: projected.text,
-      operation: {
-        kind: "request",
-        op: "gather",
-        operationId: value.operationId,
-        deadlineAt: value.deadlineAt,
-      },
-    });
-  });
-}
+    const message = (yield* messageProjection(shared)).message;
+    return yield* outgoingCheck(
+      environment,
+      shared,
+      canonicalCandidate,
+      message,
+    );
+  },
+);
 
-/** Captures the participants and exact candidate bytes used by one outgoing check. */
-const captureOutgoing = Effect.fn("captureOutgoingAssessment")(function* (
-  candidate: OutgoingCandidate,
-) {
-  const [first] = candidate.messages;
-  if (first === undefined) {
-    return yield* new EndpointStoreError({ reason: "invalid-input" });
-  }
-  const cards = [
-    ...new Map(
-      candidate.messages
-        .flatMap(messageMembers)
-        .map((agent) => [agent.agentId, agent]),
-    ).values(),
-  ].sort((left, right) => compareAgentIds(left.agentId, right.agentId));
-  const [one, two, ...rest] = cards;
-  if (one === undefined || two === undefined) {
-    return yield* new EndpointStoreError({ reason: "invalid-input" });
-  }
-  const conversationId = yield* deriveConversationId([
-    one.agentId,
-    two.agentId,
-    ...rest.map((card) => card.agentId),
-  ]).pipe(
-    Effect.catchTag("ClientRepresentationError", () =>
-      Effect.fail(new EndpointStoreError({ reason: "invalid-input" })),
+/** A question is checked once for its fixed recipients before any request message is accepted. */
+export const prepareOutgoingQuestionCheck = Effect.fn(
+  "prepareOutgoingQuestionCheck",
+)(function* (environment: FirewallEnvironment, question: Question) {
+  const canonicalCandidate = yield* encodeCanonical(Question, question).pipe(
+    Effect.catchTag(
+      "ClientRepresentationError",
+      () => new EndpointStoreError({ reason: "invalid-input" }),
     ),
   );
-  const canonicalCandidate = yield* (
-    candidate.gather
-      ? encodeCanonical(Content, first.content)
-      : encodeCanonical(SharedMessageSchema, first)
-  ).pipe(
-    Effect.catchTag("ClientRepresentationError", () =>
-      Effect.fail(new EndpointStoreError({ reason: "invalid-input" })),
-    ),
+  const message = yield* decodeMessage({
+    id: hashedId(`${question.author.agentId}:${question.operationId}`),
+    sender: question.author.agentId,
+    recipients: question.recipients.map((agent) => agent.agentId),
+    text: renderCollectiveQuestion(question),
+    operation: {
+      kind: "request",
+      op: question.op,
+      operationId: question.operationId,
+      deadlineAt: question.deadlineAt,
+    },
+  });
+  return yield* outgoingCheck(
+    environment,
+    question,
+    canonicalCandidate,
+    message,
   );
-  return { first, cards, conversationId, canonicalCandidate };
 });
 
-/** The captured message fixes both its assessment text and its recipient history. */
-export const prepareOutgoingCheck = Effect.fn("prepareOutgoingCheck")(
-  function* (
-    environment: FirewallEnvironment,
-    candidate: OutgoingCandidate,
-  ): Effect.fn.Return<PreparedFirewallCheck, EndpointStoreError> {
-    const { first, cards, conversationId, canonicalCandidate } =
-      yield* captureOutgoing(candidate);
+type Participants = Pick<SharedMessage, "author" | "recipients">;
+
+function outgoingCheck(
+  environment: FirewallEnvironment,
+  participants: Participants,
+  canonicalCandidate: Uint8Array,
+  message: Message,
+) {
+  return Effect.gen(function* () {
+    const cards = [...messageMembers(participants)].sort((left, right) =>
+      compareAgentIds(left.agentId, right.agentId),
+    );
+    const [first, second, ...rest] = cards;
+    if (first === undefined || second === undefined) {
+      return yield* new EndpointStoreError({ reason: "invalid-input" });
+    }
+    const conversationId = yield* deriveConversationId([
+      first.agentId,
+      second.agentId,
+      ...rest.map((agent) => agent.agentId),
+    ]).pipe(
+      Effect.catchTag(
+        "ClientRepresentationError",
+        () => new EndpointStoreError({ reason: "invalid-input" }),
+      ),
+    );
+    const conversation = replyAddress(participants);
     const evidence = yield* readFirewallEvidence({
       conversationId,
-      conversation: candidate.to,
+      conversation,
       maximumRecords: environment.firewall.configuration.maximumHistoryRecords,
       registrySignerPublicKey: environment.registrySignerPublicKey,
     }).pipe(Effect.provideService(SqlClient.SqlClient, environment.sql));
-    const message = candidate.gather
-      ? yield* gatherMessage(environment.localAgentCard, first, cards)
-      : (yield* messageProjection(first)).message;
     return yield* prepareMessageCheck(environment, {
       direction: "outgoing",
       evidence,
@@ -479,21 +460,21 @@ export const prepareOutgoingCheck = Effect.fn("prepareOutgoingCheck")(
       message,
       cards,
     });
-  },
-);
+  });
+}
 
 /** Queued peer messages carry the verified content policy assesses. */
 export const prepareIncomingCheck = Effect.fn("prepareIncomingCheck")(
   function* (
     environment: FirewallEnvironment,
-    entry: FirewallInboxEntry,
+    entry: IncomingEntry,
   ): Effect.fn.Return<PreparedFirewallCheck, EndpointStoreError> {
     const item = yield* decodeRuntimeValue(InboundItem, entry.canonicalItem);
     if (item.kind !== "multicast" && item.kind !== "collectiveRequest") {
       return yield* new EndpointStoreError({ reason: "invalid-input" });
     }
     const evidence = yield* readFirewallEvidence({
-      candidateDelivery: entry.deliveryToken,
+      message: item.message,
       conversation: entry.conversation,
       maximumRecords: environment.firewall.configuration.maximumHistoryRecords,
       registrySignerPublicKey: environment.registrySignerPublicKey,

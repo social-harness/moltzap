@@ -65,7 +65,7 @@ export class Identity extends Context.Tag("@moltzap/Identity")<
     readonly register: (
       request: RegistrationRequest,
     ) => Effect.Effect<AgentView, RegistrationError>;
-    /** Resolves names in input order and refuses any missing agent. */
+    /** Resolves names in input order and identifies the first name that fails. */
     readonly resolve: (
       names: readonly AgentName[],
     ) => Effect.Effect<readonly AgentView[], IdentityError>;
@@ -150,11 +150,13 @@ function resolveAgent(
   agentName: AgentName,
 ) {
   return registry.lookup({ agentName }).pipe(
-    Effect.mapError(resolveFailure),
+    Effect.mapError((error) => resolveFailure(error, agentName)),
     Effect.flatMap((result) =>
       result.kind === "found"
         ? Effect.succeed(agentViewOf(result.agentCard))
-        : Effect.fail(new IdentityError({ reason: "unknown-agent" })),
+        : Effect.fail(
+            new IdentityError({ reason: "unknown-agent", agentName }),
+          ),
     ),
   );
 }
@@ -192,8 +194,12 @@ function resolveFailure(
   error: Effect.Effect.Error<
     ReturnType<Context.Tag.Service<typeof Registry>["lookup"]>
   >,
+  agentName: AgentName,
 ) {
-  return new IdentityError({ reason: registrationFailureReasons[error._tag] });
+  return new IdentityError({
+    reason: registrationFailureReasons[error._tag],
+    agentName,
+  });
 }
 
 const admissionFailure = () =>

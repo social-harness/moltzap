@@ -2,19 +2,17 @@
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import { Cause, Clock, Deferred, Effect, Queue, type Scope } from "effect";
+import type { IncomingEntry } from "./types.js";
+import { ResultSources } from "../../communication/collectives/index.js";
+import { transaction } from "../../communication/store/database/index.js";
 import {
   decodeRuntimeValue,
-  type DeliveryToken,
   encodeRuntimeValue,
   EndpointStoreError,
 } from "../../communication/store/index.js";
-import {
-  type FirewallInboxEntry,
-  readNextPendingMessages,
-} from "../../firewall/store/index.js";
 import { InboundItem } from "../../host-protocol/items.js";
 import {
-  retireFirewallItem,
+  retireIncomingItem,
   saveMessageDecision,
   saveResultDecision,
 } from "../store.js";
@@ -22,23 +20,25 @@ import {
   type FirewallEnvironment,
   prepareIncomingCheck,
 } from "./firewall-context.js";
-import { checkLocalItem } from "./local-results.js";
+import { checkLocalItem, resultVisibility } from "./local-results.js";
+import {
+  markMessageVisibility,
+  readNextItemsToCheck,
+  requireNextItemToCheck,
+  retireQueuedItem,
+  settleQueuedItem,
+} from "./pending.js";
+import { putInboxItem } from "./store.js";
 
 /** What the admission worker reads and changes in one service's delivery. */
 export interface AdmissionContext {
   readonly sql: SqlClient.SqlClient;
-  /**
-   * Make a committed disposition current in delivery: an admitted item joins
-   * the local items, a withheld one is forgotten.
-   */
-  readonly showDisposition: (
-    deliveryToken: DeliveryToken,
-    item: InboundItem,
-    disposition: "admitted" | "withheld",
-  ) => Effect.Effect<void>;
   /** Local attribution becomes available after the daemon activates. */
 
-  readonly firewallEnvironment?: () => FirewallEnvironment | undefined;
+  readonly firewallEnvironment: Effect.Effect<
+    FirewallEnvironment | undefined,
+    EndpointStoreError
+  >;
   /** Service lifetime; each conversation's check runs as a fiber in it. */
   readonly scope: Scope.Scope;
   /** Offered after each pass and each finished check. */
@@ -73,11 +73,19 @@ function checkPendingMessages(
   publish: Effect.Effect<void>,
 ) {
   return Effect.gen(function* () {
-    const environment = input.firewallEnvironment?.();
+    const environment = yield* input.firewallEnvironment;
+    const entries = yield* readNextItemsToCheck();
     if (environment === undefined) {
+      yield* Effect.forEach(
+        entries,
+        (entry) => admitWithoutAssessment(entry).pipe(Effect.zipRight(publish)),
+        { concurrency: 1, discard: true },
+      );
+      if (entries.length > 0) {
+        yield* Queue.offer(input.admissionWake, undefined);
+      }
       return;
     }
-    const entries = yield* readNextPendingMessages();
     for (const entry of entries) {
       if (
         input.activeConversations.size >=
@@ -89,7 +97,7 @@ function checkPendingMessages(
         continue;
       }
       input.activeConversations.add(entry.conversation);
-      yield* checkPendingMessage(input, environment, entry).pipe(
+      yield* checkPendingMessage(environment, entry).pipe(
         Effect.zipRight(publish),
         Effect.catchAllCause((cause) =>
           Cause.isInterruptedOnly(cause)
@@ -113,31 +121,23 @@ function checkPendingMessages(
  * during assessment withholds host presentation while preserving its result.
  */
 function checkPendingMessage(
-  input: AdmissionContext,
   environment: FirewallEnvironment,
-  entry: FirewallInboxEntry,
+  entry: IncomingEntry,
 ) {
   return Effect.gen(function* () {
     const item = yield* decodeRuntimeValue(InboundItem, entry.canonicalItem);
     switch (item.kind) {
       case "multicast":
-        return yield* checkMessage(input, environment, entry, item);
+        return yield* checkMessage(environment, entry, item);
       case "collectiveRequest": {
-        if (
-          (yield* Clock.currentTimeMillis) >= item.message.content.deadlineAt
-        ) {
-          yield* retireFirewallItem(entry.deliveryToken);
-          return yield* input.showDisposition(
-            entry.deliveryToken,
-            item,
-            "withheld",
-          );
+        if (yield* requestExpired(item)) {
+          return yield* retireIncomingItem(entry.deliveryToken);
         }
-        return yield* checkMessage(input, environment, entry, item);
+        return yield* checkMessage(environment, entry, item);
       }
       case "collectiveResult":
       case "operationFailed":
-        return yield* checkResult(input, environment, entry, item);
+        return yield* checkResult(environment, entry, item);
       default: {
         const exhaustive: never = item;
         return exhaustive;
@@ -147,9 +147,8 @@ function checkPendingMessage(
 }
 
 function checkMessage(
-  input: AdmissionContext,
   environment: FirewallEnvironment,
-  entry: FirewallInboxEntry,
+  entry: IncomingEntry,
   item: Extract<
     InboundItem,
     { readonly kind: "multicast" | "collectiveRequest" }
@@ -164,7 +163,7 @@ function checkMessage(
     const expired =
       item.kind === "collectiveRequest" &&
       (yield* Clock.currentTimeMillis) >= item.message.content.deadlineAt;
-    const disposition = yield* saveMessageDecision(
+    yield* saveMessageDecision(
       {
         deliveryToken: entry.deliveryToken,
         canonicalItem: entry.canonicalItem,
@@ -174,34 +173,60 @@ function checkMessage(
       },
       expired ? { ...checked.completion, admit: false } : checked.completion,
     );
-    yield* input.showDisposition(entry.deliveryToken, item, disposition);
   });
 }
 
 function checkResult(
-  input: AdmissionContext,
   environment: FirewallEnvironment,
-  entry: FirewallInboxEntry,
+  entry: IncomingEntry,
   item: Extract<
     InboundItem,
     { readonly kind: "collectiveResult" | "operationFailed" }
   >,
 ) {
   return checkLocalItem(environment, { entry, item }).pipe(
-    Effect.flatMap((admission) =>
-      saveResultDecision(admission).pipe(
-        Effect.flatMap((disposition) =>
-          decodeRuntimeValue(InboundItem, admission.item.canonicalItem).pipe(
-            Effect.flatMap((projected) =>
-              input.showDisposition(
-                entry.deliveryToken,
-                projected,
-                disposition,
-              ),
-            ),
-          ),
-        ),
-      ),
+    Effect.flatMap(saveResultDecision),
+    Effect.asVoid,
+  );
+}
+
+/** Unconfigured assessment drains the same durable queue without producing policy decisions. */
+function admitWithoutAssessment(entry: IncomingEntry) {
+  return transaction(
+    Effect.gen(function* () {
+      yield* requireNextItemToCheck(entry.deliveryToken, entry.canonicalItem);
+      const item = yield* decodeRuntimeValue(InboundItem, entry.canonicalItem);
+      if (yield* requestExpired(item)) {
+        return yield* retireQueuedItem(entry.deliveryToken);
+      }
+      yield* putInboxItem({
+        deliveryToken: entry.deliveryToken,
+        canonicalItem: entry.canonicalItem,
+      });
+      if (item.kind === "collectiveResult") {
+        const sources = yield* decodeRuntimeValue(
+          ResultSources,
+          entry.canonicalSources ?? new Uint8Array(),
+        );
+        for (const visibility of resultVisibility(item, sources)) {
+          yield* markMessageVisibility(
+            visibility.message,
+            visibility.admitted,
+            entry.deliveryToken,
+          );
+        }
+      }
+      yield* settleQueuedItem(entry.deliveryToken, "admitted");
+    }),
+  );
+}
+
+function requestExpired(item: InboundItem) {
+  return Clock.currentTimeMillis.pipe(
+    Effect.map(
+      (now) =>
+        item.kind === "collectiveRequest" &&
+        now >= item.message.content.deadlineAt,
     ),
   );
 }

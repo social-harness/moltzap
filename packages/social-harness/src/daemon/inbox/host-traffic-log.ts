@@ -13,9 +13,8 @@ import { InboundItem } from "../../host-protocol/items.js";
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
 
 /**
- * How one send ended in the history export: the messages certified by the time
- * it returned, with the operation id of a gather or all_gather, or the
- * error it returned.
+ * Accepted message identities or the send failure, with an operation id for
+ * a collective question or answer.
  */
 const historyExportSendOutcome = Schema.Union(
   exactStruct({

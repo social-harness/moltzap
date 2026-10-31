@@ -186,11 +186,12 @@ question/answer text becomes `{kind: "withheld", checkId, reason}`. Advice names
 each affected member/check and any question checked with the result. Guidance
 mode withholds no text.
 
-A previously shown question stays shown; one withheld in enforcement remains
-withheld under that check. Otherwise assess it with the result. Every delivery
-path serves this view. Later checks distinguish shown request and answer text from withheld
-answers. The supplied history identifies admitted results and failures as local Social
-Harness outcomes, ordered with the surrounding messages.
+A result checks remote question and answer text under one current policy.
+Earlier inbox and history items keep their saved content and advice. Every
+delivery path serves the saved result view. Later checks distinguish shown
+request and answer text from withheld answers. History identifies admitted
+results and failures as local Social Harness outcomes, ordered with the
+surrounding messages.
 
 ## Message-policy file
 

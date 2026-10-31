@@ -1,6 +1,5 @@
 /**
- * @file Private addressed-message engine: its contract with daemon
- * composition, and the assembly that binds the phases into one engine.
+ * @file Certifies immutable messages and restores accepted work after restart.
  */
 
 import * as SqlClient from "@effect/sql/SqlClient";
@@ -26,13 +25,11 @@ import { wireVersions } from "../../identity/wire-version.js";
 import { Message } from "../message.js";
 import {
   type DecodedOuterBody,
-  type MessageAddressInput,
   MessageIntent,
   type MsgId,
   RecordHash,
 } from "../records/index.js";
 import * as Store from "../store/index.js";
-import { type RecipientResolutionError, resolutionFailure } from "./address.js";
 import {
   acceptEngineIngress,
   acceptEngineRecoveryIngress,
@@ -51,30 +48,15 @@ import {
   recoveryHeadAdvanced,
 } from "./router-recovery/index.js";
 import {
-  acceptSend,
-  type BindHold,
-  type EngineSendInput,
+  acceptMessage,
   type EngineSentMessage,
-  type PreparedSend,
-  prepareSend,
   proposeIntent,
-  resolveAddress,
-  resolveConversation,
-  type ResolvedConversation,
 } from "./send.js";
 
 /** Private engine dependencies retained behind the daemon boundary. */
 export type { EndpointEngineInput } from "./engine-context.js";
-/** The send input and result the collective layer exchanges with the engine. */
-export type { EngineSendInput, EngineSentMessage } from "./send.js";
-/** How a caller holds a protocol claim across durable binding. */
-export {
-  type BindHold,
-  messageFromPreparedSend,
-  preparedSendData,
-} from "./send.js";
-/** Canonical message preparation and resolved conversation attribution. */
-export type { PreparedSend } from "./send.js";
+/** Certification results remain private to the communication implementation. */
+export type { EngineSentMessage } from "./send.js";
 /** The marker spans that bracket daemon work in flight, shared with the layers above. */
 export {
   exitOutcome,
@@ -110,14 +92,8 @@ export class EngineOutboundError extends Data.TaggedError(
   readonly reason: "network" | "persistence" | "representation" | "version";
 }> {}
 
-/**
- * One durable delivery decoded for the daemon's sole subscriber. `message` is
- * the certified message with its complete content, collective part included; the
- * daemon's classifier turns it into the item the subscriber receives.
- * `recordHash` names the certified record the delivery derives from; it stays
- * inside the daemon and never reaches the MCP event.
- */
-export interface EnginePendingMessage {
+/** Verified messages remain pending until the Communication handler finishes. */
+interface EnginePendingMessage {
   readonly deliveryToken: DeliveryToken;
   readonly recordHash: RecordHash;
   readonly message: Message;
@@ -130,38 +106,10 @@ export interface EndpointEngine {
     msgId: MsgId,
   ) => Effect.Effect<EngineSentMessage, SendError>;
 
-  /** Capture canonical content, membership and identity before assessment or binding. */
-  readonly prepare: (
-    input: EngineSendInput,
-  ) => Effect.Effect<PreparedSend, SendError | RecipientResolutionError>;
-  /** Accept captured bytes without resolving names or minting another message identity. */
-  readonly accept: <E>(
-    prepared: PreparedSend,
-    hold: BindHold<E>,
-  ) => Effect.Effect<
-    { readonly certified: Effect.Effect<EngineSentMessage, SendError> },
-    SendError | E
-  >;
-  /** Completes once the minted message's certified record is stored locally. */
+  /** Accepts and certifies the caller's immutable message identity. */
   readonly send: (
-    input: EngineSendInput,
+    message: Message,
   ) => Effect.Effect<EngineSentMessage, SendError>;
-  /**
-   * Resolve an address through the Registry as a send would, without
-   * sending; the collective layer uses it to name the unreachable members of
-   * a refused group message.
-   */
-  readonly resolveAddress: (
-    to: MessageAddressInput,
-  ) => Effect.Effect<void, SendError>;
-  /**
-   * Resolve an address to the conversation a send uses, with its
-   * members' verified cards, without sending; the firewall attributes a
-   * gather's recipients and reads its evidence through it.
-   */
-  readonly resolveConversation: (
-    to: MessageAddressInput,
-  ) => Effect.Effect<ResolvedConversation, SendError>;
   readonly readPendingMessages: () => Effect.Effect<
     readonly EnginePendingMessage[],
     ListenError
@@ -239,6 +187,7 @@ const resumeDispositionBySendReason = {
   "outcome-unknown": "fail-representation",
   "certification-unavailable": "ignore",
   "content-invalid": "fail-representation",
+  "message-conflict": "fail-representation",
   "invalid-address": "fail-representation",
   "membership-invalid": "fail-representation",
   "network-unavailable": "ignore",
@@ -352,21 +301,10 @@ function resumeFoldFailure(): EngineInitializationError {
  */
 const LOCAL_DRAIN_TIMEOUT = Duration.seconds(10);
 
-/**
- * Bind, queue and certify one message. Once `prepareSend` returns, the message is
- * durably queued, so a drain that fails or outlasts `LOCAL_DRAIN_TIMEOUT`
- * fails the send as `delivery-pending` whatever the cause: a worker failure
- * that ends once the Router answers leaves the background drain to deliver
- * the message, and any other stops the daemon, whose recovery resumes the message
- * when it restarts. A completion already settled, such as an activation that
- * failed, returns at once rather than waiting on other messages' drain.
- * @param runtime The engine that sends.
- * @param prepared The durable message identity and its certified completion.
- * @returns The message's id and certified record hash.
- */
-const finishPreparedSend = (
+/** Accepted messages remain queued after the caller's bounded certification wait ends. */
+const finishAcceptedMessage = (
   runtime: EngineRuntime,
-  prepared: Effect.Effect.Success<ReturnType<typeof acceptSend>>,
+  prepared: Effect.Effect.Success<ReturnType<typeof acceptMessage>>,
 ) =>
   Effect.gen(function* () {
     if (!(yield* Deferred.isDone(prepared.completion))) {
@@ -382,17 +320,12 @@ const finishPreparedSend = (
 
 const send = (
   runtime: EngineRuntime,
-  input: EngineSendInput,
+  message: Message,
 ): Effect.Effect<EngineSentMessage, SendError, SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    const prepared = yield* prepareSend(runtime, input).pipe(
-      Effect.catchTag("RecipientResolutionError", (error) =>
-        Effect.fail(resolutionFailure(error)),
-      ),
-    );
-    const accepted = yield* acceptSend(runtime, prepared);
-    return yield* finishPreparedSend(runtime, accepted);
-  }).pipe(Effect.withSpan("EndpointEngine.send"));
+  acceptMessage(runtime, message).pipe(
+    Effect.flatMap((accepted) => finishAcceptedMessage(runtime, accepted)),
+    Effect.withSpan("EndpointEngine.send"),
+  );
 
 const readPendingMessages = (): Effect.Effect<
   readonly EnginePendingMessage[],
@@ -570,21 +503,8 @@ const endpointEngine = (
 ): EndpointEngine => {
   const provideSql = Effect.provideService(SqlClient.SqlClient, sql);
   return Object.freeze({
-    prepare: (input: EngineSendInput) =>
-      prepareSend(runtime, input).pipe(provideSql),
-    accept: <E>(prepared: PreparedSend, hold: BindHold<E>) =>
-      acceptSend(runtime, prepared, hold).pipe(
-        Effect.map((accepted) => ({
-          certified: finishPreparedSend(runtime, accepted).pipe(provideSql),
-        })),
-        provideSql,
-      ),
     observeMessage: (msgId: MsgId) => observeMessage(runtime, msgId),
-    send: (input: EngineSendInput) => send(runtime, input).pipe(provideSql),
-    resolveAddress: (to: MessageAddressInput) =>
-      resolveAddress(runtime, to).pipe(provideSql),
-    resolveConversation: (to: MessageAddressInput) =>
-      resolveConversation(runtime, to).pipe(provideSql),
+    send: (message: Message) => send(runtime, message).pipe(provideSql),
     readPendingMessages: () => readPendingMessages().pipe(provideSql),
     acknowledgeMessage: (token: DeliveryToken) =>
       acknowledgeMessage(token).pipe(provideSql),
@@ -644,6 +564,3 @@ function observeMessage(runtime: EngineRuntime, msgId: MsgId) {
         );
   });
 }
-
-/** Named resolution failures remain private to authored-message preparation. */
-export { RecipientResolutionError, resolutionFailure } from "./address.js";

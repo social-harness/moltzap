@@ -186,11 +186,9 @@ export namespace Daemon {
           Effect.mapError(configurationFailure),
         );
       }
-      const firewall = yield* Firewall;
-      return yield* runDaemonRuntime({
-        bootstrap,
-        firewall: firewall.configuration === undefined ? undefined : firewall,
-      }).pipe(Effect.mapError(runtimeStartupFailure));
+      return yield* runDaemonRuntime({ bootstrap }).pipe(
+        Effect.mapError(runtimeStartupFailure),
+      );
     });
   }
 

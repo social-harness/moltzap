@@ -23,11 +23,11 @@ import {
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, vi } from "vitest";
 import type { RegistryLookupResult } from "../../../identity/registry/contract.js";
+import type { Message } from "../../message.js";
 import type {
   EndpointRecovery,
   StoredOutboundMessage,
 } from "../../store/index.js";
-import type { AddressRegistryPort } from "../address.js";
 import type { EngineRuntime } from "../engine-context.js";
 import {
   digest,
@@ -45,6 +45,7 @@ import {
   openTestDatabase,
   type TestDatabase,
 } from "../../../__tests__/communication-test-database.js";
+import { authoredMessage } from "../../../__tests__/conversation-fixtures.js";
 import { forwardStoredOutbound } from "../../../__tests__/forward-stored-outbound.js";
 import { openOuterBody } from "../../../__tests__/outer-body-fixtures.js";
 import {
@@ -63,6 +64,7 @@ import {
 } from "../../../identity/cards.js";
 import { SignedMessage } from "../../../identity/envelope/signed-message.js";
 import { Ed25519PublicKey } from "../../../identity/keys.js";
+import { saveLocalIdentity } from "../../../identity/local-store.js";
 import { WIRE_VERSION } from "../../../identity/wire-version.js";
 import {
   type ActionCertifiedRecord as ActionCertifiedRecordValue,
@@ -72,7 +74,6 @@ import {
   type CatchUpRequest,
   type CertifiedRecord,
   type CompletedReanchor,
-  Content,
   type DecodedOuterBody,
   decodeOuterBody,
   deriveConversationId,
@@ -103,7 +104,7 @@ import {
   verifyCompletedReanchor,
   verifyMembershipDescriptor,
 } from "../../records/index.js";
-import { compareAgentIds, MessageAddressInput } from "../../records/values.js";
+import { compareAgentIds } from "../../records/values.js";
 import { RouterInstanceId } from "../../router/api/contract.js";
 import {
   type RouterDiscontinuityReason,
@@ -482,7 +483,7 @@ const makeFixtureWithRouter = (
       local.card,
       remote.card,
     ];
-    const registry: AddressRegistryPort = {
+    const registry: EndpointEngineInput["registry"] = {
       lookup: (request) => {
         const card = cards.find((candidate) =>
           "agentId" in request
@@ -511,6 +512,7 @@ const makeFixtureWithRouter = (
         recoveryOutbound,
       }),
     } satisfies EndpointEngineInput;
+    yield* store.run(saveLocalIdentity(local.card));
     const engine = yield* makeEndpointEngine(input)
       .pipe(Effect.provideService(SqlClient.SqlClient, store.sql))
       .pipe(Effect.orDie);
@@ -678,7 +680,7 @@ const addGroupFoundation = (
       }),
     );
     const cards = members.map((member) => member.card);
-    const registry: AddressRegistryPort = {
+    const registry: EndpointEngineInput["registry"] = {
       lookup: (request) => {
         const card = cards.find((candidate) =>
           "agentId" in request
@@ -1934,14 +1936,9 @@ const completeRestartRecovery = () =>
 
     const sending = yield* Effect.fork(
       fixture.engine.send(
-        yield* Effect.all({
-          to: Schema.decodeUnknown(MessageAddressInput)(
-            `agent:${fixture.remote.card.agentName}`,
-          ),
-          content: Schema.decodeUnknown(Content)([
-            { type: "text", text: "normal traffic resumes" },
-          ]),
-        }),
+        yield* authoredMessage(fixture, [
+          { type: "text", text: "normal traffic resumes" },
+        ]),
       ),
     );
     const { proposal: resumedProposal } =
@@ -1965,14 +1962,9 @@ const reproposesPendingMessageAfterRestart = () =>
     yield* Ref.set(holdOutbound, true);
     const sending = yield* Effect.fork(
       fixture.engine.send(
-        yield* Effect.all({
-          to: Schema.decodeUnknown(MessageAddressInput)(
-            `agent:${fixture.remote.card.agentName}`,
-          ),
-          content: Schema.decodeUnknown(Content)([
-            { type: "text", text: "survive Router restart" },
-          ]),
-        }),
+        yield* authoredMessage(fixture, [
+          { type: "text", text: "survive Router restart" },
+        ]),
       ),
     );
     const headRecordOutboundId = yield* Queue.take(pendingOutboundIds);
@@ -2053,14 +2045,9 @@ const recoverSameRouterInstance = (reason: RouterDiscontinuityReason) =>
     const fixture = yield* makeFixture;
     const sending = yield* Effect.fork(
       fixture.engine.send(
-        yield* Effect.all({
-          to: Schema.decodeUnknown(MessageAddressInput)(
-            `agent:${fixture.remote.card.agentName}`,
-          ),
-          content: Schema.decodeUnknown(Content)([
-            { type: "text", text: "retain this proposal" },
-          ]),
-        }),
+        yield* authoredMessage(fixture, [
+          { type: "text", text: "retain this proposal" },
+        ]),
       ),
     );
     yield* Queue.take(fixture.normalOutbound);
@@ -2575,12 +2562,11 @@ const recoverWhileNormalSendIsHeld = () =>
       };
     });
     const sending = yield* Effect.forkScoped(
-      fixture.engine.send({
-        to: Schema.decodeUnknownSync(MessageAddressInput)(
-          `agent:${fixture.remote.card.agentName}`,
-        ),
-        content: [{ type: "text", text: "retained during recovery" }],
-      }),
+      fixture.engine.send(
+        yield* authoredMessage(fixture, [
+          { type: "text", text: "retained during recovery" },
+        ]),
+      ),
     );
     yield* Deferred.await(sendEntered);
     const { recovery: recovering, outbound: recoveryOutbound } =
@@ -3460,14 +3446,9 @@ const certifiesAtALockedHeadAfterReanchoring = (
     const head = fixture.certifiedRecord.actionCertifiedRecord.recordHash;
     const sending = yield* Effect.fork(
       fixture.engine.send(
-        yield* Effect.all({
-          to: Schema.decodeUnknown(MessageAddressInput)(
-            `agent:${fixture.remote.card.agentName}`,
-          ),
-          content: Schema.decodeUnknown(Content)([
-            { type: "text", text: "certify after re-anchoring" },
-          ]),
-        }),
+        yield* authoredMessage(fixture, [
+          { type: "text", text: "certify after re-anchoring" },
+        ]),
       ),
     );
     const staleProposal = yield* takeActionProposalAfterEvidence(
@@ -5607,6 +5588,7 @@ const openPeerEngine = (fixture: RecoveryFixture) =>
     );
     const recoveryOutbound = yield* Queue.unbounded<SignedMessage>();
     const normalOutbound = yield* Queue.unbounded<SignedMessage>();
+    yield* store.run(saveLocalIdentity(fixture.remote.card));
     const engine = yield* makeEndpointEngine({
       ...fixture.input,
       localAgentCard: fixture.remote.card,
@@ -5756,21 +5738,8 @@ const takeRetriedCatchUpRequest = (outbound: Queue.Queue<SignedMessage>) =>
     Effect.flatMap(decodeCatchUpRequest),
   );
 
-/**
- * A send to a conversation, as the host makes one.
- * @param engine Endpoint that sends.
- * @param to The address the send names.
- * @param text Text the message carries.
- * @returns The running send.
- */
-const forkSend = (engine: EndpointEngine, to: string, text: string) =>
-  Effect.gen(function* () {
-    const input = yield* Effect.all({
-      to: Schema.decodeUnknown(MessageAddressInput)(to),
-      content: Schema.decodeUnknown(Content)([{ type: "text", text }]),
-    });
-    return yield* Effect.fork(engine.send(input));
-  }).pipe(Effect.orDie);
+const forkSend = (engine: EndpointEngine, message: Message) =>
+  Effect.fork(engine.send(message));
 
 /**
  * After a Router discontinuity the endpoint holds two conversations. The
@@ -5826,15 +5795,21 @@ const recoversOneConversationWhileAnotherWaitsOnASilentMember = () =>
     yield* n4Incomplete(fixture.remote);
     const directSend = yield* forkSend(
       n4.engine,
-      `agent:${fixture.remote.card.agentName}`,
-      "held behind the silent member",
+      yield* authoredMessage(fixture, [
+        { type: "text", text: "held behind the silent member" },
+      ]),
     );
     yield* forkSend(
       n4.engine,
-      `group:${[fixture.remote, n4.third, n4.fourth]
-        .map((member) => member.card.agentName)
-        .join(",")}`,
-      "the recovered conversation sends",
+      yield* authoredMessage(
+        fixture,
+        [{ type: "text", text: "the recovered conversation sends" }],
+        {
+          recipients: [fixture.remote, n4.third, n4.fourth].map((member) =>
+            agentViewOf(member.card),
+          ),
+        },
+      ),
     );
     const sentBelowQuorum = yield* takeActionProposalAfterEvidence(
       fixture.normalOutbound,
@@ -6012,8 +5987,9 @@ const rearmsCatchUpAfterRetriesRunOut = () =>
     const afterRecovery = yield* Queue.size(outbound);
     yield* forkSend(
       fixture.engine,
-      `agent:${fixture.remote.card.agentName}`,
-      "recovered after the retries ran out",
+      yield* authoredMessage(fixture, [
+        { type: "text", text: "recovered after the retries ran out" },
+      ]),
     );
     const proposal = yield* takeActionProposalAfterEvidence(
       fixture.normalOutbound,
@@ -6053,10 +6029,15 @@ const proposesPendingMessagesOnlyOnceItsConversationRecovers = () =>
     );
     yield* forkSend(
       n4.engine,
-      `group:${[fixture.remote, n4.third, n4.fourth]
-        .map((member) => member.card.agentName)
-        .join(",")}`,
-      "proposed before the feed gap",
+      yield* authoredMessage(
+        fixture,
+        [{ type: "text", text: "proposed before the feed gap" }],
+        {
+          recipients: [fixture.remote, n4.third, n4.fourth].map((member) =>
+            agentViewOf(member.card),
+          ),
+        },
+      ),
     );
     yield* n4.engine.drainOutbound.pipe(Effect.orDie);
     yield* takeActionProposalAfterEvidence(fixture.normalOutbound);
@@ -6201,8 +6182,9 @@ const rearmsCatchUpOnTheNextRecoveryRun = () =>
     );
     yield* forkSend(
       fixture.engine,
-      `agent:${fixture.remote.card.agentName}`,
-      "recovered on the next run",
+      yield* authoredMessage(fixture, [
+        { type: "text", text: "recovered on the next run" },
+      ]),
     );
     const proposal = yield* takeActionProposalAfterEvidence(
       fixture.normalOutbound,
@@ -6242,8 +6224,9 @@ const rearmsCatchUpOnALocalSend = () =>
 
     const sending = yield* forkSend(
       fixture.engine,
-      `agent:${fixture.remote.card.agentName}`,
-      "sent into a paused conversation",
+      yield* authoredMessage(fixture, [
+        { type: "text", text: "sent into a paused conversation" },
+      ]),
     );
     const fresh = yield* takeCatchUpRequest(outbound);
     yield* settle;
@@ -6341,8 +6324,9 @@ const resendsAProposalAMemberDroppedWhileRecovering = () =>
     yield* reanchorUntilCompletionSend(fixture);
     const sending = yield* forkSend(
       fixture.engine,
-      `agent:${fixture.remote.card.agentName}`,
-      "sent while the member recovers",
+      yield* authoredMessage(fixture, [
+        { type: "text", text: "sent while the member recovers" },
+      ]),
     );
     const first = yield* takeActionProposalAfterEvidence(
       fixture.normalOutbound,
@@ -6437,8 +6421,9 @@ const preservesResendAttemptsWhileFenced = () =>
     yield* retainCertifiedRecord(fixture);
     const sending = yield* forkSend(
       fixture.engine,
-      `agent:${fixture.remote.card.agentName}`,
-      "waiting through a long recovery",
+      yield* authoredMessage(fixture, [
+        { type: "text", text: "waiting through a long recovery" },
+      ]),
     );
     const first = yield* takeActionProposalAfterEvidence(
       fixture.normalOutbound,
@@ -6530,8 +6515,9 @@ const recoversSeveralConversationsIndependently = () =>
     );
     const sending = yield* forkSend(
       n4.engine,
-      `agent:${fixture.remote.card.agentName}`,
-      "wait for this conversation",
+      yield* authoredMessage(fixture, [
+        { type: "text", text: "wait for this conversation" },
+      ]),
     );
     expect(Option.isNone(yield* Fiber.poll(sending))).toBe(true);
     yield* deliverRecovery(
@@ -6707,8 +6693,9 @@ const stageMessageAtTheAuthor = (
   Effect.gen(function* () {
     const sending = yield* forkSend(
       fixture.engine,
-      `agent:${fixture.remote.card.agentName}`,
-      "staged before the restart",
+      yield* authoredMessage(fixture, [
+        { type: "text", text: "staged before the restart" },
+      ]),
     );
     yield* fixture.engine.drainOutbound.pipe(Effect.orDie);
     const proposal = yield* takeActionProposalAfterEvidence(
@@ -7374,6 +7361,7 @@ const openN4Holder = (
     );
     const recoveryOutbound = yield* Queue.unbounded<SignedMessage>();
     const normalOutbound = yield* Queue.unbounded<SignedMessage>();
+    yield* store.run(saveLocalIdentity(n4.fourth.card));
     const engine = yield* makeEndpointEngine({
       ...fixture.input,
       localAgentCard: n4.fourth.card,
@@ -7532,10 +7520,15 @@ const neverSettlesBehindASuccessorAfterAFeedGap = () =>
     });
     const sending = yield* forkSend(
       n4.engine,
-      `group:${[fixture.remote, n4.third, n4.fourth]
-        .map((member) => member.card.agentName)
-        .join(",")}`,
-      "held while the certified holder is silent",
+      yield* authoredMessage(
+        fixture,
+        [{ type: "text", text: "held while the certified holder is silent" }],
+        {
+          recipients: [fixture.remote, n4.third, n4.fourth].map((member) =>
+            agentViewOf(member.card),
+          ),
+        },
+      ),
     );
     yield* Effect.replicateEffect(
       takeRetriedCatchUpRequest(outbound),

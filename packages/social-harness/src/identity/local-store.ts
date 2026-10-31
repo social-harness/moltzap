@@ -2,6 +2,7 @@
 
 import { SqlClient } from "@effect/sql";
 import { Data, Effect, Schema } from "effect";
+import type { AgentName } from "./identifiers.js";
 import type { Ed25519PublicKey } from "./keys.js";
 import {
   decodeCanonical,
@@ -12,6 +13,7 @@ import { AgentCard, type VerifiedAgentCard } from "./cards.js";
 
 /** Local identity bytes must remain readable and agree with the configured keys. */
 export class IdentityError extends Data.TaggedError("IdentityError")<{
+  readonly agentName?: AgentName;
   readonly reason:
     | "persistence-failed"
     | "incompatible-daemon"

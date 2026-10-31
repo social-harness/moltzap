@@ -60,6 +60,7 @@ const reproposalDispositionByReason = {
   "outcome-unknown": "fail",
   "certification-unavailable": "ignore",
   "content-invalid": "fail",
+  "message-conflict": "fail",
   "invalid-address": "fail",
   "membership-invalid": "fail",
   "network-unavailable": "ignore",

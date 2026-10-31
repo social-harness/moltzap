@@ -21,7 +21,6 @@ import {
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect } from "vitest";
 import type { RegistryLookupResult } from "../../../identity/registry/contract.js";
-import type { AddressRegistryPort } from "../address.js";
 import { advanceClock, untilLive } from "../../../__tests__/advance-clock.js";
 import {
   digest,
@@ -52,11 +51,13 @@ import {
   type AgentSigningAuthority,
   Ed25519PublicKey,
 } from "../../../identity/keys.js";
+import { saveLocalIdentity } from "../../../identity/local-store.js";
 import {
   LIVE_WIRE_VERSIONS,
   WIRE_VERSION,
   WireVersions,
 } from "../../../identity/wire-version.js";
+import { type Message, messageFromIntent } from "../../message.js";
 import {
   type ActionCertifiedRecord as ActionCertifiedRecordValue,
   type ActionProposal,
@@ -72,6 +73,7 @@ import {
   MembershipDescriptor,
   MembershipHash,
   type MembershipHash as MembershipHashValue,
+  mintMsgId,
   RecordCore,
   type RecordHash,
   signEvidenceMessage,
@@ -80,7 +82,6 @@ import {
   type VerifiedMembership,
   verifyMembershipDescriptor,
 } from "../../records/index.js";
-import { MessageAddressInput } from "../../records/values.js";
 import { RouterInstanceId } from "../../router/api/contract.js";
 import {
   type RouterIngressDisposition,
@@ -100,7 +101,6 @@ import {
   type EndpointEngineInput,
   EngineInitializationError,
   type EngineOutboundError,
-  type EngineSendInput,
   type EngineSentMessage,
   makeEndpointEngine,
 } from "../index.js";
@@ -127,7 +127,7 @@ interface ProtocolHarness {
     endpointIndexes?: readonly number[],
   ) => Effect.Effect<readonly RouterIngressDisposition[]>;
   readonly drain: (endpointIndexes?: readonly number[]) => Effect.Effect<void>;
-  readonly registry: AddressRegistryPort;
+  readonly registry: EndpointEngineInput["registry"];
   readonly registrySignerPublicKey: typeof Ed25519PublicKey.Type;
 }
 
@@ -213,7 +213,7 @@ function makeMembership(
 
 function lookupIdentity(
   identities: readonly ProtocolIdentity[],
-  request: Parameters<AddressRegistryPort["lookup"]>[0],
+  request: Parameters<EndpointEngineInput["registry"]["lookup"]>[0],
 ): RegistryLookupResult {
   const found = identities.find(({ card }) =>
     "agentName" in request
@@ -433,7 +433,7 @@ function makeProtocolHarness(
       { concurrency: 1 },
     );
     const outbound = yield* Queue.unbounded<typeof SignedMessage.Type>();
-    const registry: AddressRegistryPort = {
+    const registry: EndpointEngineInput["registry"] = {
       lookup: (request) => Effect.succeed(lookupIdentity(identities, request)),
     };
     const authorPorts = {
@@ -452,27 +452,31 @@ function makeProtocolHarness(
         requireAt(stores, index, "endpoint store").pipe(
           Effect.flatMap((store) => {
             const ports = index === 0 ? authorPorts : memberPorts;
-            return makeEndpointEngine({
-              localAgentCard: identity.card,
-              signingAuthority: identity.authority,
-              registrySignerPublicKey,
-              registry,
-              reportStorageFault: ports.reportStorageFault,
-              routerWorker: scriptedRouterWorker(
-                store,
-                outbound,
-                ports.attachment,
-                ports.authorSend,
+            return store.run(saveLocalIdentity(identity.card)).pipe(
+              Effect.zipRight(
+                makeEndpointEngine({
+                  localAgentCard: identity.card,
+                  signingAuthority: identity.authority,
+                  registrySignerPublicKey,
+                  registry,
+                  reportStorageFault: ports.reportStorageFault,
+                  routerWorker: scriptedRouterWorker(
+                    store,
+                    outbound,
+                    ports.attachment,
+                    ports.authorSend,
+                  ),
+                })
+                  .pipe(Effect.provideService(SqlClient.SqlClient, store.sql))
+                  .pipe(
+                    Effect.provideService(WireVersions, {
+                      emitted: options.emittedVersions?.[index] ?? WIRE_VERSION,
+                      live: options.emittedVersions ?? LIVE_WIRE_VERSIONS,
+                      history: options.emittedVersions ?? LIVE_WIRE_VERSIONS,
+                    }),
+                  ),
               ),
-            })
-              .pipe(Effect.provideService(SqlClient.SqlClient, store.sql))
-              .pipe(
-                Effect.provideService(WireVersions, {
-                  emitted: options.emittedVersions?.[index] ?? WIRE_VERSION,
-                  live: options.emittedVersions ?? LIVE_WIRE_VERSIONS,
-                  history: options.emittedVersions ?? LIVE_WIRE_VERSIONS,
-                }),
-              );
+            );
           }),
         ),
       { concurrency: 1 },
@@ -502,10 +506,22 @@ function makeProtocolHarness(
 function sendInput(
   harness: ProtocolHarness,
   text: string,
-): Effect.Effect<EngineSendInput> {
-  return Effect.all({
-    to: Schema.decodeUnknown(MessageAddressInput)(harness.groupAddress),
-    content: Schema.decodeUnknown(Content)([{ type: "text", text }]),
+  authorIndex = 0,
+): Effect.Effect<Message> {
+  return Effect.gen(function* () {
+    const author = yield* requireAt(
+      harness.identities,
+      authorIndex,
+      "message author",
+    );
+    return yield* messageFromIntent(
+      harness.identities.map(({ card }) => agentViewOf(card)),
+      {
+        authorAgentId: author.card.agentId,
+        msgId: yield* mintMsgId(),
+        content: yield* Schema.decodeUnknown(Content)([{ type: "text", text }]),
+      },
+    );
   }).pipe(Effect.orDie);
 }
 
@@ -948,7 +964,7 @@ function adoptsAnActionCertificateOverItsOwnLock() {
       ),
     );
     const losing = yield* Effect.fork(
-      lagging.send(yield* sendInput(harness, "member 2 message")),
+      lagging.send(yield* sendInput(harness, "member 2 message", 1)),
     );
     const loserBatch = yield* takeReadyBatch(harness);
 
@@ -1068,7 +1084,7 @@ function adoptsACertifiedRecordOverItsOwnLock() {
     );
     const winnerBatch = yield* takeReadyBatch(harness);
     const losing = yield* Effect.fork(
-      lagging.send(yield* sendInput(harness, "member 2 message")),
+      lagging.send(yield* sendInput(harness, "member 2 message", 1)),
     );
     const loserBatch = yield* takeReadyBatch(harness);
 
@@ -1235,7 +1251,7 @@ function refusesASecondCertificateOverAStagedAction() {
       ),
     );
     yield* Effect.forkScoped(
-      fourthEngine.send(yield* sendInput(harness, "second message")),
+      fourthEngine.send(yield* sendInput(harness, "second message", 3)),
     );
     const secondBatch = yield* takeReadyBatch(harness);
     const secondActionHash = yield* requireAt(
@@ -1650,13 +1666,17 @@ function ordersCompetingProposalsBeforeActionVotes(input: {
     );
 
     const firstSending = yield* Effect.fork(
-      firstAuthor.send(yield* sendInput(harness, "first candidate")),
+      firstAuthor.send(
+        yield* sendInput(harness, "first candidate", input.firstAuthorIndex),
+      ),
     );
     const firstBatch = yield* takeReadyBatch(harness);
     const firstMessage = yield* requireAt(firstBatch, 1, "first proposal");
     const firstProposal = yield* decodeActionProposal(harness, firstMessage);
     const secondSending = yield* Effect.fork(
-      secondAuthor.send(yield* sendInput(harness, "second candidate")),
+      secondAuthor.send(
+        yield* sendInput(harness, "second candidate", input.secondAuthorIndex),
+      ),
     );
     const secondBatch = yield* takeReadyBatch(harness);
     const secondMessage = yield* requireAt(secondBatch, 1, "second proposal");
@@ -1722,38 +1742,22 @@ function ordersCompetingProposalsBeforeActionVotes(input: {
   });
 }
 
-/**
- * A host repeats a send with identical input once the first has certified.
- * The first invocation opens the conversation with its FIRST_MESSAGE and the second
- * proposes a MESSAGE at that head, and each proposal carries its own MsgId.
- * Fails when identical input reuses a MsgId.
- */
-function givesIdenticalHostInvocationsDistinctMsgIds() {
+/** A retained message resumes independently of the caller that first submitted it. */
+function resumesCapturedMessage() {
   return Effect.gen(function* () {
     const harness = yield* makeProtocolHarness();
     const author = yield* requireAt(harness.engines, 0, "endpoint engine");
-    const input = yield* sendInput(harness, "repeat intentionally");
-
-    const firstSending = yield* Effect.fork(author.send(input));
-    const firstBatch = yield* takeReadyBatch(harness);
-    const firstProposal = yield* requireAt(
-      firstBatch,
-      0,
-      "first repeated proposal",
-    ).pipe(Effect.flatMap((message) => decodeActionProposal(harness, message)));
-    yield* pump(harness, firstBatch);
-    yield* Fiber.join(firstSending).pipe(Effect.orDie);
-    yield* Effect.forkScoped(author.send(input));
-    const secondProposal = yield* takeReadyBatch(harness).pipe(
-      Effect.flatMap((batch) =>
-        requireAt(batch, 1, "second repeated proposal"),
-      ),
-      Effect.flatMap((message) => decodeActionProposal(harness, message)),
-    );
-
-    expect(secondProposal.action.messageIntent.msgId).not.toBe(
-      firstProposal.action.messageIntent.msgId,
-    );
+    const message = yield* sendInput(harness, "repeat intentionally");
+    const sending = yield* Effect.fork(author.send(message));
+    yield* pump(harness, yield* takeReadyBatch(harness));
+    const original = yield* Fiber.join(sending).pipe(Effect.orDie);
+    expect(yield* author.send(message)).toEqual(original);
+    const content = yield* Schema.decodeUnknown(Content)([
+      { type: "text", text: "changed message" },
+    ]);
+    expect(
+      yield* author.send({ ...message, content }).pipe(Effect.flip),
+    ).toMatchObject({ reason: "message-conflict" });
   });
 }
 
@@ -1982,8 +1986,8 @@ describe("fixed-message endpoint protocol", () => {
     TEST_TIMEOUT_MS,
   );
   it(
-    "mints a distinct MsgId for each identical host invocation",
-    givesIdenticalHostInvocationsDistinctMsgIds,
+    "resumes a captured message and refuses changed content under its identity",
+    resumesCapturedMessage,
     TEST_TIMEOUT_MS,
   );
   it(
@@ -2083,7 +2087,9 @@ function concurrentFirstSends(firstVersion: string, secondVersion: string) {
     const input = yield* sendInput(harness, "concurrent first send");
     const firstSend = yield* Effect.fork(first.send(input));
     const firstBatch = yield* takeReadyBatch(harness);
-    const secondSend = yield* Effect.fork(second.send(input));
+    const secondSend = yield* Effect.fork(
+      second.send(yield* sendInput(harness, "concurrent first send", 1)),
+    );
     const secondBatch = yield* takeReadyBatch(harness);
     const left = yield* requireAt(firstBatch, 0, "first FIRST_MESSAGE").pipe(
       Effect.flatMap((message) => decodeActionProposal(harness, message)),

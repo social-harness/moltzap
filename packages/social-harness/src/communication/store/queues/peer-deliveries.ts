@@ -172,22 +172,6 @@ export function retainDeliveryInTransaction(
     return "inserted";
   }).pipe(storeOperation, Effect.withSpan("retainDeliveryInTransaction"));
 }
-/**
- * Retire a delivery's raw pending row, so the delivery pass never offers it
- * again.
- * @param deliveryToken The delivery to retire.
- */
-export function retirePendingDelivery(
-  deliveryToken: DeliveryToken,
-): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      "UPDATE pending_deliveries SET acknowledged = 1 WHERE delivery_token = ?",
-      [deliveryToken],
-    );
-  }).pipe(storeOperation, Effect.withSpan("retirePendingDelivery"));
-}
 function findRetainedDelivery(
   conversationId: string,
   recordHash: string,

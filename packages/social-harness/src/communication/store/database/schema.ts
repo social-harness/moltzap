@@ -10,52 +10,42 @@ import {
 } from "./values.js";
 /** Only an empty database or the current stored format can be opened. */
 export type StoreOpening = "create" | "reopen";
-const SCHEMA_VERSION = 18;
+const SCHEMA_VERSION = 19;
 const collectiveSchemaSql = `
-  CREATE TABLE collective_answers (
-    operation_id TEXT NOT NULL REFERENCES collective_operations(operation_id),
-    member TEXT NOT NULL,
-    conversation_id TEXT NOT NULL,
-    record_hash TEXT NOT NULL,
-    PRIMARY KEY (operation_id, member),
-    FOREIGN KEY (conversation_id, record_hash) REFERENCES certified_records(conversation_id, record_hash)
-  ) STRICT;
-  CREATE TABLE collective_refusals (
-    operation_id TEXT NOT NULL REFERENCES collective_operations(operation_id),
-    destination TEXT NOT NULL,
-    canonical_refusal BLOB NOT NULL,
-    PRIMARY KEY (operation_id, destination)
-  ) STRICT;
   CREATE TABLE collective_operations (
     operation_id TEXT PRIMARY KEY,
     creator_agent_id TEXT NOT NULL,
-    origin TEXT NOT NULL CHECK (origin IN ('local', 'remote')),
-    request_conversation_id TEXT,
-    request_record_hash TEXT,
+    origin TEXT NOT NULL CHECK(origin IN ('local','remote')),
     canonical_request BLOB NOT NULL,
-    canonical_descriptor BLOB NOT NULL,
-    phase TEXT NOT NULL DEFAULT 'collecting' CHECK (phase IN ('collecting', 'finalizing', 'completed')),
+    deadline_at INTEGER NOT NULL,
+    phase TEXT NOT NULL DEFAULT 'collecting' CHECK(phase IN ('collecting','finalizing','completed')),
     canonical_selection BLOB,
+    canonical_result BLOB,
+    canonical_sources BLOB,
     delivery_token TEXT NOT NULL UNIQUE,
-    FOREIGN KEY (request_conversation_id, request_record_hash)
-      REFERENCES certified_records(conversation_id, record_hash),
-    CHECK ((origin = 'local' AND request_conversation_id IS NULL AND request_record_hash IS NULL)
-      OR (origin = 'remote' AND request_conversation_id IS NOT NULL AND request_record_hash IS NOT NULL)),
-    CHECK ((phase = 'collecting' AND canonical_selection IS NULL)
-      OR (phase IN ('finalizing', 'completed') AND canonical_selection IS NOT NULL))
+    delivered INTEGER NOT NULL DEFAULT 0 CHECK(delivered IN (0,1))
   ) STRICT;
   CREATE TABLE collective_messages (
     operation_id TEXT NOT NULL REFERENCES collective_operations(operation_id),
-    role TEXT NOT NULL CHECK (role IN ('request', 'response', 'close')),
+    role TEXT NOT NULL CHECK(role IN ('request','response','close')),
     destination TEXT NOT NULL,
     author_agent_id TEXT NOT NULL,
     msg_id TEXT NOT NULL,
-    PRIMARY KEY (operation_id, role, destination),
-    UNIQUE (author_agent_id, msg_id),
-    FOREIGN KEY (author_agent_id, msg_id) REFERENCES message_intents(author_agent_id, msg_id)
+    canonical_message BLOB NOT NULL,
+    completed INTEGER NOT NULL DEFAULT 0 CHECK(completed IN (0,1)),
+    PRIMARY KEY(operation_id,role,destination),
+    UNIQUE(author_agent_id,msg_id)
   ) STRICT;
-  CREATE UNIQUE INDEX collective_one_response ON collective_messages(operation_id) WHERE role = 'response';
-  CREATE UNIQUE INDEX collective_one_close ON collective_messages(operation_id) WHERE role = 'close';
+  CREATE UNIQUE INDEX collective_one_response ON collective_messages(operation_id) WHERE role='response';
+  CREATE UNIQUE INDEX collective_one_close ON collective_messages(operation_id) WHERE role='close';
+  CREATE INDEX collective_pending_messages ON collective_messages(completed) WHERE completed=0;
+  CREATE INDEX collective_pending_results ON collective_operations(delivered) WHERE phase='completed' AND delivered=0;
+  CREATE TABLE collective_answers (
+    operation_id TEXT NOT NULL REFERENCES collective_operations(operation_id),
+    member TEXT NOT NULL,
+    canonical_message BLOB NOT NULL,
+    PRIMARY KEY(operation_id,member)
+  ) STRICT;
 `;
 const schemaSql = `
   CREATE TABLE identity_binding (

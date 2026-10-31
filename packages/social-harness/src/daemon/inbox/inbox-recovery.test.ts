@@ -1,639 +1,130 @@
-/** @file Request context and admission queues survive current-store restarts. */
+/** @file Request acknowledgment preserves answer authority while a pending assessment grants none. */
 
-import { SqlClient } from "@effect/sql";
-import { live as it, scoped as itOnClock } from "@effect/vitest";
-import {
-  Clock,
-  Duration,
-  Effect,
-  Option,
-  Schema,
-  Scope,
-  TestClock,
-} from "effect";
+import { scopedLive as it } from "@effect/vitest";
+import { Deferred, Effect, Exit, Schedule, Schema, Scope } from "effect";
 import { expect } from "vitest";
-import type { InboundItem } from "../../host-protocol/items.js";
-import { digest, testAgentView } from "../../__tests__/agent-card-fixtures.js";
+import { appendCertifiedMessage } from "../../__tests__/certified-history-fixtures.js";
 import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
-import { makeCollectiveOperations } from "../../__tests__/collective-send.js";
 import {
-  bytes,
-  stateDirectory,
-  storedConversation,
-  type TestStore,
-  withDaemonStore,
-} from "../../__tests__/store-schema-fixtures.js";
-import { encodeCollectiveContent } from "../../communication/collectives/wire/index.js";
-import { SendError } from "../../communication/conversations/errors.js";
-import { Message, replyAddress } from "../../communication/message.js";
-import { RecordHash } from "../../communication/records/index.js";
+  conversationIdentityFixture,
+  seedIncoming,
+} from "../../__tests__/conversation-fixtures.js";
+import {
+  block,
+  firewallOptions,
+  pass,
+  policy,
+} from "../../__tests__/daemon-delivery-fixtures.js";
+import { makeHostMessagingFixture } from "../../__tests__/host-messaging-fixtures.js";
+import {
+  encodeCollectiveContent,
+  FormModeSchema,
+} from "../../communication/collectives/wire/index.js";
 import { AgentAddress } from "../../communication/records/values.js";
-import {
-  type DeliveryToken,
-  encodeRuntimeValue,
-} from "../../communication/store/index.js";
-import { encodeCanonical } from "../../encoding/canonical-json.js";
-import { makeHostDelivery } from "./host-delivery.js";
-import { noHistoryExport } from "./host-traffic-log.js";
-import { readRuntimeInbox } from "./inbox.js";
 
-const self = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
-const sender = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
-const operationId = collectiveOperationId(testAgentView(sender).agentId, 8);
-const { foundation, record } = storedConversation("pending-request");
-const recordHash = Schema.decodeUnknownSync(RecordHash)(record.recordHash);
-const message = () =>
-  Schema.decodeUnknownSync(Message)({
-    msgId: record.msgId,
-    content: [
-      { type: "text", text: "Please answer" },
-      {
-        type: "data",
-        value: {
-          "org.social-harness/collective": {
-            kind: "operation",
-            op: "gather",
-            operationId,
-            deadlineAt: Date.now() + 60_000,
-            requestedSchema: {
-              type: "object",
-              properties: { answer: { type: "string" } },
-              required: ["answer"],
-            },
-          },
-        },
-      },
-    ],
-    author: testAgentView(sender),
-    recipients: [testAgentView("agent:alice")],
+const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
+const requestFixture = Effect.gen(function* () {
+  const subject = yield* conversationIdentityFixture;
+  const first = yield* seedIncoming(subject);
+  const operationId = collectiveOperationId(subject.remote.card.agentId);
+  const requestedSchema = yield* Schema.decodeUnknown(FormModeSchema)({
+    type: "object",
+    properties: { slot: { type: "string", enum: ["mon", "tue"] } },
+    required: ["slot"],
   });
-const response = {
-  to: sender,
-  collectiveResponse: {
+  const content = yield* encodeCollectiveContent(
+    {
+      kind: "operation",
+      op: "gather",
+      operationId,
+      deadlineAt: Date.now() + 60_000,
+      requestedSchema,
+    },
+    "Which day?",
+  );
+  yield* subject.run(appendCertifiedMessage(subject, first, content));
+  return {
+    subject,
     operationId,
-    action: "accept",
-    content: { answer: "yes" },
-  },
-} as const;
-const unavailable = () =>
-  Effect.fail(new SendError({ reason: "network-unavailable" }));
-
-function makeCollectives(scope: Scope.Scope) {
-  return Effect.gen(function* () {
-    return yield* makeCollectiveOperations({
-      prepareMessage: unavailable,
-      acceptMessage: unavailable,
-      self: testAgentView(self),
-      scope,
-      sendMessage: unavailable,
-      observeMessage: unavailable,
-      reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
-      emit: () => Effect.dieMessage("a request emits no local result"),
-    });
-  });
-}
-
-function seedRequest(store: TestStore, request: Message) {
-  return Effect.gen(function* () {
-    yield* store.bindIdentity({
-      agentId: testAgentView(self).agentId,
-      canonicalAgentCard: bytes("identity"),
-    });
-    yield* store.putConversationFoundation(foundation);
-    yield* store.applyCertifiedRecord(
-      { ...record, authorAgentId: request.author.agentId },
-      {
-        recipientAgentId: testAgentView(self).agentId,
-        canonicalMessage: yield* encodeCanonical(Message, request),
-      },
-    );
-  });
-}
-
-it(
-  "restores an acknowledged request's answer context with its original delivery identity",
-  restoresAcknowledgedRequest,
-);
-
-function restoresAcknowledgedRequest() {
-  const path = stateDirectory();
-  return Effect.gen(function* () {
-    const token = yield* Effect.scoped(
-      withDaemonStore(path, (store) =>
-        Effect.gen(function* () {
-          const request = message();
-          yield* seedRequest(store, request);
-          const layer = yield* makeCollectives(yield* Scope.Scope);
-          const item = yield* layer.classify({ message: request, recordHash });
-          if (Option.isNone(item)) {
-            return yield* Effect.dieMessage("missing classified request");
-          }
-          const [pending] = yield* store.readPendingDeliveries();
-          if (pending === undefined) {
-            return yield* Effect.dieMessage("missing delivery");
-          }
-          yield* store.putInboxItem({
-            deliveryToken: pending.deliveryToken,
-            canonicalItem: yield* encodeRuntimeValue(item.value),
-          });
-          yield* store.acknowledgeInboxItem(pending.deliveryToken);
-          return pending.deliveryToken;
-        }),
-      ),
-    );
-    yield* Effect.scoped(
-      withDaemonStore(path, (store) =>
-        Effect.gen(function* () {
-          const layer = yield* makeCollectives(yield* Scope.Scope);
-          expect(yield* Effect.flip(layer.send(response))).toEqual(
-            new SendError({ reason: "network-unavailable" }),
-          );
-          expect((yield* store.readInboxItem(token))?.acknowledged).toBe(true);
-          expect((yield* readRuntimeInbox({})).items).toEqual([]);
-          expect((yield* store.readCollectiveOperations())[0]).toMatchObject({
-            operationId,
-            origin: { kind: "remote", recordHash },
-          });
-        }),
-      ),
-    );
-  });
-}
-
-it(
-  "preserves a request awaiting admission and keeps it unanswerable after restart",
-  preservesQueuedRequest,
-);
-
-function preservesQueuedRequest() {
-  return Effect.gen(function* () {
-    const path = stateDirectory();
-    const queued = yield* retainQueuedRequest(path);
-    yield* assertQueuedRequest(path, queued.deliveryToken);
-  }).pipe(Effect.scoped);
-}
-
-function assertQueuedRequest(path: string, deliveryToken: DeliveryToken) {
-  return withDaemonStore(path, (store) =>
-    Effect.gen(function* () {
-      const layer = yield* makeCollectives(yield* Scope.Scope);
-      const delivery = yield* makeHostDelivery({
-        scope: yield* Scope.Scope,
-        historyExport: noHistoryExport,
-        collectives: () => layer,
-      });
-      expect(
-        yield* Effect.flip(delivery.operations.send({ input: response })),
-      ).toMatchObject({ failure: { kind: "request-none" } });
-      expect((yield* store.readPendingDeliveries())[0]?.deliveryToken).toBe(
-        deliveryToken,
-      );
-    }),
-  );
-}
-
-itOnClock(
-  "reconstructs acknowledged group context and publishes a delayed close once after restart",
-  () =>
-    Effect.gen(function* () {
-      const path = stateDirectory();
-      const history = yield* delayedCloseHistory();
-      const emitted: InboundItem[] = [];
-      yield* acknowledgeGroupRequest(path, history, emitted);
-      yield* TestClock.adjust(Duration.hours(2));
-      const token = yield* receiveDelayedClose(path, history, emitted);
-      yield* assertRetainedResult(path, emitted, token);
-      yield* assertAcknowledgedResult(path, emitted);
-      expect(emitted).toHaveLength(1);
-    }),
-);
-
-const group = "group:alice,bob,carol";
-const answerHash = digest("rch_", 41);
-
-type DelayedHistory = Effect.Effect.Success<
-  ReturnType<typeof delayedCloseHistory>
->;
-
-function retainQueuedRequest(path: string) {
-  return Effect.scoped(
-    withDaemonStore(path, (store) =>
-      Effect.gen(function* () {
-        const request = message();
-        yield* seedRequest(store, request);
-        const layer = yield* makeCollectives(yield* Scope.Scope);
-        const classified = yield* layer.classify({
-          message: request,
-          recordHash,
-        });
-        const [pending] = yield* store.readPendingDeliveries();
-        if (Option.isNone(classified) || pending === undefined) {
-          return yield* Effect.dieMessage("missing request");
-        }
-        const item = {
-          deliveryToken: pending.deliveryToken,
-          conversation: sender,
-          canonicalItem: yield* encodeRuntimeValue(classified.value),
-        };
-        yield* store.queueFirewallItem(item);
-        return item;
-      }),
-    ),
-  );
-}
-
-function groupRequest() {
-  return Effect.gen(function* () {
-    const content = yield* encodeCollectiveContent(
-      {
-        kind: "operation",
-        op: "all_gather",
-        operationId,
-        deadlineAt: (yield* Clock.currentTimeMillis) + 60_000,
-        requestedSchema: {
-          type: "object",
-          properties: { answer: { type: "string" } },
-          required: ["answer"],
-        },
-      },
-      "Which day?",
-    );
-    return Schema.decodeUnknownSync(Message)({
-      msgId: record.msgId,
-      content,
-      author: testAgentView(sender),
-      recipients: ["agent:alice", "agent:bob", "agent:carol"]
-        .map(testAgentView)
-        .filter((member) => member.agentId !== testAgentView(sender).agentId),
-    });
-  });
-}
-
-function delayedCloseHistory() {
-  return Effect.gen(function* () {
-    const request = yield* groupRequest();
-    const answer = Schema.decodeUnknownSync(Message)({
-      ...request,
-      msgId: digest("msg_", 42),
-      author: testAgentView("agent:carol"),
-      recipients: [testAgentView("agent:alice"), testAgentView("agent:bob")],
-      content: yield* encodeCollectiveContent({
-        kind: "response",
-        operationId,
-        action: "accept",
-        content: { answer: "Monday" },
-      }),
-    });
-    const close = Schema.decodeUnknownSync(Message)({
-      ...request,
-      msgId: digest("msg_", 43),
-      content: yield* encodeCollectiveContent({
-        kind: "close",
-        closedAt: 60_000,
-        closedBy: "deadline",
-        operationId,
-        included: [
-          { authorAgentId: answer.author.agentId, msgId: answer.msgId },
-        ],
-      }),
-    });
-    return { request, answer, close };
-  });
-}
-
-function restoringLayer(
-  store: TestStore,
-  scope: Scope.Scope,
-  emitted: InboundItem[],
-) {
-  return Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    return yield* makeCollectiveOperations({
-      prepareMessage: unavailable,
-      acceptMessage: unavailable,
-      self: testAgentView(self),
-      scope,
-      sendMessage: unavailable,
-      observeMessage: unavailable,
-      reportStorageFault: () => Effect.dieMessage("unexpected storage fault"),
-      emit: (item, provenance, terminal) =>
-        Effect.gen(function* () {
-          if (terminal === undefined) {
-            return yield* Effect.dieMessage("missing terminal binding");
-          }
-          yield* store.publishCollectiveItem({
-            ...terminal,
-            conversation: group,
-            canonicalItem: yield* encodeRuntimeValue(item),
-            ...(provenance === undefined
-              ? {}
-              : { canonicalProvenance: yield* encodeRuntimeValue(provenance) }),
-            firewall: false,
-          });
-          emitted.push(item);
-        }).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.orDie),
-    });
-  });
-}
-
-function appendMessage(
-  store: TestStore,
-  message: Message,
-  hash: string,
-  previousRecordHash: string,
-) {
-  const actionHash = `action:${hash}`;
-  return encodeCanonical(Message, message).pipe(
-    Effect.flatMap((canonicalMessage) =>
-      store.applyCertifiedRecord(
-        {
-          ...record,
-          recordHash: hash,
-          previousRecordHash,
-          msgId: message.msgId,
-          authorAgentId: message.author.agentId,
-          actionHash,
-          canonicalRecordCore: bytes(hash),
-          actionEvidence: record.actionEvidence.map((evidence) => ({
-            ...evidence,
-            subjectId: actionHash,
-          })),
-          durabilityEvidence: record.durabilityEvidence.map((evidence) => ({
-            ...evidence,
-            subjectId: hash,
-          })),
-        },
-        { recipientAgentId: testAgentView(self).agentId, canonicalMessage },
-      ),
-    ),
-  );
-}
-
-function acknowledgeGroupRequest(
-  path: string,
-  history: DelayedHistory,
-  emitted: InboundItem[],
-) {
-  return Effect.scoped(
-    withDaemonStore(path, (store) =>
-      Effect.gen(function* () {
-        yield* seedRequest(store, history.request);
-        yield* appendMessage(
-          store,
-          history.answer,
-          answerHash,
-          record.recordHash,
-        );
-        const collective = yield* restoringLayer(
-          store,
-          yield* Scope.Scope,
-          emitted,
-        );
-        const item = yield* collective.classify({
-          message: history.request,
-          recordHash,
-        });
-        const [pending] = yield* store.readPendingDeliveries();
-        if (Option.isNone(item) || pending === undefined) {
-          return yield* Effect.dieMessage("missing group request");
-        }
-        yield* store.putInboxItem({
-          deliveryToken: pending.deliveryToken,
-          canonicalItem: yield* encodeRuntimeValue(item.value),
-        });
-        yield* store.acknowledgeInboxItem(pending.deliveryToken);
-      }),
-    ),
-  );
-}
-
-function receiveDelayedClose(
-  path: string,
-  history: DelayedHistory,
-  emitted: InboundItem[],
-) {
-  return Effect.scoped(
-    withDaemonStore(path, (store) =>
-      Effect.gen(function* () {
-        yield* appendMessage(
-          store,
-          history.close,
-          digest("rch_", 44),
-          answerHash,
-        );
-        yield* restoringLayer(store, yield* Scope.Scope, emitted);
-        expect(emitted).toMatchObject([
-          {
-            kind: "collectiveResult",
-            closedAt: 60_000,
-            closedBy: "deadline",
-            operationId,
-            outcomes: [
-              { member: testAgentView(self), outcome: { kind: "no-answer" } },
-              {
-                member: testAgentView("agent:carol"),
-                outcome: { kind: "answered", content: { answer: "Monday" } },
-              },
-            ],
-          },
-        ]);
-        const [item] = (yield* store.readInbox()).items;
-        if (item === undefined) {
-          return yield* Effect.dieMessage("missing delayed result");
-        }
-        return item.deliveryToken;
-      }),
-    ),
-  );
-}
-
-function assertRetainedResult(
-  path: string,
-  emitted: InboundItem[],
-  token: DeliveryToken,
-) {
-  return Effect.scoped(
-    withDaemonStore(path, (store) =>
-      Effect.gen(function* () {
-        yield* restoringLayer(store, yield* Scope.Scope, emitted);
-        expect(emitted).toHaveLength(1);
-        expect(
-          (yield* store.readInbox()).items.map(
-            ({ deliveryToken }) => deliveryToken,
-          ),
-        ).toEqual([token]);
-        yield* store.acknowledgeInboxItem(token);
-      }),
-    ),
-  );
-}
-
-function assertAcknowledgedResult(path: string, emitted: InboundItem[]) {
-  return Effect.scoped(
-    withDaemonStore(path, (store) =>
-      Effect.gen(function* () {
-        yield* restoringLayer(store, yield* Scope.Scope, emitted);
-        expect((yield* store.readInbox()).items).toEqual([]);
-      }),
-    ),
-  );
-}
-
-itOnClock(
-  "keeps a consumed close before its request unknown after a physical store reopen",
-  () =>
-    Effect.gen(function* () {
-      const path = stateDirectory();
-      const emitted: InboundItem[] = [];
-      const request = Schema.decodeUnknownSync(Message)({
-        ...(yield* groupRequest()),
-        msgId: digest("msg_", 81),
-      });
-      const requestHash = Schema.decodeUnknownSync(RecordHash)(
-        digest("rch_", 82),
-      );
-      const earlyClose = Schema.decodeUnknownSync(Message)({
-        ...request,
-        msgId: record.msgId,
-        content: yield* encodeCollectiveContent({
-          kind: "close",
-          closedAt: 60_000,
-          closedBy: "deadline",
+    response: {
+      input: {
+        to: bob,
+        collectiveResponse: {
           operationId,
-          included: [],
-        }),
-      });
-      const context = { path, emitted, request, requestHash, earlyClose };
-      yield* Effect.scoped(retainCloseBeforeRequest(context));
-      yield* Effect.scoped(assertUnknownCloseAfterReopen(context));
-      expect(emitted).toMatchObject([
-        { kind: "collectiveResult", operationId },
-      ]);
+          action: "accept" as const,
+          content: { slot: "mon" },
+        },
+      },
+    },
+  };
+});
+
+function waitForRequest(
+  runtime: Effect.Effect.Success<ReturnType<typeof makeHostMessagingFixture>>,
+) {
+  return runtime.messaging.listInbox({}).pipe(
+    Effect.repeat({
+      until: (page) =>
+        page.items.some((entry) => entry.item.kind === "collectiveRequest"),
+      schedule: Schedule.spaced("10 millis"),
     }),
-);
-
-interface OrderedRequest {
-  readonly path: string;
-  readonly emitted: InboundItem[];
-  readonly request: Message;
-  readonly requestHash: RecordHash;
-  readonly earlyClose: Message;
-}
-
-function retainCloseBeforeRequest(context: OrderedRequest) {
-  return withDaemonStore(context.path, (store) =>
-    Effect.gen(function* () {
-      const { emitted, request, requestHash, earlyClose } = context;
-
-      yield* seedRequest(store, earlyClose);
-      const layer = yield* restoringLayer(store, yield* Scope.Scope, emitted);
-      yield* layer.classify({ message: earlyClose, recordHash });
-      const early = yield* Effect.fromNullable(
-        (yield* store.readPendingDeliveries())[0],
-      );
-      yield* store.acknowledgeDelivery(early.deliveryToken);
-      yield* appendMessage(store, request, requestHash, record.recordHash);
-      expect(
-        Option.isSome(
-          yield* layer.classify({ message: request, recordHash: requestHash }),
-        ),
-      ).toBe(true);
-      const pending = yield* Effect.fromNullable(
-        (yield* store.readPendingDeliveries())[0],
-      );
-      yield* store.acknowledgeDelivery(pending.deliveryToken);
-    }),
+    Effect.zipRight(runtime.messaging.listInbox({})),
+    Effect.timeout("10 seconds"),
   );
 }
 
-function assertUnknownCloseAfterReopen(context: OrderedRequest) {
-  return withDaemonStore(context.path, (store) =>
-    Effect.gen(function* () {
-      const { emitted, request, requestHash, earlyClose } = context;
+it("answers an acknowledged request after restarting its host services", () =>
+  Effect.gen(function* () {
+    const fixture = yield* requestFixture;
+    const scope = yield* Scope.make();
+    const original = yield* makeHostMessagingFixture(fixture.subject).pipe(
+      Scope.extend(scope),
+    );
+    const page = yield* waitForRequest(original);
+    const request = page.items.find(
+      (entry) => entry.item.kind === "collectiveRequest",
+    );
+    if (request === undefined) {
+      return yield* Effect.dieMessage("Expected a delivered request");
+    }
+    yield* original.messaging.acknowledgeDelivery(request.deliveryToken);
+    yield* Scope.close(scope, Exit.void);
+    const resumed = yield* makeHostMessagingFixture(fixture.subject);
+    expect(
+      yield* resumed.messaging.getInboxItem(request.deliveryToken),
+    ).toMatchObject({
+      item: {
+        kind: "collectiveRequest",
+        message: { content: { operationId: fixture.operationId } },
+      },
+    });
+    expect(yield* resumed.messaging.send(fixture.response)).toMatchObject({
+      kind: "response",
+      operationId: fixture.operationId,
+    });
+  }));
 
-      const layer = yield* restoringLayer(store, yield* Scope.Scope, emitted);
-      expect(emitted).toEqual([]);
-      expect(
-        yield* Effect.flip(
-          layer.send({
-            ...response,
-            to: replyAddress(request),
-            collectiveResponse: { ...response.collectiveResponse, operationId },
-          }),
-        ),
-      ).toMatchObject({ reason: "network-unavailable" });
-      const close = Schema.decodeUnknownSync(Message)({
-        ...earlyClose,
-        msgId: digest("msg_", 83),
-      });
-      const closeHash = Schema.decodeUnknownSync(RecordHash)(
-        digest("rch_", 84),
-      );
-      yield* appendMessage(store, close, closeHash, requestHash);
-      yield* layer.classify({ message: close, recordHash: closeHash });
-    }),
-  );
-}
-
-itOnClock(
-  "keeps a consumed future-deadline request rejected when restart makes its deadline admissible",
-  () =>
-    Effect.gen(function* () {
-      const path = stateDirectory();
-      const request = Schema.decodeUnknownSync(Message)({
-        ...(yield* groupRequest()),
-        content: yield* encodeCollectiveContent(
-          {
-            kind: "operation",
-            op: "all_gather",
-            operationId,
-            deadlineAt:
-              (yield* Clock.currentTimeMillis) +
-              Duration.toMillis(Duration.days(32)),
-            requestedSchema: { type: "object", properties: {} },
-          },
-          "Too far in the future",
-        ),
-      });
-      yield* Effect.scoped(consumeRejectedRequest(path, request));
-      yield* TestClock.adjust(Duration.days(7));
-      const operations = yield* Effect.scoped(
-        reopenRejectedRequest(path, request),
-      );
-      expect(operations).toEqual([]);
-    }),
-);
-
-function consumeRejectedRequest(path: string, request: Message) {
-  return withDaemonStore(path, (store) =>
-    Effect.gen(function* () {
-      yield* seedRequest(store, request);
-      const layer = yield* restoringLayer(store, yield* Scope.Scope, []);
-      expect(
-        Option.isNone(yield* layer.classify({ message: request, recordHash })),
-      ).toBe(true);
-      const pending = yield* Effect.fromNullable(
-        (yield* store.readPendingDeliveries())[0],
-      );
-      yield* store.acknowledgeDelivery(pending.deliveryToken);
-    }),
-  );
-}
-
-function reopenRejectedRequest(path: string, request: Message) {
-  return withDaemonStore(path, (store) =>
-    Effect.gen(function* () {
-      const layer = yield* restoringLayer(store, yield* Scope.Scope, []);
-      expect(yield* store.readCollectiveOperations()).toEqual([]);
-      expect(
-        yield* Effect.flip(
-          layer.send({
-            to: replyAddress(request),
-            collectiveResponse: { operationId, action: "decline" },
-          }),
-        ),
-      ).toMatchObject({ failure: { kind: "request-none" } });
-      return yield* store.readCollectiveOperations();
-    }),
-  );
-}
+it("keeps an unpresented request unanswerable after restarting its host services", () =>
+  Effect.gen(function* () {
+    const fixture = yield* requestFixture;
+    const entered = yield* Deferred.make<undefined>();
+    const scope = yield* Scope.make();
+    const held = policy((input) =>
+      input.event.message.operation?.kind === "request"
+        ? Deferred.succeed(entered, undefined).pipe(
+            Effect.zipRight(Effect.never),
+          )
+        : Effect.succeed(pass),
+    );
+    yield* makeHostMessagingFixture(fixture.subject, {
+      firewall: firewallOptions(held),
+    }).pipe(Scope.extend(scope));
+    yield* Deferred.await(entered);
+    yield* Scope.close(scope, Exit.void);
+    const resumed = yield* makeHostMessagingFixture(fixture.subject, {
+      firewall: firewallOptions(policy(() => Effect.succeed(block))),
+    });
+    expect(
+      yield* resumed.messaging.send(fixture.response).pipe(Effect.flip),
+    ).toMatchObject({ failure: { kind: "request-none" } });
+  }));

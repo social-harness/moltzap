@@ -1,80 +1,159 @@
-/** @file Durable delivery behaviour through the loopback MCP tools and native endpoint. */
+/** @file The MCP boundary preserves host delivery identity, replay and send outcomes. */
 
 import { scopedLive as it } from "@effect/vitest";
-import { Chunk, Effect, Schema, Scope, Stream } from "effect";
-import { describe, expect } from "vitest";
-import type { CollectivePorts } from "../../communication/collectives/ports.js";
-import type { EndpointEngine } from "../../communication/conversations/index.js";
-import { testAgentView } from "../../__tests__/agent-card-fixtures.js";
-import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
-import { collectivePersistencePorts } from "../../__tests__/collective-message-fixtures.js";
-import { requestId } from "../../__tests__/collective-operation-fixtures.js";
 import {
-  type TestCollectiveOperations as CollectiveOperations,
-  makeCollectiveOperations,
-} from "../../__tests__/collective-send.js";
-import { openInboxFixture } from "../../__tests__/inbox-fixture.js";
+  Chunk,
+  Context,
+  Deferred,
+  Effect,
+  Queue,
+  Schema,
+  Stream,
+} from "effect";
+import { describe, expect } from "vitest";
+import type { Message } from "../../communication/message.js";
+import { untilLive } from "../../__tests__/advance-clock.js";
+import { collectiveOperationId } from "../../__tests__/collective-id-fixtures.js";
+import {
+  authoredMessage,
+  conversationIdentityFixture,
+} from "../../__tests__/conversation-fixtures.js";
+import { makeHostMessagingFixture } from "../../__tests__/host-messaging-fixtures.js";
 import {
   loopbackMcpEndpoint,
   makeToolCallRequest,
-  mcpIdentity,
   mcpTestCredential,
-  mcpTestHeaders,
 } from "../../__tests__/mcp-http-fixtures.js";
-import { pendingMessage } from "../../__tests__/pending-delivery-fixtures.js";
-import { stateDirectory } from "../../__tests__/store-schema-fixtures.js";
-import {
-  CollectiveEmitError,
-  CollectiveId,
-} from "../../communication/collectives/contracts.js";
+import { CollectiveId } from "../../communication/collectives/contracts.js";
 import { encodeCollectiveContent } from "../../communication/collectives/wire/index.js";
-import { DeliveryAcknowledgeError } from "../../communication/conversations/errors.js";
+import { Communication } from "../../communication/index.js";
 import { AgentAddress } from "../../communication/records/index.js";
+import { DeliveryToken } from "../../communication/store/index.js";
 import { acquireHarnessEndpoint } from "../../host-client/index.js";
 import { decodeHarnessReadInboxResult } from "../../host-protocol/operations.js";
-import { Identity } from "../../identity/local.js";
-import { type HostDelivery, makeHostDelivery } from "../inbox/host-delivery.js";
+import { McpInbox } from "../messaging/index.js";
 import { makeHarnessMcpHttpHandler } from "./index.js";
 
 const unreachable = () =>
-  Effect.dieMessage("operation is outside the delivery contract");
-const pending = pendingMessage(1);
-const acknowledgingEngine: Pick<EndpointEngine, "acknowledgeMessage"> = {
-  acknowledgeMessage: () => Effect.void,
-};
+  Effect.dieMessage("Unrelated delivery contract operation");
+interface Handoff {
+  readonly message: Message;
+  readonly handled: Deferred.Deferred<undefined>;
+}
 
-/** Supplies committed deliveries and acknowledgment faults behind the real classifier. */
-const deliverPending =
-  (delivery: HostDelivery, collectives: CollectiveOperations) =>
-  (messages = [pending], engine = acknowledgingEngine) =>
-    delivery.runPass(() => ({
-      readPending: Effect.succeed(messages),
-      engine,
-      classify: collectives.classify,
-    }));
+const fixture = Effect.gen(function* () {
+  const subject = yield* conversationIdentityFixture;
+  const incoming = yield* Queue.unbounded<Handoff>();
+  const sent = yield* Queue.unbounded<Message>();
+  const communication = communicationEdge(incoming, sent);
+  const host = yield* makeHostMessagingFixture(subject, { communication });
+  const handler = yield* deliveryHandler(host);
+  yield* Effect.addFinalizer(() =>
+    Effect.tryPromise(() => handler.close()).pipe(Effect.orDie),
+  );
+  const pending = yield* authoredMessage(
+    { local: subject.remote, remote: subject.local },
+    [{ type: "text", text: "incoming message" }],
+  );
+  const deliver = deliveryWriter(incoming, pending);
+  const call = callTool(handler);
+  const inbox = call("read_inbox").pipe(
+    Effect.flatMap((result) =>
+      decodeHarnessReadInboxResult(result.structuredContent),
+    ),
+  );
+  return {
+    subject,
+    pending,
+    sent,
+    deliver,
+    call,
+    inbox,
+    url: yield* loopbackMcpEndpoint(handler),
+  };
+});
 
-/** Only delivery operations are reachable from these MCP transcripts. */
-const deliveryHandler = (
-  operations: Parameters<typeof makeHarnessMcpHttpHandler>[0]["operations"],
-) =>
-  makeHarnessMcpHttpHandler({
+function communicationEdge(
+  incoming: Queue.Queue<Handoff>,
+  sent: Queue.Queue<Message>,
+) {
+  return Communication.of({
+    send: (message) =>
+      Queue.offer(sent, message).pipe(
+        Effect.as({
+          kind: "completed",
+          message: {
+            authorAgentId: message.author.agentId,
+            msgId: message.msgId,
+          },
+        } as const),
+      ),
+    waitForMessage: () => Effect.void,
+    consume: (handle) =>
+      Queue.take(incoming).pipe(
+        Effect.flatMap((entry) =>
+          handle(entry.message).pipe(
+            Effect.zipRight(Deferred.succeed(entry.handled, undefined)),
+          ),
+        ),
+        Effect.forever,
+      ),
+    listConversations: () =>
+      Effect.succeed({ conversations: [], hasMore: false }),
+    readHistory: () => Effect.succeed({ messages: [], continuation: null }),
+  });
+}
+
+function deliveryHandler(
+  host: Effect.Effect.Success<ReturnType<typeof makeHostMessagingFixture>>,
+) {
+  const events = Context.get(host.context, McpInbox);
+  const messaging = host.messaging;
+  return makeHarnessMcpHttpHandler({
     credential: mcpTestCredential,
     implementation: { name: "delivery-contract", version: "1" },
-    operations,
-  }).pipe(Effect.provideService(Identity, mcpIdentity(true)));
+    eventStore: events,
+    operations: {
+      send: messaging.send,
+      readInbox: messaging.listInbox,
+      readEvent: ({ eventId }) =>
+        Schema.decodeUnknown(DeliveryToken)(eventId).pipe(
+          Effect.catchTag("ParseError", () =>
+            Effect.fail({ reason: "invalid-event" }),
+          ),
+          Effect.flatMap(messaging.getInboxItem),
+        ),
+      acknowledgeDelivery: messaging.acknowledgeDelivery,
+      readInboxSummary: events.readInboxSummary,
+      readStatus: unreachable,
+      register: unreachable,
+      searchConversations: messaging.listConversations,
+      readConversation: messaging.readHistory,
+    },
+  }).pipe(Effect.provide(host.context));
+}
 
-const callTool =
-  (handler: Parameters<typeof loopbackMcpEndpoint>[0]) =>
-  (name: string, args: Readonly<Record<string, unknown>> = {}) =>
-    Effect.tryPromise(() => {
-      const request = makeToolCallRequest({
-        id: "delivery",
-        name,
-        toolArguments: args,
-      });
-      request.headers.set("Authorization", mcpTestHeaders.Authorization);
-      return handler.fetch(request);
-    }).pipe(
+function deliveryWriter(incoming: Queue.Queue<Handoff>, pending: Message) {
+  return (messages: readonly Message[] = [pending]) =>
+    Effect.forEach(
+      messages,
+      (message) =>
+        Effect.gen(function* () {
+          const handled = yield* Deferred.make<undefined>();
+          yield* Queue.offer(incoming, { message, handled });
+          yield* Deferred.await(handled);
+        }),
+      { concurrency: 1, discard: true },
+    );
+}
+
+function callTool(handler: Parameters<typeof loopbackMcpEndpoint>[0]) {
+  return (name: string, args: Readonly<Record<string, unknown>> = {}) =>
+    Effect.tryPromise(() =>
+      handler.fetch(
+        makeToolCallRequest({ id: "delivery", name, toolArguments: args }),
+      ),
+    ).pipe(
       Effect.flatMap((response) => Effect.tryPromise(() => response.json())),
       Effect.flatMap(
         Schema.decodeUnknown(
@@ -85,124 +164,51 @@ const callTool =
       ),
       Effect.map((response) => response.result),
     );
+}
 
-/** Real delivery, collective classification and storage behind the MCP boundary. */
-const deliveryFixture = (
-  sendMessage: CollectivePorts["sendMessage"] = unreachable,
-) =>
+const sendsWithoutInventingAdvice = () =>
   Effect.gen(function* () {
-    const store = yield* openInboxFixture(stateDirectory());
-    const scope = yield* Scope.Scope;
-    const slot: { active?: CollectiveOperations } = {};
-    const delivery = yield* makeHostDelivery({
-      scope,
-      historyExport: { record: () => Effect.void },
-      collectives: () => slot.active,
-    }).pipe(store.run);
-    const persistence = yield* collectivePersistencePorts(
-      sendMessage,
-      "agent:alice",
-      1,
-      store.sql,
-    ).pipe(store.run);
-    const collectives = yield* makeCollectiveOperations({
-      ...persistence,
-      self: testAgentView("agent:alice"),
-      emit: (item, provenance, terminal) =>
-        delivery
-          .queueLocalItem(item, provenance, terminal)
-          .pipe(
-            Effect.catchTag("EndpointStoreError", () =>
-              Effect.fail(new CollectiveEmitError()),
-            ),
-          ),
-      scope,
-    }).pipe(store.run);
-    slot.active = collectives;
-    const handler = yield* deliveryHandler({
-      ...delivery.operations,
-
-      readStatus: unreachable,
-      register: unreachable,
-      searchConversations: unreachable,
-      readConversation: unreachable,
+    const test = yield* fixture;
+    const result = yield* test.call("send_message", {
+      input: {
+        to: `agent:${test.subject.remote.card.agentName}`,
+        text: "Hello",
+      },
     });
-    const url = yield* loopbackMcpEndpoint(handler);
-    const call = callTool(handler);
-    const inbox = readInbox(call);
-    const deliver = deliverPending(delivery, collectives);
-    return { url, call, inbox, deliver };
-  });
-
-const fixture = deliveryFixture();
-
-it("returns a collective layer success without advice through the MCP writer", () =>
-  Effect.gen(function* () {
-    const test = yield* deliveryFixture(() =>
-      Effect.succeed({
-        msgId: pending.message.msgId,
-        recordHash: pending.recordHash,
-      }),
-    );
-    const sent = yield* test.call("send_message", {
-      input: { to: "agent:bob", text: "Hello" },
-    });
-    expect(sent.structuredContent).toEqual({
+    const message = yield* Queue.take(test.sent);
+    expect(result.structuredContent).toEqual({
       kind: "multicast",
-      msgId: pending.message.msgId,
-      address: "agent:bob",
+      msgId: message.msgId,
+      address: `agent:${test.subject.remote.card.agentName}`,
     });
-  }));
+  });
 
 const consumesAnswers = () =>
   Effect.gen(function* () {
     const test = yield* fixture;
-    const answer = pendingMessage(2);
-    const content = yield* encodeCollectiveContent({
-      kind: "response",
-      operationId: Schema.decodeUnknownSync(CollectiveId)(
-        collectiveOperationId(testAgentView("agent:alice").agentId, 2),
-      ),
-      action: "decline",
-    });
-    yield* test.deliver([
-      { ...answer, message: { ...answer.message, content } },
-    ]);
-    expect((yield* test.inbox).items).toEqual([]);
-    yield* test.deliver();
-    expect((yield* test.inbox).items).toEqual([
-      {
-        deliveryToken: pending.deliveryToken,
-        item: { kind: "multicast", message: pending.message },
-      },
-    ]);
-  });
-
-const continuesAfterAnswerAcknowledgmentFails = () =>
-  Effect.gen(function* () {
-    const test = yield* fixture;
-    const answer = pendingMessage(2);
-    const content = yield* encodeCollectiveContent({
-      kind: "response",
-      operationId: Schema.decodeUnknownSync(CollectiveId)(
-        collectiveOperationId(testAgentView("agent:alice").agentId, 2),
-      ),
-      action: "decline",
-    });
-    yield* test.deliver(
-      [{ ...answer, message: { ...answer.message, content } }, pending],
-      {
-        acknowledgeMessage: () =>
-          Effect.fail(
-            new DeliveryAcknowledgeError({ reason: "persistence-failed" }),
-          ),
-      },
+    const operationId = yield* Schema.decodeUnknown(CollectiveId)(
+      collectiveOperationId(test.subject.local.card.agentId, 2),
     );
-    expect((yield* test.inbox).items).toEqual([
-      {
-        deliveryToken: pending.deliveryToken,
-        item: { kind: "multicast", message: pending.message },
-      },
+    const content = yield* encodeCollectiveContent({
+      kind: "response",
+      operationId,
+      action: "decline",
+    });
+    yield* test.deliver([{ ...test.pending, content }]);
+    expect((yield* test.inbox).items).toEqual([]);
+    const ordinary = yield* authoredMessage(
+      { local: test.subject.remote, remote: test.subject.local },
+      [{ type: "text", text: "ordinary message" }],
+    );
+    yield* test.deliver([ordinary]);
+    yield* untilLive(
+      test.inbox.pipe(
+        Effect.map((page) => page.items.length === 1),
+        Effect.orDie,
+      ),
+    );
+    expect((yield* test.inbox).items.map((entry) => entry.item)).toEqual([
+      { kind: "multicast", message: ordinary },
     ]);
   });
 
@@ -210,16 +216,20 @@ const replaysUntilAcknowledged = () =>
   Effect.gen(function* () {
     const test = yield* fixture;
     yield* test.deliver();
+    yield* untilLive(
+      test.inbox.pipe(
+        Effect.map((page) => page.items.length === 1),
+        Effect.orDie,
+      ),
+    );
     const page = yield* test.inbox;
-    expect(page.items).toEqual([
-      {
-        deliveryToken: pending.deliveryToken,
-        item: { kind: "multicast", message: pending.message },
-      },
-    ]);
     expect(yield* test.inbox).toEqual(page);
+    const first = page.items[0];
+    if (first === undefined) {
+      return yield* Effect.dieMessage("Expected the admitted message");
+    }
     yield* test.call("acknowledge_delivery", {
-      deliveryToken: pending.deliveryToken,
+      deliveryToken: first.deliveryToken,
     });
     expect((yield* test.inbox).items).toEqual([]);
   });
@@ -231,13 +241,17 @@ const returnsACollectiveRefusal = () =>
       credential: mcpTestCredential,
       receiveMode: "push",
     });
-    const failure = yield* Effect.flip(
-      endpoint.send({
-        to: Schema.decodeUnknownSync(AgentAddress)("agent:bob"),
-        collectiveResponse: { operationId: requestId, action: "decline" },
-      }),
+    const operationId = yield* Schema.decodeUnknown(CollectiveId)(
+      collectiveOperationId(test.subject.local.card.agentId, 2),
     );
-    expect(failure).toMatchObject({
+    expect(
+      yield* endpoint
+        .send({
+          to: AgentAddress.make(`agent:${test.subject.remote.card.agentName}`),
+          collectiveResponse: { operationId, action: "decline" },
+        })
+        .pipe(Effect.flip),
+    ).toMatchObject({
       _tag: "CollectiveError",
       failure: { kind: "request-none" },
     });
@@ -248,6 +262,12 @@ const retainsEventReference = () =>
   Effect.gen(function* () {
     const test = yield* fixture;
     yield* test.deliver();
+    yield* untilLive(
+      test.inbox.pipe(
+        Effect.map((page) => page.items.length === 1),
+        Effect.orDie,
+      ),
+    );
     const endpoint = yield* acquireHarnessEndpoint(test.url, {
       credential: mcpTestCredential,
       receiveMode: "push",
@@ -263,10 +283,10 @@ const retainsEventReference = () =>
         Effect.gen(function* () {
           expect(delivery.eventId).toBe(first.eventId);
           yield* delivery.acknowledge;
-          const retained = yield* test.call("read_event", {
-            eventId: delivery.eventId,
-          });
-          expect(retained.structuredContent).toEqual({ item: first.item });
+          expect(
+            (yield* test.call("read_event", { eventId: delivery.eventId }))
+              .structuredContent,
+          ).toEqual({ item: first.item });
         }),
       ),
     );
@@ -276,8 +296,17 @@ const retainsEventReference = () =>
 const retainsFailedHandoff = () =>
   Effect.gen(function* () {
     const test = yield* fixture;
-    const later = pendingMessage(2);
-    yield* test.deliver([pending, later]);
+    const later = yield* authoredMessage(
+      { local: test.subject.remote, remote: test.subject.local },
+      [{ type: "text", text: "later message" }],
+    );
+    yield* test.deliver([test.pending, later]);
+    yield* untilLive(
+      test.inbox.pipe(
+        Effect.map((page) => page.items.length === 2),
+        Effect.orDie,
+      ),
+    );
     const endpoint = yield* acquireHarnessEndpoint(test.url, {
       credential: mcpTestCredential,
       receiveMode: "push",
@@ -290,7 +319,7 @@ const retainsFailedHandoff = () =>
     );
     expect(outcome).toEqual({
       failure,
-      item: { kind: "multicast", message: pending.message },
+      item: { kind: "multicast", message: test.pending },
     });
     const replay = yield* endpoint.messages.pipe(
       Stream.take(2),
@@ -298,30 +327,16 @@ const retainsFailedHandoff = () =>
       Stream.runCollect,
     );
     expect(Chunk.toReadonlyArray(replay)).toEqual([
-      { kind: "multicast", message: pending.message },
-      { kind: "multicast", message: later.message },
-    ]);
-    expect((yield* test.inbox).items).toEqual([
-      {
-        deliveryToken: pending.deliveryToken,
-        item: { kind: "multicast", message: pending.message },
-      },
-      {
-        deliveryToken: later.deliveryToken,
-        item: { kind: "multicast", message: later.message },
-      },
+      { kind: "multicast", message: test.pending },
+      { kind: "multicast", message: later },
     ]);
   });
 
-// @agent-code-guard/regression-only: MCP conformance requires explicit delivery and failure transcripts.
+// @agent-code-guard/regression-only: MCP and native delivery preserve the same durable item identity through refusal and acknowledgment.
 describe("MCP delivery contract", () => {
   it(
-    "keeps a native event reference stable across redelivery and readable after acknowledgment",
-    retainsEventReference,
-  );
-  it(
-    "delivers a later multicast when acknowledging a consumed answer fails",
-    continuesAfterAnswerAcknowledgmentFails,
+    "returns a successful send without inventing advice",
+    sendsWithoutInventingAdvice,
   );
   it(
     "consumes protocol answers without exposing them in the inbox",
@@ -336,15 +351,8 @@ describe("MCP delivery contract", () => {
     returnsACollectiveRefusal,
   );
   it(
-    "replays a refused item before later deliveries when the native handoff fails",
-    retainsFailedHandoff,
+    "retains an event reference across redelivery and acknowledgment",
+    retainsEventReference,
   );
+  it("replays a refused item before later deliveries", retainsFailedHandoff);
 });
-
-function readInbox(call: ReturnType<typeof callTool>) {
-  return call("read_inbox").pipe(
-    Effect.flatMap((result) =>
-      decodeHarnessReadInboxResult(result.structuredContent),
-    ),
-  );
-}

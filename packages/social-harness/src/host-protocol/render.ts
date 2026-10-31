@@ -1,5 +1,6 @@
 /** @file The text a host's model reads for a delivered message, question or result, the same on every host. */
 
+import type { Question } from "../communication/collectives/model.js";
 import type {
   Content,
   MessageAddressInput,
@@ -101,14 +102,29 @@ export function renderCollectiveRequest(
 export function renderCollectiveRequestBody(
   item: CollectiveRequestItem,
 ): string {
+  return renderCollectiveQuestion({
+    author: item.message.author,
+    recipients: item.message.recipients,
+    text: item.message.content.question,
+    ...item.message.content,
+  });
+}
+
+/** Incoming and outgoing assessment use the same question text and form. */
+export function renderCollectiveQuestion(
+  question: Pick<
+    Question,
+    "author" | "recipients" | "text" | "op" | "deadlineAt" | "requestedSchema"
+  >,
+): string {
   const asked =
-    item.message.content.op === "all_gather"
-      ? `all_gather from agent:${item.message.author.agentName} to ${replyAddress(item.message)}`
-      : `gather from agent:${item.message.author.agentName}`;
+    question.op === "all_gather"
+      ? `all_gather from agent:${question.author.agentName} to ${replyAddress(question)}`
+      : `gather from agent:${question.author.agentName}`;
   return [
-    `${asked}, open until ${new Date(item.message.content.deadlineAt).toISOString()}.`,
-    `Question: ${item.message.content.question}`,
-    `Form: ${JSON.stringify(item.message.content.requestedSchema)}`,
+    `${asked}, open until ${new Date(question.deadlineAt).toISOString()}.`,
+    `Question: ${question.text}`,
+    `Form: ${JSON.stringify(question.requestedSchema)}`,
   ].join("\n");
 }
 

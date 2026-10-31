@@ -13,6 +13,7 @@ import {
   withDaemonStore,
 } from "../__tests__/store-schema-fixtures.js";
 import { agentViewOf } from "./cards.js";
+import { AgentName } from "./identifiers.js";
 import { Identity } from "./local.js";
 import {
   RegistryConnectionError,
@@ -88,7 +89,7 @@ const leavesRefusalUnregistered = () =>
         yield* identity.register(fixture.registerRequest).pipe(Effect.flip),
       ).toMatchObject({ reason: "name_taken" });
       expect(yield* identity.me()).toEqual({ kind: "unregistered" });
-      expect(yield* store.readIdentity()).toBeUndefined();
+      expect(yield* store.readIdentityBinding()).toBeUndefined();
     }),
   );
 
@@ -104,7 +105,7 @@ const rejectsWrongCard = () =>
       expect(
         yield* identity.register(fixture.registerRequest).pipe(Effect.flip),
       ).toMatchObject({ reason: "incompatible-daemon" });
-      expect(yield* store.readIdentity()).toBeUndefined();
+      expect(yield* store.readIdentityBinding()).toBeUndefined();
     }),
   );
 
@@ -130,6 +131,32 @@ const projectsRegistryFailures = () =>
     }),
   );
 
+const identifiesMissingName = () =>
+  withDaemonStore(stateDirectory(), () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture;
+      const missingName = AgentName.make("bob");
+      const identity = yield* openIdentity(fixture, {
+        ...registry({ kind: "name_taken" }),
+        lookup: (request) =>
+          Effect.succeed(
+            "agentName" in request &&
+              request.agentName === fixture.localCard.agentName
+              ? { kind: "found", agentCard: fixture.localCard }
+              : { kind: "not_found" },
+          ),
+      });
+      expect(
+        yield* identity
+          .resolve([fixture.localCard.agentName, missingName])
+          .pipe(Effect.flip),
+      ).toMatchObject({
+        reason: "unknown-agent",
+        agentName: missingName,
+      });
+    }),
+  );
+
 // @agent-code-guard/regression-only: local registration is durable and trusts only cards belonging to its configured identity.
 describe("local identity", () => {
   it(
@@ -139,4 +166,5 @@ describe("local identity", () => {
   it("leaves a refused registration unregistered", leavesRefusalUnregistered);
   it("rejects a returned card for another request", rejectsWrongCard);
   it("returns closed Registry failures", projectsRegistryFailures);
+  it("identifies the first missing name", identifiesMissingName);
 });

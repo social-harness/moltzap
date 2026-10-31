@@ -63,8 +63,8 @@ adapter delivery. The tool has returned, so refusals use inbound callbacks:
   complete the queued delivery.
 - For a plain message with an invalid address, unknown agent, invalid membership
   or invalid content, report the refusal and complete the queued delivery.
-- For `delivery-pending` or `outcome-unknown`, report that delivery continues or
-  may have occurred. Complete even if feedback fails, since retrying can duplicate.
+- For `outcome-unknown`, report that sending may have occurred. Complete even
+  if feedback fails, since retrying can duplicate.
 - For other plain-message failures, leave retries to NanoClaw.
 
 The image routes valid explicit Social Harness addresses from `send_message` and

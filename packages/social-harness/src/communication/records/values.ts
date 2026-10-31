@@ -208,13 +208,6 @@ export const AgentAddress = addressInput.pipe(
  */
 export type AgentAddress = typeof AgentAddress.Type;
 
-/**
- * The registry name a validated `agent:` address names, such as the local
- * agent's own name, which canonical addresses spell it by.
- */
-export const agentNameOf = (address: AgentAddress): string =>
-  address.slice(AGENT_ADDRESS_PREFIX.length);
-
 /** The direct destination of an agent with a validated immutable Registry name. */
 export const agentAddressOf = (agent: {
   readonly agentName: AgentName;

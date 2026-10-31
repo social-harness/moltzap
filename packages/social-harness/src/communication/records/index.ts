@@ -53,7 +53,6 @@ export {
   GroupAddress,
   maximumContentBytes,
   maximumMembers,
-  MessageAddressInput,
   MsgId,
 } from "./values.js";
 

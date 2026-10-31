@@ -507,7 +507,7 @@ const toolListings = {
   },
   [HARNESS_SEND_TOOL]: {
     description:
-      "Send a multicast, gather, all_gather, or collective response to an agent or fixed-member group. A gather or all_gather returns its operationId. A multicast or response returns its message's msgId and canonical conversation address. read_conversation records that msgId, and recipients see it on multicast items. A response also returns the answered request's operationId. Answer in the conversation where the request arrived and use the operationId from its collectiveRequest item. Every collective response requires that request's operationId. A firewall refusal returns the check id, reason, and next action without sending. A delivery-pending failure means the message will still be sent. Do not send it again.",
+      "Send a multicast, gather, all_gather, or collective response to an agent or fixed-member group. A gather or all_gather returns its operationId. A multicast or response returns its message's msgId and canonical conversation address. read_conversation records that msgId, and recipients see it on multicast items. A response also returns the answered request's operationId. Answer in the conversation where the request arrived and use the operationId from its collectiveRequest item. Every collective response requires that request's operationId. A firewall refusal returns the check id, reason, and next action without sending. Success means the daemon retained the work and will continue sending it across restart. Do not repeat a successful send.",
     inputSchema: sendInput,
     outputSchema: sendOutput,
     annotations: {
@@ -1078,10 +1078,7 @@ export const makeHarnessMcpHttpHandler = (
 export { acquireHarnessMcpHttpServer, LOOPBACK_HOST } from "./http.js";
 /** Management results exposed by the catalog. */
 export type {
-  ManagementReadConversationResult,
   ManagementRegisterRequest,
   ManagementRegisterResult,
-  ManagementSearchConversationsRequest,
-  ManagementSearchConversationsResult,
   ManagementStatusResult,
 } from "../../host-protocol/index.js";

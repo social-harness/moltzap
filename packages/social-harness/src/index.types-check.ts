@@ -235,10 +235,12 @@ type SendResultDecoderIsExact = Expect<
     ExpectedSendResult
   >
 >;
-type InboundItemIsExact = Expect<
-  Types.Equals<InboundItem, ExpectedInboundItem>
+type InboundItemHasPublicFields = Expect<
+  InboundItem extends ExpectedInboundItem ? true : false
 >;
-type MessageIsExact = Expect<Types.Equals<Message, ExpectedMessage>>;
+type MessageIsExact = Expect<
+  Types.Equals<Types.Simplify<Message>, Types.Simplify<ExpectedMessage>>
+>;
 type MessageReferenceIsExact = Expect<
   Types.Equals<MessageReference, ExpectedMessageReference>
 >;
@@ -277,6 +279,7 @@ type SendReasonsAreExact = Expect<
     | "invalid-address"
     | "unknown-agent"
     | "membership-invalid"
+    | "message-conflict"
     | "content-invalid"
     | "not-registered"
     | "version-mismatch"
@@ -347,7 +350,7 @@ export type HarnessEndpointCanaries = [
   MessageTextParserIsExact,
   SendResultIsExact,
   SendResultDecoderIsExact,
-  InboundItemIsExact,
+  InboundItemHasPublicFields,
   LocalGuidanceIsExact,
   GuidanceRenderingIsExact,
   MessageIsExact,

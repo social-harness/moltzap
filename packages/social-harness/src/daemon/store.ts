@@ -7,13 +7,8 @@ import * as SqlClient from "@effect/sql/SqlClient";
 import { Cause, Effect, Layer, Option } from "effect";
 import { join } from "node:path";
 import type { DeliveryToken } from "../communication/store/types.js";
-import type {
-  FirewallCompletion,
-  FirewallInboxEntry,
-  FirewallLocalAdmission,
-  ItemProjection,
-} from "../firewall/store/types.js";
-import { completeCollectiveDelivery } from "../communication/store/collectives.js";
+import type { FirewallCompletion } from "../firewall/store/types.js";
+import type { ItemProjection, LocalAdmission } from "./inbox/types.js";
 import {
   createCommunicationTables,
   inspectStoreState,
@@ -28,22 +23,15 @@ import {
   readText,
   requireSameBytes,
 } from "../communication/store/database/values.js";
-import { retirePendingDelivery } from "../communication/store/queues/peer-deliveries.js";
-import {
-  requireQueueFrontier,
-  queueFirewallItem as retainQueuedItem,
-  retireQueuedItem,
-  saveCheckDecision,
-  settleLocalItem,
-  settleQueuedItem,
-} from "../firewall/store/firewall.js";
+import { saveCheckDecision } from "../firewall/store/firewall.js";
 import { createFirewallTables } from "../firewall/store/schema.js";
 import {
-  type CollectiveDelivery,
-  createInboxTables,
-  putInboxItem,
-  readInboxItem,
-} from "./inbox/store.js";
+  requireNextItemToCheck,
+  retireQueuedItem,
+  settleLocalItem,
+  settleQueuedItem,
+} from "./inbox/pending.js";
+import { createInboxTables, putInboxItem } from "./inbox/store.js";
 const DATABASE_NAME = "sharnessd.sqlite3";
 /** Startup rejects incompatible state and expired pending bytes before accepting requests. */
 export function layer(options: {
@@ -106,22 +94,6 @@ export function inspectEndpointStore(
     Effect.withSpan("inspectEndpointStore"),
   );
 }
-/** Completed operation ownership and its host view commit before notification. */
-export function publishCollectiveItem(delivery: CollectiveDelivery) {
-  return transaction(
-    Effect.gen(function* () {
-      yield* completeCollectiveDelivery(
-        delivery.operationId,
-        delivery.deliveryToken,
-      );
-      if (delivery.firewall) {
-        yield* queueFirewallItem(delivery);
-      } else {
-        yield* putInboxItem(delivery);
-      }
-    }),
-  ).pipe(Effect.withSpan("publishCollectiveItem"));
-}
 /** A completed decision and the host's immutable message become durable together. */
 export function saveMessageDecision(
   item: ItemProjection,
@@ -129,7 +101,7 @@ export function saveMessageDecision(
 ) {
   return transaction(
     Effect.gen(function* () {
-      yield* requireQueueFrontier(item.deliveryToken, item.canonicalItem);
+      yield* requireNextItemToCheck(item.deliveryToken, item.canonicalItem);
       if (completion.direction !== "incoming") {
         return yield* new EndpointStoreError({ reason: "conflict" });
       }
@@ -137,8 +109,6 @@ export function saveMessageDecision(
       const disposition = yield* saveCheckDecision(completion);
       if (disposition === "admitted") {
         yield* putInboxItem(item);
-      } else {
-        yield* retirePendingDelivery(item.deliveryToken);
       }
       yield* settleQueuedItem(
         item.deliveryToken,
@@ -150,7 +120,7 @@ export function saveMessageDecision(
   ).pipe(Effect.withSpan("saveMessageDecision"));
 }
 /** Result text, answer visibility and saved evidence share the same publication. */
-export function saveResultDecision(admission: FirewallLocalAdmission) {
+export function saveResultDecision(admission: LocalAdmission) {
   return transaction(
     Effect.gen(function* () {
       yield* settleLocalItem(admission);
@@ -159,25 +129,9 @@ export function saveResultDecision(admission: FirewallLocalAdmission) {
     }),
   ).pipe(Effect.withSpan("saveResultDecision"));
 }
-/** An expired request remains protocol context while leaving the pending host queue. */
-export function retireFirewallItem(token: DeliveryToken) {
-  return transaction(
-    Effect.gen(function* () {
-      yield* retireQueuedItem(token);
-      yield* retirePendingDelivery(token);
-    }),
-  ).pipe(Effect.withSpan("retireFirewallItem"));
-}
-/** A saved host view wins over later attempts to queue the same item. */
-export function queueFirewallItem(item: Omit<FirewallInboxEntry, "sequence">) {
-  return Effect.gen(function* () {
-    const presented = yield* readInboxItem(item.deliveryToken);
-    if (presented !== undefined) {
-      requireSameBytes(presented.canonicalItem, item.canonicalItem);
-      return;
-    }
-    yield* retainQueuedItem(item);
-  }).pipe(storeOperation, Effect.withSpan("queueFirewallItem"));
+/** Expired requests leave the host queue without changing communication custody. */
+export function retireIncomingItem(token: DeliveryToken) {
+  return transaction(retireQueuedItem(token));
 }
 
 function initializeDatabase(options: Parameters<typeof layer>[0]) {

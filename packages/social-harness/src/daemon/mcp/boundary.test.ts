@@ -488,19 +488,6 @@ const DETAILED_REFUSALS = [
   }),
 ];
 
-const carriesDeliveryPendingAcrossTheDaemonBoundary = () =>
-  Effect.gen(function* () {
-    const pending = new SendError({ reason: "delivery-pending" });
-    const endpoint = yield* acquireSendEndpoint({
-      ...operations,
-      send: () => Effect.fail(pending),
-    });
-
-    const error = yield* endpoint.send(sendInput).pipe(Effect.flip);
-
-    expect(error).toStrictEqual(pending);
-  });
-
 const answersOutcomeUnknownForAnUntypedSendFailure = () =>
   Effect.gen(function* () {
     const endpoint = yield* acquireSendEndpoint({
@@ -939,7 +926,6 @@ describe("a refused send across the daemon boundary", () => {
     "carries the detail of a refusal: %s",
     carriesARefusalDetailAcrossTheDaemonBoundary,
   );
-  it("carries delivery-pending", carriesDeliveryPendingAcrossTheDaemonBoundary);
   it(
     "answers outcome-unknown for a send that ends without a typed failure",
     answersOutcomeUnknownForAnUntypedSendFailure,

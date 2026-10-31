@@ -20,12 +20,14 @@ export const MessageReference = exactStruct({
   authorAgentId: AgentId,
   msgId: MsgId,
 });
-/** A message id is unique within its author's messages. */
+/**
+ * An author's message id identifies the same message through delivery and restart.
+ * @useDeclaredType
+ */
 export type MessageReference = typeof MessageReference.Type;
 
 /** Recipients exclude the author and appear once each in agent-name order. */
-export const MessageHeader = exactStruct({
-  msgId: MsgId,
+export const MessageParticipants = exactStruct({
   author: AgentView,
   recipients: Schema.NonEmptyArray(AgentView).pipe(
     Schema.maxItems(maximumMembers - 1),
@@ -46,7 +48,12 @@ export const MessageHeader = exactStruct({
       new Set(message.recipients.map((recipient) => recipient.agentId)).size ===
         message.recipients.length,
   ),
-  Schema.annotations({ identifier: "MessageHeader" }),
+  Schema.annotations({ identifier: "MessageParticipants" }),
+);
+
+/** Adds the author-scoped identity to the captured participants. */
+export const MessageHeader = MessageParticipants.pipe(
+  Schema.extend(exactStruct({ msgId: MsgId })),
 );
 
 /** Delivery and history use the same message envelope. */
@@ -62,7 +69,7 @@ export type Message = typeof Message.Type;
 
 /* eslint-enable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Restore naming after Schema/type pairs. */
 
-type MessageParticipants = Pick<Message, "author" | "recipients">;
+type Participants = Pick<Message, "author" | "recipients">;
 
 /** Constructs one message from fixed participants and the author's retained content. */
 export function messageFromIntent(
@@ -84,7 +91,7 @@ export function messageFromIntent(
 }
 
 /** Replies to an incoming message reach its author or the same fixed group. */
-export function replyAddress(message: MessageParticipants) {
+export function replyAddress(message: Participants) {
   return message.recipients.length === 1
     ? agentAddressOf(message.author)
     : GroupAddress.make(
@@ -95,9 +102,7 @@ export function replyAddress(message: MessageParticipants) {
 }
 
 /** Includes the author and every recipient in agent-name order. */
-export function messageMembers(
-  message: MessageParticipants,
-): readonly AgentView[] {
+export function messageMembers(message: Participants): readonly AgentView[] {
   return [message.author, ...message.recipients].sort((left, right) =>
     compareAscii(left.agentName, right.agentName),
   );

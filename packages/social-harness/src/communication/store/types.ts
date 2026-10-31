@@ -20,8 +20,6 @@ export type StoreMutation = "inserted" | "existing";
 export function isSemanticStoreRejection(error: EndpointStoreError): boolean {
   return error.reason === "conflict" || error.reason === "invalid-input";
 }
-/** Identity owns the canonical local binding used during protocol recovery. */
-export type { IdentityBinding } from "../../identity/local-store.js";
 /** One locally authored immutable message intent and its completion. */
 export interface MessageIntent {
   readonly conversationId: string;
@@ -32,9 +30,7 @@ export interface MessageIntent {
   readonly completedRecordHash?: string;
 }
 /** Atomic binding for a message in either retained or newly founded history. */
-export type MessageIntentBinding = {
-  readonly collective?: CollectiveMessageBinding;
-} & (
+export type MessageIntentBinding =
   | Readonly<{
       kind: "existing-conversation";
       intent: MessageIntent;
@@ -43,8 +39,7 @@ export type MessageIntentBinding = {
       kind: "new-conversation";
       foundation: ConversationFoundation;
       intent: MessageIntent;
-    }>
-);
+    }>;
 /** Immutable membership and initial Router anchor for one conversation. */
 export interface ConversationFoundation {
   readonly conversationId: string;
@@ -196,64 +191,33 @@ export interface HistoryPage {
   readonly authoredRecordHashes: readonly string[];
   readonly continuation: string | null;
 }
-/** A remote request is identified by its authenticated certified record. */
-type CollectiveOrigin =
-  | {
-      readonly kind: "local";
-    }
-  | {
-      readonly kind: "remote";
-      readonly recordHash: string;
-    };
-/** Immutable request identity and the descriptor its collective owner interprets. */
+/** A collective owns its immutable request independently of protocol delivery. */
 export interface CollectiveOperationInput {
   readonly operationId: string;
-  readonly origin: CollectiveOrigin;
-  readonly canonicalRequest: Uint8Array;
-  readonly canonicalDescriptor: Uint8Array;
-}
-/** Selection freezes before a close binds; completion commits with its one terminal item. */
-export interface StoredCollectiveOperation extends CollectiveOperationInput {
   readonly creatorAgentId: string;
-  readonly origin:
-    | Extract<
-        CollectiveOrigin,
-        {
-          readonly kind: "local";
-        }
-      >
-    | (Extract<
-        CollectiveOrigin,
-        {
-          readonly kind: "remote";
-        }
-      > & {
-        readonly conversationId: string;
-      });
+  readonly origin: "local" | "remote";
+  readonly canonicalRequest: Uint8Array;
+  readonly deadlineAt: number;
+}
+/** Completion and result handoff remain recoverable under one retained identity. */
+export interface StoredCollectiveOperation extends CollectiveOperationInput {
   readonly phase: "collecting" | "finalizing" | "completed";
   readonly canonicalSelection?: Uint8Array;
+  readonly canonicalResult?: Uint8Array;
+  readonly canonicalSources?: Uint8Array;
   readonly deliveryToken: DeliveryToken;
+  readonly delivered: boolean;
 }
-/** A collective owns one immutable message per role and destination. */
-export interface CollectiveMessageBinding {
+/** One role and destination always resubmit the same saved message. */
+export interface StoredCollectiveMessage {
   readonly operationId: string;
   readonly role: "request" | "response" | "close";
   readonly destination: string;
-  readonly operation?: CollectiveOperationInput;
+  readonly canonicalMessage: Uint8Array;
 }
-/** Existing message intents own retries and certified completion across restart. */
-export interface StoredCollectiveMessage extends CollectiveMessageBinding {
-  readonly intent: MessageIntent;
-}
-/** Counted answers retain certified references; their content remains in certified history. */
+/** The collector's first saved answer is the authoritative deadline event. */
 export interface CollectiveAnswerReference {
   readonly operationId: string;
   readonly member: string;
-  readonly recordHash: string;
-}
-/** A request that bound no intent is terminal for that member of this invocation. */
-export interface CollectiveRequestRefusal {
-  readonly operationId: string;
-  readonly destination: string;
-  readonly canonicalRefusal: Uint8Array;
+  readonly canonicalMessage: Uint8Array;
 }

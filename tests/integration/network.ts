@@ -186,7 +186,7 @@ function ownNetworkPath(
     yield* expectOutput(
       bob,
       ["call", "read_inbox"],
-      [MESSAGE, "agent:alice"],
+      [MESSAGE, '"agentName": "alice"'],
     ).pipe(
       Effect.retry(
         Schedule.spaced(Duration.seconds(1)).pipe(

@@ -1,4 +1,4 @@
-/** @file Retained local checks, editable policies and assessment queue transitions. */
+/** @file Retained policy checks and editable rule installations. */
 
 import * as SqlClient from "@effect/sql/SqlClient";
 import * as SqlSchema from "@effect/sql/SqlSchema";
@@ -9,24 +9,19 @@ import type {
   FirewallAuditEntry,
   FirewallCommit,
   FirewallCompletion,
-  FirewallInboxEntry,
-  FirewallLocalAdmission,
 } from "./types.js";
 import {
   EndpointStoreError,
   readBytes,
   readInteger,
-  readOptionalBytes,
   readText,
   requireBytes,
   requireSameBytes,
-  requireSameOptionalBytes,
   requireText,
   storeOperation,
   transaction,
 } from "../../communication/store/database/index.js";
 import { decodeRuntimeValue } from "../../communication/store/index.js";
-import { DeliveryToken } from "../../communication/store/types.js";
 import { exactStruct } from "../../encoding/exact.js";
 import { AgentView } from "../../identity/cards.js";
 import {
@@ -52,92 +47,6 @@ const activationRow = Schema.Struct({
   removedRuleIds: ruleIds,
 });
 const auditDisposition = Schema.Literal("admitted", "withheld");
-/**
- * A held item is never requeued. Provenance is bound with the item: the same token cannot later
- * carry different private facts. An item is anchored at the newest record
- * certified when it is queued, so a local item's evidence precedes every
- * record certified after it, as the runtime is shown them.
- */
-export function queueFirewallItem(
-  item: Omit<FirewallInboxEntry, "sequence">,
-): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    requireText(item.conversation);
-    requireBytes(item.canonicalItem);
-    const prior = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      "SELECT conversation, canonical_item, canonical_provenance FROM firewall_incoming WHERE delivery_token = ?",
-      [item.deliveryToken],
-    ))[0];
-    if (prior !== undefined) {
-      requireSameBytes(readBytes(prior, "canonical_item"), item.canonicalItem);
-      requireSameOptionalBytes(
-        readOptionalBytes(prior, "canonical_provenance"),
-        item.canonicalProvenance,
-      );
-      if (readText(prior, "conversation") !== item.conversation) {
-        return yield* new EndpointStoreError({ reason: "conflict" });
-      }
-      return;
-    }
-    yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      "INSERT INTO firewall_incoming (delivery_token, conversation, canonical_item, canonical_provenance, anchor) SELECT ?, ?, ?, ?, COALESCE(MAX(rowid), 0) FROM certified_records",
-      [
-        item.deliveryToken,
-        item.conversation,
-        item.canonicalItem,
-        item.canonicalProvenance ?? null,
-      ],
-    );
-  }).pipe(storeOperation, Effect.withSpan("queueFirewallItem"));
-}
-/** One unsettled predecessor per conversation is eligible for checking. */
-export function readNextPendingMessages(): Effect.Effect<
-  readonly FirewallInboxEntry[],
-  EndpointStoreError,
-  SqlClient.SqlClient
-> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    return (yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      `
-    SELECT item.sequence, item.delivery_token, item.conversation, item.canonical_item,
-      item.canonical_provenance
-    FROM firewall_incoming item
-    WHERE item.disposition = 'pending' AND NOT EXISTS (
-      SELECT 1 FROM firewall_incoming earlier
-      WHERE earlier.conversation = item.conversation
-        AND earlier.disposition = 'pending' AND earlier.sequence < item.sequence
-    ) ORDER BY item.sequence LIMIT 32
-  `,
-      [],
-    )).map(queuedEntry);
-  }).pipe(storeOperation, Effect.withSpan("readNextPendingMessages"));
-}
-/** Restart recovery visits every private item, including successors behind a held frontier. */
-export function readPendingFirewallItems(
-  after: number,
-): Effect.Effect<
-  readonly FirewallInboxEntry[],
-  EndpointStoreError,
-  SqlClient.SqlClient
-> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    if (!Number.isSafeInteger(after) || after < 0) {
-      return yield* new EndpointStoreError({ reason: "invalid-input" });
-    }
-    return (yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      `
-      SELECT sequence, delivery_token, conversation, canonical_item, canonical_provenance
-      FROM firewall_incoming
-      WHERE disposition = 'pending' AND sequence > ?
-      ORDER BY sequence LIMIT 32
-    `,
-      [after],
-    )).map(queuedEntry);
-  }).pipe(storeOperation, Effect.withSpan("readPendingFirewallItems"));
-}
 /** Missing policy means initial rules have never been seeded, distinct from an empty list. */
 export function readFirewallPolicy(): Effect.Effect<
   Uint8Array | undefined,
@@ -232,82 +141,6 @@ export function readFirewallDecisions(since = 0) {
     }));
   }).pipe(storeOperation, Effect.withSpan("readFirewallDecisions"));
 }
-/** Local result decisions and evidence settle with the caller's host publication transaction. */
-export function settleLocalItem(
-  admission: FirewallLocalAdmission,
-): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    const { deliveryToken } = admission.item;
-    requireText(admission.evidence.conversation);
-    requireBytes(admission.evidence.canonicalEntry);
-    yield* requireQueueFrontier(deliveryToken, admission.queuedItem);
-    for (const completion of admission.completions) {
-      if (completion.direction !== "incoming") {
-        return yield* new EndpointStoreError({ reason: "conflict" });
-      }
-      requireSameBytes(completion.canonicalCandidate, admission.queuedItem);
-      yield* saveCheckDecision(completion);
-    }
-    yield* markAnswers(admission.answers, admission.item.deliveryToken);
-    yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      `INSERT INTO firewall_local_evidence (conversation, anchor, canonical_entry)
- SELECT ?, anchor, ? FROM firewall_incoming WHERE delivery_token = ?`,
-      [
-        admission.evidence.conversation,
-        admission.evidence.canonicalEntry,
-        deliveryToken,
-      ],
-    );
-    yield* settleQueuedItem(deliveryToken, "admitted");
-  }).pipe(storeOperation, Effect.withSpan("settleLocalItem"));
-}
-/** A settled item cannot be offered for reassessment after restart. */
-export function settleQueuedItem(
-  deliveryToken: DeliveryToken,
-  disposition: "admitted" | "withheld",
-  checkId?: string,
-): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      "UPDATE firewall_incoming SET disposition = ?, check_id = ? WHERE delivery_token = ?",
-      [disposition, checkId ?? null, deliveryToken],
-    );
-  }).pipe(storeOperation, Effect.withSpan("settleQueuedItem"));
-}
-/** A conversation commits its unsettled predecessor before later host items. */
-export function requireQueueFrontier(
-  deliveryToken: DeliveryToken,
-  canonicalItem: Uint8Array,
-): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const database = yield* SqlClient.SqlClient;
-    const queued = (yield* database.unsafe<Readonly<Record<string, unknown>>>(
-      `
-      SELECT conversation, sequence, canonical_item FROM firewall_incoming
-      WHERE delivery_token = ? AND disposition = 'pending'
-    `,
-      [deliveryToken],
-    ))[0];
-    if (queued === undefined) {
-      return yield* new EndpointStoreError({ reason: "conflict" });
-    }
-    requireSameBytes(readBytes(queued, "canonical_item"), canonicalItem);
-    const predecessor = (yield* database.unsafe<
-      Readonly<Record<string, unknown>>
-    >(
-      `
-      SELECT 1 AS pending FROM firewall_incoming
-      WHERE conversation = ? AND sequence < ? AND disposition = 'pending' LIMIT 1
-    `,
-      [readText(queued, "conversation"), readInteger(queued, "sequence")],
-    ))[0];
-    if (predecessor !== undefined) {
-      return yield* new EndpointStoreError({ reason: "conflict" });
-    }
-  }).pipe(storeOperation, Effect.withSpan("requireQueueFrontier"));
-}
 /** Saves one completed assessment; interruption before completion leaves no audit row. */
 export function saveCheckDecision(
   completion: FirewallCompletion,
@@ -358,21 +191,6 @@ export function saveCheckDecision(
     return disposition;
   }).pipe(storeOperation, Effect.withSpan("saveCheckDecision"));
 }
-/** Expiry retires a queued message without fabricating a policy assessment. */
-export function retireQueuedItem(
-  token: DeliveryToken,
-): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
-      "UPDATE firewall_incoming SET disposition='withheld' WHERE delivery_token=? AND disposition='pending' RETURNING sequence",
-      [token],
-    );
-    if (rows.length !== 1) {
-      return yield* new EndpointStoreError({ reason: "not-found" });
-    }
-  }).pipe(storeOperation, Effect.withSpan("retireQueuedItem"));
-}
 /**
  * Returns retained decisions without message content, private inputs,
  * diagnostics or rule text. Includes registered advice only for rules that
@@ -401,25 +219,6 @@ export function readDecisions(request: { readonly since?: number }) {
     Effect.withSpan("readDecisions"),
   );
 }
-/** Associates each retained answer with the saved result view that decided its visibility. */
-function markAnswers(
-  answers: FirewallLocalAdmission["answers"],
-  deliveryToken: DeliveryToken,
-): Effect.Effect<void, EndpointStoreError, SqlClient.SqlClient> {
-  return Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    for (const answer of answers) {
-      requireText(answer.recordHash);
-      const rows = yield* sql.unsafe<Readonly<Record<string, unknown>>>(
-        "INSERT INTO firewall_answers(conversation_id,record_hash,admitted,delivery_token) SELECT conversation_id,record_hash,?,? FROM certified_records WHERE record_hash=? ON CONFLICT(conversation_id,record_hash) DO UPDATE SET admitted=excluded.admitted,delivery_token=excluded.delivery_token RETURNING record_hash",
-        [answer.admitted ? 1 : 0, deliveryToken, answer.recordHash],
-      );
-      if (rows.length !== 1) {
-        return yield* new EndpointStoreError({ reason: "conflict" });
-      }
-    }
-  }).pipe(storeOperation);
-}
 function auditEntry(
   row: Readonly<Record<string, unknown>>,
 ): FirewallAuditEntry {
@@ -438,21 +237,6 @@ function auditEntry(
     canonicalResult,
   };
 }
-function queuedEntry(
-  row: Readonly<Record<string, unknown>>,
-): FirewallInboxEntry {
-  const canonicalProvenance = readOptionalBytes(row, "canonical_provenance");
-  return {
-    sequence: readInteger(row, "sequence"),
-    deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(
-      readText(row, "delivery_token"),
-    ),
-    conversation: readText(row, "conversation"),
-    canonicalItem: readBytes(row, "canonical_item"),
-    ...(canonicalProvenance === undefined ? {} : { canonicalProvenance }),
-  };
-}
-/** A missing projected message records an unsupported candidate without inventing attribution. */
 const firewallAuditInput = exactStruct({
   configurationDigest: Schema.String.pipe(Schema.pattern(/^[a-f0-9]{64}$/u)),
   installation: firewallInstallationSchema,

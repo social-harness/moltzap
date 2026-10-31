@@ -29,7 +29,7 @@ const EMAIL = new RegExp(
 const hex = "[0-9a-f]";
 const pctEncoded = `%${hex}{2}`;
 const unreserved = "a-z0-9\\-._~";
-const subDelims = "!$&'()*+,;=";
+const subDelims = "!$&'()*+;=";
 const decOctet = "(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)";
 const ipv4 = `(?:${decOctet}\\.){3}${decOctet}`;
 const h16 = `${hex}{1,4}`;

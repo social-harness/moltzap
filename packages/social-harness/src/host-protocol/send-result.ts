@@ -15,7 +15,10 @@ export const SendResultSchema = Schema.Union(
   Schema.Struct({ ...response.fields, ...guidance }),
   Schema.Struct({ ...collective.fields, ...guidance }),
 ).annotations({ identifier: "SendResult" });
-/** The host observes its invocation's ordinary result and any admitted advice. */
+/**
+ * Successful sends identify the accepted message or collective operation and any advice.
+ * @useDeclaredType
+ */
 export type SendResult = typeof SendResultSchema.Type;
 
 /* eslint-enable @typescript-eslint/naming-convention -- Restore naming after boundary schema declarations. */
