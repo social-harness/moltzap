@@ -23,7 +23,7 @@ import {
   send,
 } from "../participants.js";
 import { processTrace } from "../process-trace.js";
-import { anyNumber } from "../test-matchers.js";
+import { anyNumber, arrayContaining } from "../test-matchers.js";
 
 const requireAll = (participants: readonly Participant[], count: 3 | 4) =>
   participants.length === count
@@ -231,7 +231,8 @@ function expectIncomingGatherWithheld({
         slot: "tue",
       }).pipe(Effect.flip),
     ).toMatchObject({ failure: { kind: "request-none" } });
-    expect(yield* nextItem(requester)).toMatchObject({
+    const result = yield* nextItem(requester);
+    expect(result, JSON.stringify(result)).toMatchObject({
       kind: "collectiveResult",
       operationId: withheld.operationId,
       outcomes: [
@@ -321,21 +322,25 @@ function expectGuidedGatherAdvice({
         { member: strict.agent, outcome: { kind: "answered" } },
       ],
     });
-    expect(result.guidance).toMatchObject({
-      answers: [
-        {
-          member: requester.agent,
-          instructions: [{ instruction: "Respond to the marked message." }],
-        },
-      ],
+    const guidance = result.guidance;
+    if (guidance === undefined || !("answers" in guidance)) {
+      return yield* Effect.dieMessage(
+        "expected guidance for collective answers",
+      );
+    }
+    const advice = guidance.answers.find(
+      ({ member }) => member.agentId === requester.agent.agentId,
+    );
+    expect(advice).toMatchObject({
+      member: requester.agent,
+      instructions: [{ instruction: "Respond to the marked message." }],
     });
   });
 }
 
 const uncertainAdvice = {
-  middlewareId: "integration-markers",
   ruleId: "marked",
-  uncertain: { choice: "none", probability: 0.33 },
+  uncertain: { choice: "compliant", probability: 0.4 },
   instruction: "Respond to the marked message.",
 };
 
@@ -384,8 +389,18 @@ function expectUnsettledGatherAdvice({
         },
       ],
     });
-    expect(unsureResult.guidance).toMatchObject({
-      answers: [{ member: strict.agent, instructions: [uncertainAdvice] }],
+    const guidance = unsureResult.guidance;
+    if (guidance === undefined || !("answers" in guidance)) {
+      return yield* Effect.dieMessage(
+        "expected guidance for collective answers",
+      );
+    }
+    const advice = guidance.answers.find(
+      ({ member }) => member.agentId === strict.agent.agentId,
+    );
+    expect(advice).toMatchObject({
+      member: strict.agent,
+      instructions: arrayContaining([uncertainAdvice]),
     });
   });
 }

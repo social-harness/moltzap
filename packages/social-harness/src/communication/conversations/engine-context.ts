@@ -15,6 +15,7 @@ import type {
   Ed25519PublicKey,
 } from "../../identity/keys.js";
 import type { Registry } from "../../identity/registry/index.js";
+import type { Message } from "../message.js";
 import type {
   ActionCertifiedRecord,
   ActionCore,
@@ -63,6 +64,12 @@ export interface EndpointEngineInput {
   readonly reportStorageFault: (
     error: EndpointStoreError,
   ) => Effect.Effect<void>;
+}
+
+/** Preparation uses the exact payload already retained by Communication. */
+export interface AcceptedMessage {
+  readonly message: Message;
+  readonly canonicalMessage: Uint8Array;
 }
 
 /** One locally authored immutable message intent awaiting certification. */
