@@ -242,7 +242,6 @@ function restoreLocal(
     if (
       Option.isNone(value) ||
       value.value.kind !== "operation" ||
-      value.value.op === "multicast" ||
       !matchesRetainedOperation(value.value, operationId, descriptor)
     ) {
       return yield* corruptState();

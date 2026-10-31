@@ -35,7 +35,7 @@ import {
   resolutionFailure,
 } from "../conversations/index.js";
 import { Message } from "../message.js";
-import { agentAddressOf } from "../records/values.js";
+import { agentAddressOf, Content } from "../records/values.js";
 import * as Store from "../store/index.js";
 import { encodeRuntimeValue, EndpointStoreError } from "../store/index.js";
 import { applyClose, receiveClose, recordPeerAnswer } from "./all-gather.js";
@@ -90,7 +90,6 @@ import {
   mintCollectiveId,
   readCollectiveValue,
   type ResponseValue,
-  withoutCollectivePart,
 } from "./wire/index.js";
 
 /** Captured message identities remain fixed while the caller checks policy. */
@@ -212,10 +211,9 @@ function prepareCapturedOperation(
     );
   }
   return Effect.gen(function* () {
-    const content = yield* encodeCollectiveContent(
-      { kind: "operation", op: "multicast" },
-      input.text,
-    ).pipe(Effect.mapError(contentInvalid));
+    const content = yield* Schema.decodeUnknown(Content)([
+      { type: "text", text: input.text },
+    ]).pipe(Effect.mapError(contentInvalid));
     const { address } = yield* canonicalMessageAddress(
       input.to,
       state.ports.self.agentName,
@@ -670,7 +668,7 @@ function collectiveItem(
 > {
   switch (value.kind) {
     case "operation":
-      return operationItem(state, message, value);
+      return requestItem(state, message, value);
     case "response":
       return recordAnswer(state, message, value).pipe(Effect.as(Option.none()));
     case "close":
@@ -682,42 +680,6 @@ function collectiveItem(
       return exhaustive;
     }
   }
-}
-
-function operationItem(
-  state: CollectiveState,
-  message: CertifiedMessage,
-  value: Extract<CollectiveValue, { readonly kind: "operation" }>,
-): Effect.Effect<
-  Option.Option<InboundItem>,
-  CollectiveEmitError,
-  SqlClient.SqlClient
-> {
-  switch (value.op) {
-    case "multicast":
-      return Effect.succeed(
-        multicastItem(
-          message.message,
-          withoutCollectivePart(message.message.content),
-        ),
-      );
-    case "gather":
-    case "all_gather":
-      return requestItem(state, message, value);
-    default: {
-      const exhaustive: never = value;
-      return exhaustive;
-    }
-  }
-}
-
-function multicastItem(
-  message: Message,
-  content: ReadonlyArray<MessageContent[number]>,
-): Option.Option<InboundItem> {
-  return EffectArray.isNonEmptyReadonlyArray(content)
-    ? Option.some({ kind: "multicast", message: { ...message, content } })
-    : Option.none();
 }
 
 /**
@@ -940,9 +902,5 @@ export { CollectiveEmitError } from "./contracts.js";
 /** The items those operations emit. */
 export type { InboundItem } from "./inbound.js";
 
-/** Certified multicast projection preserves every non-protocol content part. */
-export {
-  type CollectiveValue,
-  readCollectiveValue,
-  withoutCollectivePart,
-} from "./wire/index.js";
+/** Collective interpretation leaves ordinary message content unchanged. */
+export { type CollectiveValue, readCollectiveValue } from "./wire/index.js";

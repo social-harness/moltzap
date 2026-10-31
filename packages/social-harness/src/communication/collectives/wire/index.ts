@@ -91,12 +91,6 @@ export const mintCollectiveId = (requester: AgentId) =>
     ),
   );
 
-/** A plain message: multicast carries neither a deadline nor a schema. */
-const MulticastOperation = exactStruct({
-  kind: Schema.Literal("operation"),
-  op: Schema.Literal("multicast"),
-});
-
 /**
  * A question to every member. `operationId` embeds the requester's immutable
  * identity. `deadlineAt` is absolute epoch milliseconds: the
@@ -137,7 +131,6 @@ const CollectiveClose = exactStruct({
 
 /** Every value the collective layer carries, discriminated by `kind`. */
 const CollectiveValue = Schema.Union(
-  MulticastOperation,
   CollectingOperation,
   CollectiveResponse,
   CollectiveClose,
@@ -180,17 +173,6 @@ function collectivePartValue(
       )
     : Option.none();
 }
-
-/**
- * Remove the collective part from message content, keeping every other part in
- * order.
- * @param content Certified message content.
- * @returns The remaining parts, empty when the collective part was the only one.
- */
-export const withoutCollectivePart = (
-  content: MessageContent,
-): ReadonlyArray<MessageContent[number]> =>
-  content.filter((part) => Option.isNone(collectivePartValue(part)));
 
 /**
  * Decode one untrusted collective value.

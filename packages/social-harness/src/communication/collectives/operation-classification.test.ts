@@ -10,7 +10,6 @@ import {
   directMessage,
   makeLayer,
   msgId,
-  multicastPart,
   newObserved,
   questionText,
   requestId,
@@ -19,28 +18,12 @@ import {
 } from "../../__tests__/collective-operation-fixtures.js";
 import { decodeCollectiveValue } from "./wire/index.js";
 
-function deliversAMulticastWithoutItsCollectivePart() {
-  return Effect.gen(function* () {
-    const layer = yield* makeLayer(newObserved());
-    const item = yield* classifyMessage(
-      layer,
-      directMessage("agent:bob", [
-        { type: "text", text: "Hello" },
-        multicastPart,
-      ]),
-    );
-
-    expect(item).toEqual(
-      Option.some({
-        kind: "multicast",
-        message: directMessage("agent:bob", [{ type: "text", text: "Hello" }]),
-      }),
-    );
-  });
-}
-
 function deliversAMessageWithoutACollectivePartAsAMulticast() {
-  const message = directMessage("agent:bob", [{ type: "text", text: "Hello" }]);
+  const message = directMessage("agent:bob", [
+    { type: "text", text: "Hello" },
+    { type: "data", value: { appointment: "Monday" } },
+    { type: "text", text: "See you then." },
+  ]);
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
@@ -66,29 +49,22 @@ function consumesAMessageWhoseCollectivePartIsMalformed() {
   });
 }
 
-function consumesAMulticastWhoseOnlyPartIsTheCollectivePart() {
-  return Effect.gen(function* () {
-    const layer = yield* makeLayer(newObserved());
-
-    expect(
-      yield* classifyMessage(
-        layer,
-        directMessage("agent:bob", [multicastPart]),
-      ),
-    ).toEqual(Option.none());
-  });
-}
-
 function consumesAMessageThatCarriesTwoCollectiveParts() {
+  const part = {
+    type: "data",
+    value: {
+      [collectiveKey]: {
+        kind: "response",
+        operationId: requestId,
+        action: "decline",
+      },
+    },
+  };
   return Effect.gen(function* () {
     const layer = yield* makeLayer(newObserved());
     const item = yield* classifyMessage(
       layer,
-      directMessage("agent:bob", [
-        { type: "text", text: "Hello" },
-        multicastPart,
-        multicastPart,
-      ]),
+      directMessage("agent:bob", [{ type: "text", text: "Hello" }, part, part]),
     );
 
     expect(item).toEqual(Option.none());
@@ -213,23 +189,13 @@ function consumesARequestWhoseDeadlineLiesBeyondTheLongestAGatherStates() {
 // @agent-code-guard/regression-only: examples pin which certified messages reach the subscriber and in what form.
 describe("inbound classification", () => {
   it(
-    "delivers a multicast without its collective part",
-    deliversAMulticastWithoutItsCollectivePart,
-  );
-
-  it(
-    "delivers a message without a collective part as a multicast",
+    "preserves every content part of an ordinary message",
     deliversAMessageWithoutACollectivePartAsAMulticast,
   );
 
   it(
     "consumes a message whose collective part is malformed",
     consumesAMessageWhoseCollectivePartIsMalformed,
-  );
-
-  it(
-    "consumes a multicast whose only part is the collective part",
-    consumesAMulticastWhoseOnlyPartIsTheCollectivePart,
   );
 
   it(

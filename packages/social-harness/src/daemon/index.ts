@@ -67,7 +67,6 @@ export {
   type FirewallOptions,
   type FirewallSettings,
   loadMessagePolicy,
-  makeFirewall,
   type Message,
   type MessageContext,
   type MessageMiddleware,

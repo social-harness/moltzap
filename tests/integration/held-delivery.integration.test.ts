@@ -333,27 +333,15 @@ function readHeldHistory(pair: HeldPair) {
     ]) {
       expect(history.continuation).toBeNull();
       expect(history.records.map(historyMessageContent)).toEqual(
-        expectedContents.map((content, index) =>
-          history.records[index]?.kind === "sent"
-            ? content
-            : content.slice(0, -1),
-        ),
+        expectedContents,
       );
     }
   });
 }
 
-/** The certified content of one multicast: its text, then its operation part. */
+/** Ordinary messages retain their text through certification and delivery. */
 function multicastContent(text: string): Content {
-  return [
-    { type: "text", text },
-    {
-      type: "data",
-      value: {
-        "org.social-harness/collective": { kind: "operation", op: "multicast" },
-      },
-    },
-  ];
+  return [{ type: "text", text }];
 }
 
 function directAddress(agentName: AgentName): AgentAddress {

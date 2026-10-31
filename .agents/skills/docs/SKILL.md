@@ -100,8 +100,9 @@ before removing its only useful explanation elsewhere.
 Explain the actor, event and evidence behind a value when its type leaves
 those unclear. A timestamp needs the event and clock it records. A signed
 decision needs a clear distinction between what its author asserts and what
-the signature proves. Describe permissions by current authority, not by an
-object's origin or who used to control it.
+the signature proves. A notification needs to say whether it carries work or
+tells its subscriber to read saved work. Describe permissions by current
+authority, not by an object's origin or who used to control it.
 
 Document implementation only when the explanation adds something a reader
 cannot obtain from clear code. Implementation comments explain what the code

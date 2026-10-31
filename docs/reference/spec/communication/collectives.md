@@ -84,8 +84,7 @@ Process messages after communication verifies and orders them. Requests must use
 direct/group conversation, identify the verified sender as requester, carry an
 admitted schema and expire no more than 30 days and one hour ahead. Reusing a
 retained operation id for another request is invalid. Consume and log malformed
-or duplicate collective parts without delivery, including multicast with no
-other content.
+or duplicate collective parts without delivery.
 
 Hide expired requests. Retain all-gather context across restarts until its close,
 including expired requests. Only the requester's first accepted close counts.
@@ -120,13 +119,13 @@ replacement request, answer or close. A new invocation creates another operation
 
 ## Message payloads
 
-Collective data uses communication message content. Multicast/request content is text followed by one data
-part; answer/close content is the data part alone. The data value contains
+Ordinary messages carry their content unchanged. A collective request carries
+question text followed by one data part. Answers and closes carry only the data
+part. Its value contains
 `org.social-harness/collective`, whose object has exactly these required fields:
 
 | Message | Fields and values |
 | --- | --- |
-| Multicast | `kind: "operation"`, `op: "multicast"` |
 | Request | `kind: "operation"`, `op: "gather"` or `"all_gather"`, `operationId`, `deadlineAt`, `requestedSchema` |
 | Accepted answer | `kind: "response"`, `operationId`, `action: "accept"`, `content` |
 | Declined answer | `kind: "response"`, `operationId`, `action: "decline"` |

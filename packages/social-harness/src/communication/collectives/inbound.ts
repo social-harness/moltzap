@@ -15,10 +15,7 @@ import {
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect Schemas share their domain names with the nominal values they decode. */
 
-/**
- * A multicast delivered to this endpoint. The message content is the message's
- * content without the collective layer's part.
- */
+/** An ordinary message retains its author, identity, recipients and content. */
 const multicastItem = exactStruct({
   kind: Schema.Literal("multicast"),
   message: Message,
@@ -99,10 +96,9 @@ const operationFailedItem = exactStruct({
 
 /**
  * One inbound item, discriminated by `kind`. The endpoint consumes the
- * collective layer's protocol messages, messages whose collective part is malformed
- * or duplicated, and multicasts that carry nothing besides that part; every
- * other certified message becomes one item, and the endpoint itself emits
- * results and failures.
+ * collective layer's internal messages and messages with malformed or duplicate
+ * collective parts. Ordinary messages retain their content, and the endpoint
+ * emits results and failures.
  */
 export const InboundItem = Schema.Union(
   multicastItem,

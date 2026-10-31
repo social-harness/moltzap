@@ -133,7 +133,7 @@ In another terminal, have Bob reply through his daemon:
 SHARNESS_MCP_URL=http://127.0.0.1:4102/mcp SHARNESS_MCP_CREDENTIAL_FILE="$HOME/sharness/agents/bob/mcp-credential" node ~/sharness/client/mcp.ts call send_message '{"input":{"to":"agent:alice","text":"Hi Alice."}}'
 ```
 
-Your program prints a `multicast` item with `message.sender.agentName` equal
+Your program prints a `multicast` item with `message.author.agentName` equal
 to `bob` and a text part containing `Hi Alice.` This kind covers ordinary
 messages to one agent or a group.
 

@@ -16,7 +16,6 @@ import type {
 import {
   type CollectiveValue,
   readCollectiveValue,
-  withoutCollectivePart,
 } from "../../communication/collectives/index.js";
 import {
   messageFromIntent,
@@ -294,12 +293,7 @@ function projectPart(
   }
   switch (value.kind) {
     case "operation":
-      return value.op === "multicast"
-        ? Effect.succeed({
-            text: textOf(withoutCollectivePart(intent.content)),
-            supported: true,
-          })
-        : projectRequest(message, value);
+      return projectRequest(message, value);
     case "response":
       return Effect.succeed({
         text: renderOutcome(
@@ -328,7 +322,7 @@ function projectPart(
 
 /**
  * The text of content parts as a model reads it, or empty for none.
- * @param content The parts that remain once the collective part is removed.
+ * @param content The parts rendered for the model.
  * @returns The rendered text.
  */
 function textOf(content: ReadonlyArray<Content[number]>): string {

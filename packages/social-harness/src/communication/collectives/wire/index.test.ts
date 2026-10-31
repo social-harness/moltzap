@@ -131,26 +131,6 @@ describe("collective timestamps", () => {
 
 // @agent-code-guard/regression-only: examples pin the closed operation and response wire grammar.
 describe("collective value grammar", () => {
-  it("accepts a multicast operation with only its discriminants", () => {
-    expect(decodes({ kind: "operation", op: "multicast" })).toBe(true);
-  });
-
-  it("rejects a multicast operation carrying a deadline", () => {
-    expect(decodes({ kind: "operation", op: "multicast", deadlineAt })).toBe(
-      false,
-    );
-  });
-
-  it("rejects a multicast operation carrying a requested schema", () => {
-    expect(
-      decodes({
-        kind: "operation",
-        op: "multicast",
-        requestedSchema: flatSchema,
-      }),
-    ).toBe(false);
-  });
-
   it("rejects a gather without a deadline", () => {
     expect(
       decodes({

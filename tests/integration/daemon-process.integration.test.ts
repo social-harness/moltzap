@@ -327,21 +327,12 @@ const initialText = "hello from the first real daemon";
 
 const responseText = "addressed response from the second real daemon";
 
-const multicastPart = {
-  type: "data",
-  value: {
-    "org.social-harness/collective": { kind: "operation", op: "multicast" },
-  },
-} as const;
-
 const initialContent = [
   { type: "text", text: initialText },
-  multicastPart,
 ] as const satisfies Content;
 
 const responseContent = [
   { type: "text", text: responseText },
-  multicastPart,
 ] as const satisfies Content;
 
 const readDurableHistory = (

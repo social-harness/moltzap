@@ -35,12 +35,6 @@ const bob = Schema.decodeUnknownSync(AgentAddress)("agent:bob");
 /** The data-part key a message carries its collective value under. */
 export const collectiveKey = "org.social-harness/collective";
 
-/** The explicit collective part every multicast an endpoint authors carries. */
-export const multicastPart = {
-  type: "data",
-  value: { [collectiveKey]: { kind: "operation", op: "multicast" } },
-};
-
 /** A form-mode schema asking for one required `slot`, `mon` or `tue`. */
 export const slotSchema = {
   type: "object",
@@ -348,11 +342,7 @@ export const firstRequestOf = (observed: Observed) =>
     Effect.flatMap((message) => readCollectiveValue(message.content)),
     Effect.flatten,
     Effect.flatMap((value) =>
-      Effect.fromNullable(
-        value.kind === "operation" && value.op !== "multicast"
-          ? value
-          : undefined,
-      ),
+      Effect.fromNullable(value.kind === "operation" ? value : undefined),
     ),
     Effect.orElse(() =>
       Effect.dieMessage("the first message carries no request"),

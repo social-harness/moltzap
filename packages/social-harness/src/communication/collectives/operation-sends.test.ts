@@ -15,7 +15,6 @@ import {
   lateMessageDelay,
   makeLayer,
   msgId,
-  multicastPart,
   newObserved,
   operationIdOf,
   questionText,
@@ -25,9 +24,10 @@ import {
   startGather,
 } from "../../__tests__/collective-operation-fixtures.js";
 import { SendError } from "../conversations/errors.js";
+import { maximumContentBytes } from "../records/values.js";
 import { collectiveRequesterOf } from "./wire/index.js";
 
-function certifiesAMulticastAsItsTextAndAnExplicitMulticastPart() {
+function certifiesOrdinaryTextUnchanged() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
@@ -37,7 +37,7 @@ function certifiesAMulticastAsItsTextAndAnExplicitMulticastPart() {
     expect(observed.sent).toEqual([
       {
         to: "agent:bob",
-        content: [{ type: "text", text: "Hello" }, multicastPart],
+        content: [{ type: "text", text: "Hello" }],
       },
     ]);
   });
@@ -52,13 +52,13 @@ function returnsAGroupMulticastSCompleteCanonicalAddress() {
   });
 }
 
-function failsAMulticastWhoseTextAndPartExceedTheContentLimit() {
+function refusesTextExceedingTheContentLimit() {
   const observed = newObserved();
 
   return Effect.gen(function* () {
     const layer = yield* makeLayer(observed);
     const failure = yield* collectiveFailureOf(
-      send(layer, { to: "agent:bob", text: "a".repeat(32_741) }),
+      send(layer, { to: "agent:bob", text: "a".repeat(maximumContentBytes) }),
     );
 
     expect(failure).toMatchObject({ reason: "content-invalid" });
@@ -367,14 +367,11 @@ function asksTheOneAgentOfAGroupAddressNamingOneOtherAgent() {
 
 // @agent-code-guard/regression-only: examples pin the messages each operation certifies.
 describe("collective sends", () => {
-  it(
-    "certifies a multicast as its text and an explicit multicast part",
-    certifiesAMulticastAsItsTextAndAnExplicitMulticastPart,
-  );
+  it("certifies ordinary text unchanged", certifiesOrdinaryTextUnchanged);
 
   it(
-    "fails a multicast whose text and part exceed the content limit",
-    failsAMulticastWhoseTextAndPartExceedTheContentLimit,
+    "refuses text exceeding the content limit",
+    refusesTextExceedingTheContentLimit,
   );
 
   it(
