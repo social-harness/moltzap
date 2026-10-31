@@ -114,10 +114,11 @@ Exceeding the separate 2 MiB record-and-membership bound, or unresolved outgoing
 sends that may already have taken effect, creates an evidence gap. Required
 missing evidence holds.
 
-Only proven host-admitted content, including shown answers and local results,
-is visible to the agent. Authored content without proof that it came from an
-agent caller remains assessor evidence. Withheld content cannot impose an obligation as though seen.
-Guidance may quote admitted history and its incoming candidate.
+The firewall may use earlier messages it withheld or blocked when checking a
+new message. Their content remains private and cannot impose an obligation as
+though the agent had seen it. Guidance may quote the incoming message and
+content shown to the agent, including answers and local results. Authored
+content without proof that it came from an agent caller remains private evidence.
 
 A missing subject or guidance exceeding the 2 MiB inbox-item budget makes
 projection unavailable; guidance mode admits without advice. Oversized combined
