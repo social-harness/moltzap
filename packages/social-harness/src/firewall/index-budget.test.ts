@@ -1,8 +1,7 @@
 /** @file Installation budgets preserve usable policy and durable state across edits and startup. */
 
-import * as SqlClient from "@effect/sql/SqlClient";
 import { scopedLive as it } from "@effect/vitest";
-import { Effect, Array as EffectArray, Option, Queue } from "effect";
+import { Effect, Array as EffectArray, Option } from "effect";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Configuration regressions compare exact owner-file bytes before and after installation.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -11,27 +10,29 @@ import type {
   DecisionProvider,
   DecisionRequest,
   DecisionResponse,
+  Message,
 } from "./check.js";
-import {
-  addConversation,
-  fixture,
-  type Fixture,
-  incomingThrough,
-} from "../__tests__/firewall-runtime-fixtures.js";
+import { testAgentView } from "../__tests__/agent-card-fixtures.js";
 import {
   stateDirectory,
   withDaemonStore,
 } from "../__tests__/store-schema-fixtures.js";
+import { encodeRuntimeValue } from "../communication/store/runtime-codec.js";
 import { readCredential } from "../daemon/credentials.js";
 import {
   decodeMessagePolicy,
   loadMessagePolicy,
   type TextRule,
 } from "./config.js";
-import { type Firewall, type FirewallOptions, makeFirewall } from "./index.js";
+import {
+  type Firewall,
+  type FirewallOptions,
+  makeFirewall,
+  type PreparedFirewallCheck,
+} from "./index.js";
 import { readFirewallActivations, readFirewallPolicy } from "./store/index.js";
 
-// @agent-code-guard/regression-only: Real SQLite, loaded documents and delivery exercise the installation boundary with deterministic provider judgments.
+// @agent-code-guard/regression-only: Managed policy edits and checks use real SQLite and loaded documents with deterministic provider judgments.
 
 const ownerSafety: TextRule = {
   id: "owner-privacy",
@@ -123,11 +124,20 @@ function exerciseRuntimeEdit(
   configuration: FirewallOptions,
   requests: DecisionRequest[],
 ) {
+  const directory = stateDirectory();
+  return withDaemonStore(directory, () =>
+    rejectOversizedEdit(configuration, requests).pipe(
+      Effect.map((retained) => ({ directory, ...retained })),
+    ),
+  );
+}
+
+function rejectOversizedEdit(
+  configuration: FirewallOptions,
+  requests: DecisionRequest[],
+) {
   return Effect.gen(function* () {
-    const subject = yield* fixture;
-    const installed = yield* makeFirewall(configuration).pipe(
-      Effect.provideService(SqlClient.SqlClient, subject.sql),
-    );
+    const installed = yield* makeFirewall(configuration);
     yield* Effect.forEach(
       EffectArray.range(0, 5),
       (index) =>
@@ -135,12 +145,8 @@ function exerciseRuntimeEdit(
       { concurrency: 1 },
     );
     const before = yield* installed.readPolicy();
-    const bytes = yield* readFirewallPolicy().pipe(
-      Effect.provideService(SqlClient.SqlClient, subject.sql),
-    );
-    const activations = yield* readFirewallActivations({}).pipe(
-      Effect.provideService(SqlClient.SqlClient, subject.sql),
-    );
+    const bytes = yield* readFirewallPolicy();
+    const activations = yield* readFirewallActivations({});
 
     const rejected = yield* installed
       .updatePolicy({ add: [{ behavior: behavior(6) }] })
@@ -149,37 +155,62 @@ function exerciseRuntimeEdit(
     expect(rejected.reason).toBe(buildFailure);
     expect(rejected.message).toContain(editDocs);
     expect(yield* installed.readPolicy()).toEqual(before);
-    expect(
-      yield* readFirewallPolicy().pipe(
-        Effect.provideService(SqlClient.SqlClient, subject.sql),
-      ),
-    ).toEqual(bytes);
-    expect(
-      yield* readFirewallActivations({}).pipe(
-        Effect.provideService(SqlClient.SqlClient, subject.sql),
-      ),
-    ).toEqual(activations);
+    expect(yield* readFirewallPolicy()).toEqual(bytes);
+    expect(yield* readFirewallActivations({})).toEqual(activations);
     expect(requests).toEqual([]);
-    yield* expectDelivery(subject, installed, requests);
-    return { directory: subject.directory, before, bytes, activations };
+    yield* expectChecks(installed, requests);
+    return { before, bytes, activations };
   });
 }
 
-function expectDelivery(
-  subject: Fixture,
+function expectChecks(
   installed: Firewall,
   requests: readonly DecisionRequest[],
 ) {
   return Effect.gen(function* () {
-    yield* addConversation(subject);
-    const runtime = yield* incomingThrough(subject, installed);
-    yield* runtime.runPass;
-    yield* Queue.take(runtime.completed);
-    yield* Queue.take(runtime.completed);
-    const inbox = yield* runtime.delivery.operations.readInbox({});
-    expect(inbox.items).toHaveLength(2);
+    const first = yield* incomingMessage("first");
+    const second = yield* incomingMessage("second");
+    const checked = yield* installed.check([first, second]);
+    expect(checked.map(({ completion }) => completion.admit)).toEqual([
+      true,
+      true,
+    ]);
     expect(requests.some(hasOwnerSafetyQuestion)).toBe(true);
   });
+}
+
+function incomingMessage(id: string) {
+  const local = testAgentView("agent:alice");
+  const remote = testAgentView("agent:bob");
+  const agents = [local, remote];
+  const message: Message = {
+    id,
+    sender: remote.agentId,
+    recipients: [local.agentId],
+    text: "Does Tuesday work?",
+  };
+  return encodeRuntimeValue(message).pipe(
+    Effect.map(
+      (canonicalCandidate) =>
+        ({
+          direction: "incoming",
+          canonicalCandidate,
+          message,
+          context: {
+            agentId: local.agentId,
+            principal: local.principalId,
+            participants: agents.map((agent) => ({
+              agentId: agent.agentId,
+              principal: agent.principalId,
+            })),
+            history: [],
+            facts: [],
+            gaps: [],
+          },
+          agents,
+        }) satisfies PreparedFirewallCheck,
+    ),
+  );
 }
 
 function hasOwnerSafetyQuestion(request: DecisionRequest): boolean {
@@ -208,13 +239,11 @@ function expectReopen(
   );
 }
 
-it("rejects an oversized runtime edit while prior policy still admits messages and reopens", () =>
+it("rejects an oversized edit while prior policy still checks messages and reopens", () =>
   Effect.gen(function* () {
     const requests: DecisionRequest[] = [];
     const configuration = yield* options(requests);
-    const retained = yield* Effect.scoped(
-      exerciseRuntimeEdit(configuration, requests),
-    );
+    const retained = yield* exerciseRuntimeEdit(configuration, requests);
     const smallerBudget = yield* options(requests, 60_000);
     yield* expectReopen(retained, configuration, smallerBudget);
   }));
