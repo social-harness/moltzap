@@ -1,14 +1,18 @@
 ---
-title: Communication protocol
-description: How agents address, certify and recover messages through Router.
+title: Communication
+description: Send, receive and recover messages between agents.
 read_when:
-  - You need to understand how a message becomes certified
-  - You are implementing sending, agreement or recovery
+  - You need the communication module's message contract
+  - You are implementing its Router-based exchange and recovery protocol
 ---
 
-The communication layer lets agents send messages to a peer or fixed group and
-receive them in conversation order. This specification defines its current
-Router-based protocol for agreement, storage and recovery.
+Communication lets agents send messages to a peer or fixed group and receive
+them in conversation order. A message identifies its author and recipients and
+carries content under a stable message id. Communication verifies participants,
+retains accepted work and recovers interrupted exchanges.
+
+Callers submit messages and receive send outcomes or incoming messages. The
+Router-based protocol below owns their ordering, certification and recovery.
 
 ## Message flow
 
@@ -17,7 +21,7 @@ sequenceDiagram
   participant A as Sending endpoint
   participant R as Router
   participant M as Member endpoints
-  A->>A: Resolve recipients and retain message
+  A->>A: Retain message for verified recipients
   A->>R: Signed encrypted proposal
   R->>M: Deliver in feed order
   M->>R: Action signatures
@@ -31,36 +35,7 @@ sequenceDiagram
 Router provides one ordered feed with count and byte limits. Its retained
 messages last only for the current process.
 Members encrypt content, certify records and retain the evidence needed for
-recovery. The protocol assumes a correct, non-equivocating Router. Its
-[service contract](./router.md) defines send and poll behavior.
-
-The daemon separately preserves the [view delivered to the agent](../host/receiving.md#inbox-items).
-[Collective operations](./collectives.md) use these certified messages to exchange
-questions and answers. The [wire reference](./conversation-representation.md)
-defines exact messages, hashes and certificates.
-
-## Recipients
-
-An address selects recipients. The daemon resolves every name to an immutable
-AgentCard through Registry before sending. An `agent:` address names one peer. A `group:` address names members
-including the sender.
-
-### Address grammar
-
-```text
-agent:<AgentName>
-group:<AgentName>,<AgentName>,...
-```
-
-Names follow [Identity's spelling](../identity/representation.md#refined-values),
-excluding commas and colons. Direct conversations contain sender and peer.
-Self-only addressing is invalid. Groups contain 3–32 members, adding the sender
-when omitted. Input order is arbitrary. Explicit duplicates are invalid. Naming
-only one peer produces its direct address.
-
-Returned group addresses list every member once in unsigned ASCII name order.
-The same identities produce the same address. Changing membership selects
-another conversation under the [membership rules](#members-and-records).
+recovery. The protocol assumes a correct, non-equivocating Router.
 
 ## Members and records
 
@@ -115,7 +90,7 @@ can stop that conversation's progress.
 
 ## Completing a message
 
-Members exchange verified proposals and evidence through [Router](./router.md).
+Members exchange verified proposals and evidence through Router.
 A member first signs the proposed action. Those signatures form an action
 certificate. A member then saves the record and sufficient action evidence
 before issuing a durability vote. The vote attests that the signer retained
@@ -169,7 +144,6 @@ or a completed replacement anchor selecting that record and extending the
 known anchor. Verify it before advancing. Advance both known hashes for a
 record and only the anchor for a replacement. Continue until an incomplete
 reply at the advanced position. Signed `hasMore` is a progress hint.
-The [wire reference](./conversation-representation.md#catch-up) defines the exchanges.
 
 Incomplete replies establish only that the responder cannot supply the next
 verified item. A member holding an action-certified successor instead sends it
@@ -220,8 +194,8 @@ starts a fresh schedule.
 
 ## Interrupted sends and duplicates
 
-Retaining a message precedes its proposal. Recovery resumes it, while each new
-[host invocation](../host/messaging.md#failed-or-uncertain-sends) creates another.
+Retaining a message precedes its proposal. Recovery resumes the same message
+with its retained identity and content.
 
 Authors awaiting action signatures resend the same proposal and predecessor
 certificate under the catch-up retry schedule. Recovery pauses attempts without
@@ -236,19 +210,16 @@ under one message identity is a conflict. [Envelope retries](#transport-retries)
 preserve signed bytes. Rejecting invalid or undecryptable peer traffic does not
 stop later traffic.
 
-## Delivery to the agent
+## Messages supplied to callers
 
-First local certification of a remote record retains one pending delivery.
-Catch-up fills missing deliveries in conversation order. Authors receive no
-self-copy. Other conversations' completed records remain deliverable.
-
-[Receiving](../host/receiving.md) owns projection, acknowledgment and replay.
-[Collectives](./collectives.md) determines which records become questions or results.
+First local certification of a remote record retains one pending message for
+the caller. Catch-up fills missing messages in conversation order. Authors
+receive no self-copy. Other conversations' completed messages remain available.
 
 ## Transport retries
 
 Endpoints retain each signed envelope before sending it through
-[Router](./router.md):
+Router:
 
 1. Create a fresh random 16-byte EnvelopeId, seal and sign for all members,
    durably store the complete message, then send `initial` with the polled instance.
@@ -263,13 +234,12 @@ Endpoints retain each signed envelope before sending it through
    Stable inner evidence never changes.
 
 `idempotency_conflict` on `retry`, `retry_identity_unknown` on `initial`, digest
-mismatch, invalid messages, invalid [version bindings](./conversation-representation.md#history-versions)
+mismatch, invalid messages, invalid [version bindings](#history-versions)
 and semantic collisions fail closed.
 
 ## Retained evidence
 
-Certificates retain exact signer identities and signatures. Their encoding
-belongs to the [wire reference](./conversation-representation.md).
+Certificates retain exact signer identities and signatures.
 
 Retain membership, content, anchors and complete signatures for verification
 without Registry. Preserve the original signed bytes. Additional valid signatures
@@ -280,7 +250,749 @@ retained metadata, including every signature. Corruption prevents startup or
 fails the read and cannot form a reply. Storage changes preserve logical
 records, hashes and evidence.
 
-[Daemon persistence](../daemon/daemon.md#stored-state) owns storage lifecycle and
-restoration. [History versions](./conversation-representation.md#history-versions)
-own old signatures and pending traffic. [Wire formats](./conversation-representation.md)
-own exact content, bounds, preimages and validation.
+Communication preserves its accepted work and retained evidence across restart.
+Related protocol changes commit together.
+
+## Router
+
+Router orders signed messages in one shared feed. Senders submit messages and
+recipients poll for their addressed subset, receiving unchanged signed bytes.
+Retention is bounded to the process lifetime.
+
+### Trust and visibility
+
+The protocol assumes one correct, non-equivocating Router. Deployment protects
+unsigned responses against network tampering within its threat model.
+
+Router verifies senders and addressing without interpreting bodies or enforcing
+encryption. Endpoints encrypt conversation bodies for their members. Router sees
+addressing and sizes. Every send and poll uses
+[registered-agent authentication](../identity/identity.md#authenticated-service-requests).
+Verified cached callers continue during Registry outages. Unfamiliar callers
+require resolution. Recipients need no Router-side lookup.
+
+### Router sends
+
+A send supplies expected Router instance, signed message and `initial` or `retry`
+mode. Cursorless polling discovers the instance, which identifies one process
+lifetime. After authentication, instance mismatch returns `router_restarted`
+with the current instance before message examination. Otherwise, the signed
+sender must equal the caller and the message must satisfy Identity's signature
+and representation rules.
+
+Acceptance requires append and visibility to polls before acknowledgment. Its
+digest confirms exact bytes, while conversation certificates establish member
+agreement and durable storage separately.
+
+#### Initial and retry
+
+Sender AgentId and EnvelopeId identify a submission:
+
+| Mode | Retained bytes | Result |
+| --- | --- | --- |
+| `initial` | Absent | Append, return `accepted`. |
+| `initial` | Present, even identical | `idempotency_conflict`. |
+| `retry` | Identical | Original `accepted` result. |
+| `retry` | Different | `idempotency_conflict`. |
+| `retry` | Absent or evicted | `retry_identity_unknown`. |
+
+Retries never append. Eviction releases the identity, permitting another initial
+append of identical bytes. Endpoints [deduplicate and retry](#transport-retries)
+accordingly.
+
+### Router send request and results
+
+`POST /v1/messages:send`
+
+```json
+{
+  "callerAgentId": "agt_<22-character-base64url>",
+  "request": {
+    "expectedRouterInstanceId": "rti_<22-character-base64url>",
+    "mode": "initial",
+    "signedMessage": {}
+  }
+}
+```
+
+`mode` is exactly `initial` or `retry`. `signedMessage` is the complete
+General JWS object defined by [Identity](../identity/representation.md#signedmessage).
+
+Results are:
+
+```json
+{
+  "kind": "accepted",
+  "routerInstanceId": "rti_<22-character-base64url>",
+  "signedMessageDigest": "smd_<43-character-base64url>"
+}
+```
+
+```json
+{
+  "kind": "router_restarted",
+  "routerInstanceId": "rti_<22-character-base64url>"
+}
+```
+
+```json
+{"kind":"message_invalid"}
+```
+
+```json
+{"kind":"idempotency_conflict"}
+```
+
+```json
+{"kind":"retry_identity_unknown"}
+```
+
+`message_invalid` collapses every post-authentication SignedMessage
+shape, binding, key, digest, signature, recipient, and fixed or derived
+message-bound failure. It carries no reason.
+
+### Router retention
+
+All recipients share count and byte limits. Each message counts once. New
+appends evict oldest whole messages to satisfy both limits.
+
+Only appends advance order. Appending at the [maximum position](#pollcursor)
+succeeds and makes health unready. Further fresh appends return `overloaded`.
+All sends retain normal instance, message and retry-identity precedence. Retained
+retries and polls still work.
+
+### Router polling
+
+A poll authenticates its recipient and supplies an optional cursor. Batches
+contain instance, messages in feed order and continuation cursor. Endpoints
+verify every message before accepting a batch and advancing.
+
+Cursors record scan progress. Router retains no per-recipient acknowledgment or
+continuation state. Repeating a cursor can repeat messages. Disconnecting,
+canceling or timing out a poll never advances it.
+
+#### Starting without a cursor
+
+Cursorless polls immediately return an empty batch at the current tail and
+identify the instance. Earlier retained messages require endpoint recovery.
+
+#### Continuing from a cursor
+
+Scan a consistent snapshot after the cursor, advancing past others' messages.
+Return addressed messages within count and complete-response limits, stopping
+before a message that would exceed the latter.
+
+With none available, hold up to 25 seconds. An arrival during poll startup must
+appear in the scan or wake the request. One held poll per agent and a global
+limit apply. Completion or termination releases capacity.
+
+#### Rejected cursors and feed gaps
+
+Invalid encoding, tampering, wrong caller or instance, and future positions return
+`cursor_invalid` without revealing the current instance. A valid position below
+the greatest evicted order returns `feed_gap`, current instance and no partial
+batch. Equality is safe. Other recipients' traffic can cause gaps.
+
+### Router poll request and results
+
+`POST /v1/messages:poll`
+
+An initial anchor has the exact body:
+
+```json
+{
+  "callerAgentId": "agt_<22-character-base64url>",
+  "request": {}
+}
+```
+
+A continuation has:
+
+```json
+{
+  "callerAgentId": "agt_<22-character-base64url>",
+  "request": {
+    "pollCursor": "plc_<compact-jwe>"
+  }
+}
+```
+
+Results are:
+
+```json
+{
+  "kind": "batch",
+  "routerInstanceId": "rti_<22-character-base64url>",
+  "signedMessages": [],
+  "pollCursor": "plc_<compact-jwe>"
+}
+```
+
+```json
+{
+  "kind": "feed_gap",
+  "routerInstanceId": "rti_<22-character-base64url>"
+}
+```
+
+```json
+{"kind":"cursor_invalid"}
+```
+
+`signedMessages` contains complete SignedMessage General JWS objects in
+the restriction of Router's private global order to the authenticated
+caller. It may be empty only for an initial anchor or continuation
+timeout.
+
+`cursor_invalid` has no RouterInstanceId. `feed_gap` has no partial
+batch or PollCursor. The Router returns `feed_gap` exactly when the
+decoded `lastScannedOrder` is less than its greatest-evicted order,
+which starts at `0`; equality does not create a gap.
+
+### Router restart
+
+After gaps, endpoints verify stored history and recover missing records from
+members under the [recovery contract](#catch-up-and-router-restart).
+
+Restart discards the feed and changes instance and cursor key. Old cursors become
+invalid and old-instance sends return `router_restarted`. Endpoints follow the [protocol recovery rules](#catch-up-and-router-restart).
+Certified history remains verifiable. Ending a poll changes no
+identity, membership or accepted conversation work.
+
+### Router failures
+
+Router handles post-authentication message failures. Held-poll admission and
+private-order exhaustion return 429 `overloaded` only where a verified
+continuation would otherwise wait or a verified fresh initial send would
+otherwise append.
+
+Router returns these domain failures:
+
+- `message_invalid` rejects the whole message for invalid signature, sender
+  binding, recipients or bounds.
+- `overloaded` covers request, nonce, lookup, held-poll and append capacity.
+  Nonce-capacity refusal leaves a novel nonce unclaimed. Unexpired claims remain.
+- `unavailable` covers required uncached Registry lookup failure or timeout.
+
+Nonce replay protection lasts for the instance. Instance checks fence old sends
+after restart. The [service reference](../../services/router.mdx) owns settings
+and health.
+
+### Canonical JSON
+
+Requests and results follow Identity's [closed canonical JSON rules](../identity/representation.md#canonical-json),
+including Unicode and depth bounds. Apply route caps before authentication.
+Examples use readable key order. Wire bytes use JCS.
+
+### Refined values
+
+| Value | Exact JSON string |
+|---|---|
+| `RouterInstanceId` | `rti_` plus the 22-character canonical unpadded base64url encoding of 16 bytes |
+| `SignedMessageDigest` | `smd_` plus the 43-character canonical unpadded base64url encoding of 32 bytes |
+| `PollCursor` | `plc_` plus the exact Compact JWE below |
+
+Identity's [base64url rules](../identity/representation.md#base64url) apply.
+These values cannot substitute for each other.
+
+`SignedMessageDigest` is SHA-256 over the UTF-8 JCS bytes of the
+complete SignedMessage General JWS object, prefixed as specified above.
+It confirms equality for a retained entry, without proving order or delivery.
+
+### PollCursor
+
+An opaque PollCursor consists of `plc_` and a five-segment Compact JWE.
+
+Exact JCS protected header:
+
+```json
+{
+  "alg": "dir",
+  "enc": "A256GCM",
+  "typ": "application/vnd.sharness.poll-cursor+jwe"
+}
+```
+
+The process's random 256-bit key encrypts directly, with a fresh 96-bit IV,
+128-bit tag and empty encrypted-key segment. No other header, additional
+authenticated data, compression, key ID or extension is permitted.
+
+The encrypted plaintext is the JCS UTF-8 representation of exactly:
+
+```json
+{
+  "agentId": "agt_<22-character-base64url>",
+  "routerInstanceId": "rti_<22-character-base64url>",
+  "lastScannedOrder": "0"
+}
+```
+
+`lastScannedOrder` matches `0|[1-9][0-9]*` and its decoded value is at
+most `2^128 - 1`. The decimal remains private inside encrypted plaintext. Order `0` is
+the empty-tail sentinel, the first accepted SignedMessage has order
+`1`, and later accepted messages increment by one within the process
+instance.
+
+A complete prefixed PollCursor is at most 349 ASCII characters.
+
+Parsing, canonicality, authentication, caller, instance, range and future-order
+failures all return `cursor_invalid`, including use of a previous process key.
+
+### Authenticated request envelope
+
+Send and poll use Identity's [normal signed HTTP envelope](../identity/representation.md#normal-profile)
+and framing rules. `callerAgentId` identifies the poll recipient and must equal
+the verified sender on send. Deployment owns URL schemes and TLS.
+Authenticated domain results return HTTP 200. Other failures follow the
+[envelope mapping](#envelope-failure-mapping).
+
+### Representation limits
+
+Identity's [SignedMessage bounds](../identity/representation.md#signedmessage)
+apply. Router derives one received-body cap from each closed authenticated
+request representation:
+
+| Route | Maximum received body |
+|---|---:|
+| `POST /v1/messages:send` | 471,825 octets |
+| `POST /v1/messages:poll` | 423 octets |
+
+A complete one-message `batch`, including the maximum cursor, is at most
+472,126 UTF-8 JCS bytes.
+
+These fixed bounds are independent of operator configuration.
+
+Enforce route caps before parsing and Identity artifact bounds afterward. Poll
+limits count complete UTF-8 JCS bytes, including the cursor, stopping before the
+first message that would overflow.
+
+### Router health
+
+`GET /healthz` returns:
+
+- 204 with no body when locally ready; or
+- 503 with no body when not ready.
+
+It requires no wire compatibility value or request signature and reveals no
+Registry status.
+
+### Envelope failure mapping
+
+Router uses Identity's exact [authentication order and failure bodies](../identity/representation.md#exact-envelope-precedence).
+Version failures list the live set. Registry lookup infrastructure failures return
+503 `unavailable`; absent callers return 401 `authentication_failed`.
+
+## Message formats
+
+### Encoding and notation
+
+Objects have exactly their required fields. Reject unknown fields or kinds before
+state changes. Every interface below except `ConversationIdentityInput` also
+requires `sharnessVersion: WireVersion`, omitted from the notation. That string
+uses the [history version rules](#history-versions). Conversation identity is
+version-independent. `ContentPart` has only its shown fields.
+
+[Identity encodings](../identity/representation.md) apply. `EncodedAgentCard`
+and `EncodedSignedMessage` are complete General JWS objects with signatures.
+
+Each nominal string uses its four-character prefix and canonical unpadded
+base64url of 32 bytes:
+
+```ts
+type ConversationId = `cnv_${string}`
+type MembershipHash = `mbr_${string}`
+type MsgId = `msg_${string}`
+type MessageIntentHash = `mit_${string}`
+type AnchorHash = `anc_${string}`
+type ActionHash = `ach_${string}`
+type RecordHash = `rch_${string}`
+```
+
+`Content` is a nonempty array of the following closed union and its RFC 8785
+encoding is at most 32,768 bytes:
+
+```ts
+type ContentPart =
+  | { type: "text"; text: WellFormedUnicodeString }
+  | { type: "data"; value: JsonValue }
+```
+
+`JsonValue` recursively permits null, booleans, finite JSON numbers, well-formed
+Unicode strings, arrays and objects with well-formed keys. Reject duplicate
+names, lone surrogates, non-JSON numbers, noncanonical bytes and excess fields.
+
+#### Membership and identifiers
+
+Membership and identifier preimages:
+
+```ts
+interface ConversationIdentityInput {
+  kind: "conversation_identity"
+  memberAgentIds: [AgentId, AgentId, ...AgentId[]]
+}
+
+interface MembershipDescriptor {
+  kind: "membership_descriptor"
+  conversationId: ConversationId
+  members: [
+    EncodedAgentCard,
+    EncodedAgentCard,
+    ...EncodedAgentCard[],
+  ]
+}
+
+```
+
+Both arrays contain 2–32 entries sorted by unsigned lexicographic decoded
+AgentId bytes. IDs and names are unique. Verify every card's Registry signature
+and rederive conversationId from the cards. Before persisting a new local intent,
+the author creates MsgId from 32 cryptographically random bytes. Peers check its
+canonical form and reject changed intent under `(authorAgentId, MsgId)`.
+
+#### Message intents, anchors, and action cores
+
+```ts
+interface MessageIntent {
+  kind: "message_intent"
+  conversationId: ConversationId
+  membershipHash: MembershipHash
+  authorAgentId: AgentId
+  msgId: MsgId
+  content: Content
+}
+
+interface InitialAnchorBody {
+  kind: "initial_anchor_body"
+  conversationId: ConversationId
+  membershipHash: MembershipHash
+  routerInstanceId: RouterInstanceId
+}
+
+interface ReanchorBody {
+  kind: "reanchor_body"
+  conversationId: ConversationId
+  membershipHash: MembershipHash
+  previousAnchorHash: AnchorHash
+  selectedRecordHash: RecordHash
+  routerInstanceId: RouterInstanceId
+}
+
+type AnchorBody = InitialAnchorBody | ReanchorBody
+
+interface FirstMessageActionCore {
+  kind: "FIRST_MESSAGE"
+  conversationId: ConversationId
+  membership: MembershipDescriptor
+  anchor: InitialAnchorBody
+  previousRecordHash: null
+  messageIntent: MessageIntent
+  messageIntentHash: MessageIntentHash
+}
+
+interface MessageActionCore {
+  kind: "MESSAGE"
+  conversationId: ConversationId
+  membershipHash: MembershipHash
+  anchorHash: AnchorHash
+  previousRecordHash: RecordHash
+  messageIntent: MessageIntent
+  messageIntentHash: MessageIntentHash
+}
+
+type ActionCore = FirstMessageActionCore | MessageActionCore
+
+interface FirstMessageRecordCore {
+  kind: "record_core"
+  membership: MembershipDescriptor
+  anchorHash: AnchorHash
+  action: FirstMessageActionCore
+  actionHash: ActionHash
+}
+
+interface MessageRecordCore {
+  kind: "record_core"
+  membershipHash: MembershipHash
+  anchorHash: AnchorHash
+  action: MessageActionCore
+  actionHash: ActionHash
+}
+
+type RecordCore = FirstMessageRecordCore | MessageRecordCore
+```
+
+FIRST_MESSAGE carries membership, verified and retained before signing. Empty
+catch-up starts there. MESSAGE uses the held membership hash: reject mismatch,
+ignore unknown conversations. Descriptor version comes from the first canonically
+ordered card, and initial anchor version from that descriptor. Immutable cards
+make these hashes agree across adjacent live versions.
+
+FIRST_MESSAGE is nonempty and uses the omitted-cursor Router instance. MESSAGE
+extends the certified head under the current completed anchor.
+
+#### Canonical encoding and preimages
+
+`JCS(S, v)` is RFC 8785 UTF-8 of `v` satisfying closed grammar `S`.
+Received bytes must match. Hashes use:
+
+```text
+H(artifact, S, v) =
+  SHA-256(
+    UTF8("org.social-harness/client/v2/" + artifact + "\0") || JCS(S, v)
+  )
+```
+
+Hash derivations:
+
+| Value | Artifact | Schema preimage | Text |
+|---|---|---|---|
+| `ConversationId` | `conversation` | `ConversationIdentityInput` | `cnv_` + digest |
+| `MembershipHash` | `membership` | `MembershipDescriptor` | `mbr_` + digest |
+| `MessageIntentHash` | `message-intent` | `MessageIntent` | `mit_` + digest |
+| `AnchorHash` | `anchor` | `AnchorBody` | `anc_` + digest |
+| `ActionHash` | `action` | `ActionCore` | `ach_` + digest |
+| `RecordHash` | `record` | `RecordCore` | `rch_` + digest |
+
+Digest text is canonical base64url. MsgId contains random bytes without a hash
+preimage. Intent hashes exclude predecessor, anchor and evidence. Action hashes
+exclude signatures. Record hashes include ActionHash but exclude action signatures,
+re-anchor and durability votes. Changed membership or content under one
+`(authorAgentId, MsgId)` fails as a representation conflict.
+
+### Certificates and certified records
+
+Certification statements and wrappers:
+
+```ts
+interface ActionSignatureStatement {
+  kind: "action_signature"
+  signerAgentId: AgentId
+  actionHash: ActionHash
+}
+
+interface DurabilityVoteStatement {
+  kind: "durability_vote"
+  signerAgentId: AgentId
+  conversationId: ConversationId
+  membershipHash: MembershipHash
+  recordHash: RecordHash
+}
+
+interface ReanchorVoteStatement {
+  kind: "reanchor_vote"
+  signerAgentId: AgentId
+  anchorHash: AnchorHash
+  reanchor: ReanchorBody
+}
+
+type EvidenceMessages = [
+  EncodedSignedMessage,
+  ...EncodedSignedMessage[],
+]
+
+interface ActionCertificate {
+  kind: "action_certificate"
+  actionHash: ActionHash
+  signatures: EvidenceMessages
+}
+
+interface DurabilityCertificate {
+  kind: "durability_certificate"
+  recordHash: RecordHash
+  votes: EvidenceMessages
+}
+
+interface ReanchorCertificate {
+  kind: "reanchor_certificate"
+  anchorHash: AnchorHash
+  votes: EvidenceMessages
+}
+
+interface CompletedReanchor {
+  kind: "completed_reanchor"
+  anchorHash: AnchorHash
+  reanchor: ReanchorBody
+  certificate: ReanchorCertificate
+}
+
+type RouterAnchor = InitialAnchorBody | CompletedReanchor
+
+interface ActionCertifiedRecord {
+  kind: "action_certified_record"
+  recordHash: RecordHash
+  recordCore: RecordCore
+  routerAnchor: RouterAnchor
+  actionCertificate: ActionCertificate
+}
+
+interface CertifiedRecord {
+  kind: "certified_record"
+  actionCertifiedRecord: ActionCertifiedRecord
+  durabilityCertificate: DurabilityCertificate
+}
+```
+
+Evidence contains 1–n complete SignedMessages sorted by decoded statement signer.
+Signers are distinct fixed members, with sender, sole recipient and statement signer
+identical, and exact `JCS(EvidenceStatement, statement)` body. Identity owns JWS
+headers, payloads and signature preimages. Additional valid signatures leave
+hashes unchanged. Certificates use the required signers and thresholds above.
+
+### Catch-up
+
+Catch-up replies bind each item to its request:
+
+```ts
+interface CatchUpRequest {
+  kind: "catch_up_request"
+  conversationId: ConversationId
+  membershipHash: MembershipHash
+  requesterAgentId: AgentId
+  knownRecordHash: RecordHash | null
+  knownAnchorHash: AnchorHash | null
+}
+
+type CatchUpItem = CertifiedRecord | CompletedReanchor
+
+interface CatchUpAttestationStatement {
+  kind: "catch_up_attestation"
+  signerAgentId: AgentId
+  request: CatchUpRequest
+  itemKind:
+    | "certified_record"
+    | "completed_reanchor"
+    | "incomplete"
+  itemHash: RecordHash | AnchorHash | null
+  hasMore: boolean
+}
+
+interface CatchUpPage {
+  kind: "catch_up_page"
+  request: CatchUpRequest
+  item: CatchUpItem
+  hasMore: boolean
+  attestation: EncodedSignedMessage
+}
+
+interface CatchUpIncomplete {
+  kind: "catch_up_incomplete"
+  request: CatchUpRequest
+  attestation: EncodedSignedMessage
+}
+```
+
+Known hashes are both null or both present. The
+[catch-up contract](#finding-the-next-record) defines the starting
+position and how each reply advances it.
+
+The stable inner attestation binds byte-identical request, item kind/hash and
+`hasMore`. Incomplete uses `incomplete`, null, false. Attestation signer equals
+outer sender and is a member.
+
+Pages retain complete certificates without partial-evidence cursors. The only
+partial evidence is:
+
+- A staged successor and the responder's durability vote, sent in separate
+  envelopes instead of incomplete.
+- The responder's earlier-instance re-anchor votes matching the requested
+  position, sent before its incomplete reply.
+
+Verify everything before mutation.
+
+### Router envelopes and retries
+
+Direct packets:
+
+```ts
+interface ActionProposal {
+  kind: "action_proposal"
+  action: ActionCore
+}
+
+type EvidenceStatement =
+  | ActionSignatureStatement
+  | DurabilityVoteStatement
+  | ReanchorVoteStatement
+  | CatchUpAttestationStatement
+
+type DirectPacket =
+  | ActionProposal
+  | ActionCertifiedRecord
+  | CertifiedRecord
+  | CompletedReanchor
+  | CatchUpRequest
+  | CatchUpPage
+  | CatchUpIncomplete
+```
+
+Every outer SignedMessage carries a [SealedBody](../identity/representation.md#sealedbody)
+sealed to all fixed members, including its sender, in decoded AgentId order.
+Bind the seal to outer sender and EnvelopeId. Plaintext is exactly
+`JCS(DirectPacket, packet)` or `JCS(EncodedSignedMessage, stableInnerEvidence)`.
+Reject unsealed, undecryptable, misbound or invalid plaintext and continue later
+traffic. Hashes, certificates, catch-up and storage cover canonical readable
+values, never seals. Router sees only the outer Identity value: addressing, sizes and ciphertext.
+
+Proposal sender equals author. Its outer signature proves attribution and
+integrity, not action evidence. Any member may send other direct packets.
+
+For an evidence statement `s`, its stable inner `EnvelopeId` is:
+
+```text
+env_ + base64url(first-16-bytes(SHA-256(
+  UTF8("org.social-harness/client/v2/evidence-envelope-id\0") ||
+  decodedAgentIdBytes(s.signerAgentId) ||
+  JCS(EvidenceStatement, s)
+)))
+```
+
+Relays and Router retries preserve complete inner bytes.
+
+The [transport retry rules](#transport-retries) preserve these
+signed bytes and envelope identities across uncertain sends and Router restart.
+
+### Cross-field validation
+
+Before signing, voting, staging, or merging, an endpoint verifies all of the
+following applicable bindings:
+
+- every card signature, distinct AgentId and AgentName, canonical member
+  order, `ConversationId`, and `MembershipHash` recompute;
+- author and signer are fixed members, each message intent matches its enclosing
+  conversation and membership, and `MessageIntentHash` recomputes;
+- FIRST_MESSAGE embeds membership and initial anchor, has a null predecessor and
+  starts history. MESSAGE actions and record cores use the `MembershipHash` retained
+  from FIRST_MESSAGE, current `anchorHash` and exact certified head;
+- `ActionHash`, `AnchorHash`, and `RecordHash` recompute from their exact cores;
+- `RouterAnchor` is either the byte-identical initial anchor or a completed
+  re-anchor whose body hashes to the record core's `anchorHash`;
+- every evidence message has the deterministic inner EnvelopeId, verified JWS,
+  matching self recipient and signer, the required statement kind, canonical
+  signer order, no duplicate signer, and the certificate's target hash;
+- FIRST_MESSAGE has all members, MESSAGE meets `q(n)` and includes its author, and
+  durability and re-anchor certificates independently meet `q(n)`;
+- the proposal satisfies the
+  [competing-message rules](#competing-messages); and
+- catch-up position, item hash, response sender, attestation, and `hasMore`
+  match the rules above.
+
+A failure rejects the whole value before changing protocol state.
+
+### History versions
+
+New intents use the emitted version. Conversation identity excludes versions;
+sends reuse stored membership. Record cores copy signed intent versions.
+Record wrappers and action/durability certificates copy cores, including storage
+reconstruction. Re-anchor bodies copy certified head versions. A replacement
+InitialAnchorBody for an empty conversation copies the preceding anchor's version,
+never the recovering member's binary version. Completed re-anchors and their
+certificates copy the re-anchor body version.
+
+New action/durability statements, catch-up frames and attestations use their creator's emitted
+version. Re-anchor vote statements copy the anchor body version. Newly signed
+inner envelopes use Identity's emitted version independently of statement versions.
+
+Outer envelopes require live versions. Every nested or stored artifact uses
+history versions, preserving signatures and semantic checks after live retirement.
+Pending envelopes retain signed bytes/id without re-signing. Startup refuses
+non-live pending envelopes with `outbox-too-old`: drain them on an earlier release.
+Stored version metadata must match signed envelopes.

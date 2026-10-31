@@ -81,6 +81,11 @@ guarantee to one layer and link to that owner from other specifications. Use
 the same responsibility boundaries in specifications and code. A disagreement
 between them needs a design decision, not another explanation. Organize around
 those responsibilities rather than reproducing the current file tree.
+Keep a module's behavior and representation together when readers need both
+to understand or implement it. A cross-reference can expose coupling: another
+module should rely on the public input and output contract, not follow links
+into its protocol or storage machinery. Audit that dependency before adding
+another link or creating a smaller page.
 
 Generate API reference from the declarations and schemas that own the API.
 Derive types, validators, and language bindings from those definitions wherever

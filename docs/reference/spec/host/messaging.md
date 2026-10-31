@@ -11,36 +11,63 @@ send. Its daemon verifies identities, applies policy, holds keys and protocol
 state, and preserves accepted work. `HarnessEndpoint` and MCP share this
 contract.
 
+## Destinations
+
+A host adapter translates its host's destinations into the daemon's address
+format. The daemon resolves names to agent identities before sending. An
+`agent:` address names one peer. A `group:` address names members including
+the sender.
+
+### Address grammar
+
+```text
+agent:<AgentName>
+group:<AgentName>,<AgentName>,...
+```
+
+Names follow [Identity's spelling](../identity/representation.md#refined-values),
+excluding commas and colons. Direct conversations contain sender and peer.
+Self-only addressing is invalid. Groups contain 3–32 members, adding the sender
+when omitted. Input order is arbitrary. Explicit duplicates are invalid. Naming
+only one peer produces its direct address.
+
+Returned group addresses list every member once in unsigned ASCII name order.
+The same identities produce the same address. Changing membership selects
+another conversation.
+
+The daemon validates the destination and resolves every member before accepting
+a send. Invalid destinations fail with `invalid-address` or `membership-invalid`.
+`members-unreachable` names unresolved members and their reasons, including
+Registry failures. These failures create neither operation nor message.
+
 ## Sending a message
 
-Every send supplies a [destination](../communication/protocol.md#recipients) and text or
-an answer. Questions add an answer schema and deadline. Session focus and prior
-messages cannot supply an omitted destination. Native hosts use the
+Every send supplies a destination and text or an answer. Questions add an
+answer schema and deadline. Session focus and prior messages cannot supply an
+omitted destination. Native hosts use the
 [message-text grammar](./adapters.md#message-text).
 
 The host may answer only requests admitted to its inbox.
 
-The daemon validates input, resolves recipients and applies
-[outgoing policy](../firewall/message-policy.md#outgoing-messages). Retaining
-the message identity and content before proposing it constitutes acceptance.
-Certification supplies action and durability evidence. Recovery preserves the
-accepted identity. Every new call, including identical input, creates a fresh
+The daemon validates input, resolves recipients and checks outgoing policy.
+Acceptance means it has retained the message and will continue sending it
+after restart. Every new call, including identical input, creates a fresh
 invocation. [Collectives](../communication/collectives.md) defines how questions
 become group or direct requests.
 
 Successful results identify:
 
-- `multicast`: the locally certified message's `msgId` and canonical address.
-- `response`: the locally certified answer's `msgId`, address and answered request.
+- `multicast`: the sent message's `msgId` and canonical address.
+- `response`: the sent answer's `msgId`, address and answered request.
 - `collective`: the `operationId`, whose requests and result follow collectives.
 
 An admitted send may include firewall guidance. A refusal belongs to its
 invocation and creates no successful history entry or inbox item. Inbox storage
 failure cannot replace the send's outcome.
 
-Sends may start during Router connection, including after registration or restart,
-and permit connection progress while waiting a bounded time. If Router remains
-unavailable, they fail with `network-unavailable`.
+Sends may start while the daemon connects, including after registration or
+restart, and permit connection progress while waiting a bounded time. If the
+connection remains unavailable, they fail with `network-unavailable`.
 
 ### Failed or uncertain sends
 
@@ -50,7 +77,7 @@ check reference and permitted feedback. A corrected draft receives a fresh
 assessment.
 
 - `network-unavailable`: connection failed before daemon action.
-- `delivery-pending`: accepted work continues certification or delivery with
+- `delivery-pending`: accepted work continues sending or delivery with
   the same identity across restart, including after delivery failure.
 - `outcome-unknown`: the invocation may have taken effect. Interruption,
   defects, uncertain acceptance writes or response loss after a request may have
@@ -63,15 +90,29 @@ retry. Ending its wait does not cancel accepted work.
 
 The daemon supplies four item kinds:
 
-- `multicast`: a peer's certified message.
+- `multicast`: a peer's message.
 - `collectiveRequest`: an admitted question the agent may answer.
 - `collectiveResult`: a local gather's or participating all-gather's result.
 - `operationFailed`: an all-gather failure before closing-message acceptance.
 
-Items identify agents from retained verified identities. Protocol answers and
-closes never appear as separate model messages. The host acknowledges after
-acceptance under the [receiving contract](./receiving.md), which owns contents,
+Items identify agents from retained verified identities. Only messages,
+questions and operation outcomes appear as model messages. The host
+acknowledges after acceptance under the [receiving contract](./receiving.md), which owns contents,
 ordering and replay.
+
+## Reading history
+
+History lists conversations and returns the messages retained for the agent.
+The content and guidance stay the same across rule edits and restart.
+
+A history read fixes an opaque end position at its start. Later appends remain
+outside that read. Pages contain at most 50 entries. Continuations identify
+the read position and its fixed boundary. They can be reused and remain valid
+after restart while that history is retained. An invalid continuation does
+not silently start a new read.
+
+An invalid history page returns no messages. Reading history neither
+acknowledges delivery nor authorizes a send.
 
 ## Connection lifetime
 

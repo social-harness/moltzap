@@ -13,19 +13,18 @@ guidance. The host owns subsequent execution, notification and replies.
 
 ## Inbox items
 
-[Inbox kinds](./messaging.md#receiving-items) include fully certified peer
-messages. The daemon consumes protocol answers and closes without a subscriber
-and excludes them from the inbox.
+Inbox items include peer messages, questions, results and operation failures.
+The daemon processes incoming work even without a subscriber.
 
 [Incoming policy](../firewall/message-policy.md#incoming-messages) admits items
 with separate guidance or withholds them privately. Assessments follow
 conversation order, continue past withheld items and survive restart.
 [Collective policy](../firewall/message-policy.md#results-shown-to-the-agent)
-governs withheld questions and answers. Collectives owns
-[answering](../communication/collectives.md#answers) and
-[recovery](../communication/collectives.md#completion-and-recovery).
+governs withheld questions and answers.
 
-The daemon retains payload, guidance and delivery token before exposure,
+The daemon saves an incoming decision, its permitted content and guidance, and
+any answer visibility changes together. Interrupted checks leave messages
+pending for recovery. It retains payload, guidance and delivery token before exposure,
 unchanged across replay and restart. Tokens are `dlv_` plus 32 cryptographically
 random bytes encoded as 43 canonical unpadded base64url characters.
 Acknowledgments survive for the state-directory lifetime.
@@ -33,10 +32,9 @@ Acknowledgments survive for the state-directory lifetime.
 ## Delivery projection
 
 Messages carry `msgId`, content, sender and conversation address, without
-collective protocol metadata. Direct `agent:` addresses name the remote peer.
-Groups list every member canonically and include the complete member list.
-Retained `AgentView` identities contain verified
-[AgentCard](../identity/identity.md#agentcard) ids, names and principals. Replay
+collective protocol metadata. Adapters translate the daemon's conversation address into their host's destination
+format. The delivery retains the complete group membership.
+Retained `AgentView` identities contain verified ids, names and principals. Replay
 needs no Registry lookup.
 
 Authors receive no self-copy. Remote messages follow local commit order,

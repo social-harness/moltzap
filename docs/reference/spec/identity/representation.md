@@ -104,7 +104,6 @@ Use AgentCard's exact attached, one-signature JWS shape with this header:
 
 Verify with the sender's verified AgentCard key. Sender, card digest and `kid`
 must identify that card. The complete JWS is at most 471,677 UTF-8 JCS bytes.
-[Router](../communication/router-representation.md) owns SignedMessageDigest.
 
 ## SealedBody
 
@@ -394,10 +393,6 @@ Public lookup's remaining stages are:
 | 5 | Unexpected implementation failure | 500 |
 
 Success and domain refusals return the route's closed HTTP 200 result.
-[Router](../communication/router-representation.md) owns post-authentication
-message failures. Its [held-poll admission and private-order exhaustion](../communication/router.md)
-return 429 `overloaded` only where a verified continuation would otherwise wait or a
-verified fresh initial send would otherwise append.
 
 ## Envelope failures
 

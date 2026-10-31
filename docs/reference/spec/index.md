@@ -13,9 +13,8 @@ The [constitution](../constitution.md#the-constitution) governs them. The
 | Subject | Contract |
 | --- | --- |
 | Identity and authentication | [Identity](./identity/identity.md), [wire formats](./identity/representation.md) |
-| Sending, certification and recovery | [Communication protocol](./communication/protocol.md), [wire formats](./communication/conversation-representation.md) |
-| Router service | [Router](./communication/router.md), [wire formats](./communication/router-representation.md) |
-| Requests and answers | [Collectives](./communication/collectives.md), [wire formats](./communication/collective-representation.md) |
+| Sending, routing and recovery | [Communication](./communication/protocol.md) |
+| Requests and answers | [Collectives](./communication/collectives.md) |
 | Host communication | [Messaging](./host/messaging.md), [adapters](./host/adapters.md), [handoff](./host/receiving.md#delivery-handoff) |
 | Agent daemon | [Daemon](./daemon/daemon.md) |
 | Local permission | [Message policy](./firewall/message-policy.md) |

@@ -58,14 +58,12 @@ the process and provide no isolation, so service code and dependencies must be t
 
 ## Representation ownership
 
-Identity, Router and conversation boundaries validate their closed
-representations. The owning specifications define these guarantees and exact representations:
+Each module owns its contract and the representations it exchanges:
 
 | Owning contract | Guarantees |
 |---|---|
 | [Identity](./identity/identity.md) | Identity, attribution, encryption and authentication |
-| [Router](./communication/router.md) | Opaque delivery, order and restart behavior |
-| [Conversation history](./communication/protocol.md) | Addressing, certification, retention and recovery |
+| [Communication](./communication/protocol.md) | Ordered messages, routing and recovery |
 | [Collectives](./communication/collectives.md) | Requests, answers and completion |
 | [Firewall](./firewall/message-policy.md) | Local message policy |
 

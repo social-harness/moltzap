@@ -46,7 +46,7 @@ certified agent-authored content and retained incoming items with their guidance
 These views preserve what the agent was permitted to see. Reading them does
 not run the firewall again or acknowledge delivery.
 
-The [daemon history contract](../../../../../docs/reference/spec/daemon/daemon.md#conversation-history)
+The [host history contract](../../../../../docs/reference/spec/host/messaging.md#reading-history)
 owns page bounds, fixed heads and continuations. The
 [receiving contract](../../../../../docs/reference/spec/host/receiving.md)
 owns saved items, acknowledgment and replay.

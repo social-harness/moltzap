@@ -105,12 +105,12 @@ In-flight checks keep their captured rules. Later checks use successful edits.
 
 ### Available history
 
-The window contains up to 256 preceding records in certification order,
+The window contains up to 256 preceding messages in conversation order,
 configurable from 1–1024, and includes local result and failure evidence under
 that address.
 Outgoing checks use the destination conversation; other conversations and host
 private context are excluded. `earlierHistoryOmitted` alone causes no hold.
-Exceeding the separate 2 MiB record-and-membership bound, or unresolved outgoing
+Exceeding the history window's separate 2 MiB budget, or unresolved outgoing
 sends that may already have taken effect, creates an evidence gap. Required
 missing evidence holds.
 
@@ -123,7 +123,7 @@ content without proof that it came from an agent caller remains private evidence
 A missing subject or guidance exceeding the 2 MiB inbox-item budget makes
 projection unavailable; guidance mode admits without advice. Oversized combined
 collective advice is omitted in either mode because answers were individually
-assessed. Rules needing other conversations, older records or owner instructions
+assessed. Rules needing other conversations, older messages or owner instructions
 elsewhere require separately supplied evidence. Messages alone cannot establish
 calendar changes, retract tool actions or reveal undisclosed collusion.
 
@@ -131,7 +131,8 @@ calendar changes, retract tool actions or reveal undisclosed collusion.
 
 Each completed check identifies the message, evidence and policy it assessed.
 Earlier decisions retain the rules and registered advice that applied at that
-time. Only completed checks enter decision history. Daemon-generated results
+time. Only completed checks enter decision history. Completed decisions and guidance
+survive restart and acknowledgment. Daemon-generated results
 are stored without synthetic firewall checks. Private provider traces stay in
 memory. Decision summaries contain deciding
 rule ids and registered advice, with message content and private evidence
@@ -139,8 +140,8 @@ excluded. An edit changes future checks.
 
 ## Collective operations
 
-Each participant checks its own sends and views. Collection, certification and
-close application proceed independently. Sharing a norm does not make complete
+Each participant checks its own sends and views. Operation processing continues
+independently of those judgments. Sharing a norm does not make complete
 policies identical.
 
 ### Outgoing checks
@@ -179,7 +180,7 @@ those expiring during assessment are withheld. Neither reaches the host.
 ### Results shown to the agent
 
 Membership and outcomes are admitted; local policy selects visible text without
-changing the [canonical result](../communication/collectives.md). Withheld
+changing the operation's result. Withheld
 question/answer text becomes `{kind: "withheld", checkId, reason}`. Advice names
 each affected member/check and any question checked with the result. Guidance
 mode withholds no text.
@@ -187,10 +188,8 @@ mode withholds no text.
 A previously shown question stays shown; one withheld in enforcement remains
 withheld under that check. Otherwise assess it with the result. Every delivery
 path serves this view. Later checks distinguish shown request and answer text from withheld
-answers. Admitted results/failures become Social Harness evidence between
-records certified before and after queuing. The
-[collective contract](../communication/collectives.md#completion-and-recovery)
-owns recovery of accepted requests and operations.
+answers. The supplied history identifies admitted results and failures as local Social
+Harness outcomes, ordered with the surrounding messages.
 
 ## Message-policy file
 
@@ -302,7 +301,8 @@ Host elicitation can later replace this placeholder. A proposed replacement
 cannot authorize itself. Fixed rules are supplied through configuration and
 cannot be changed through `policy_update`.
 
-An edit either applies in full or leaves the previous rules active.
+Rule replacement and its change record save together. An edit either applies
+in full or leaves the previous rules active.
 `policy_read` reports editable and fixed rules with their current revision.
 
 The complete replacement activates before return. Remove/add of one id is
