@@ -61,6 +61,12 @@ type Check =
     }
   | { readonly kind: "none-in-every"; readonly act: string; readonly q: string }
   | {
+      readonly kind: "equals-latest";
+      readonly p: string;
+      readonly q: string;
+      readonly act: string;
+    }
+  | {
       readonly kind: "matches-item";
       readonly p: string;
       readonly q: string;
@@ -181,6 +187,17 @@ function parseCheck(text: string): Check | undefined {
       q: item[2] ?? "",
       act: item[3] ?? "",
       r: item[4] ?? "",
+    };
+  }
+  const equals = /^:([a-z-]+) equals :([a-z-]+) of the latest ([a-z-]+)$/u.exec(
+    part,
+  );
+  if (equals !== null) {
+    return {
+      kind: "equals-latest",
+      p: equals[1] ?? "",
+      q: equals[2] ?? "",
+      act: equals[3] ?? "",
     };
   }
   const accepted = /^:([a-z-]+) matches the accepted option$/u.exec(part);
@@ -503,6 +520,11 @@ function checkErrors(
           ? []
           : [`:${check.p} is not item ${n} of the latest ${check.act}`];
       }
+      case "equals-latest":
+        return slotKey(act.values.get(check.p) ?? "") ===
+          slotKey(latest(check.act)?.values.get(check.q) ?? "\u0000")
+          ? []
+          : [`:${check.p} differs from :${check.q} of the latest ${check.act}`];
       case "ends-with":
         return (act.values.get(check.p) ?? "").trim().endsWith(check.suffix)
           ? []
