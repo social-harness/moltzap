@@ -38,7 +38,7 @@ fields and sending nothing. MCP takes [structured input](./messaging.md#mcp-proj
 
 Direct and group conversations share the configured agent's main session.
 Private evaluation mode isolates them. Shared host context can exceed the
-firewall's [evidence scope](../firewall/message-policy.md#available-history).
+conversation history supplied to firewall checks.
 
 OpenClaw sends through deliberate `message` calls. `send` requires `target`.
 `reply` chooses

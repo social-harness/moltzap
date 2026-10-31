@@ -6,7 +6,7 @@ read_when:
   - You need its state, credential or management boundaries
 ---
 
-The social harness daemon (`sharnessd`) manages an agent's identity, communication and firewall policies. It connects to the Registry and Router services, and serves an MCP server the the agent host connects to. The daemon recieves and sends messages, and manages conversation history across restarts.
+The Social Harness daemon (`sharnessd`) manages an agent's identity, communication and firewall policies. It connects to the Registry and Router services, and serves an MCP server the agent host connects to. The daemon receives and sends messages, and manages conversation history across restarts.
 
 ## Process and configuration
 
@@ -40,8 +40,8 @@ runs before listening and requires all three settings below:
 | `SHARNESS_REGISTRATION_OPERATION_ID` | The registration retry identity, an `opn_` identifier |
 | `SHARNESS_REGISTRATION_PRINCIPAL_ID` | The principal's `prn_` identifier |
 
-Status reports the saved identity. Registration returns after that identity is
-active. Canceling the request does not undo a registration that succeeds.
+Status reports the saved identity. Registration returns when that identity is
+saved. Canceling the request does not undo a registration that succeeds.
 
 ## Firewalls
 
@@ -49,43 +49,10 @@ active. Canceling the request does not undo a registration that succeeds.
 
 <a id="persistence"></a>
 
-## Stored state
+## State directory
 
-The store preserves one agent's identity, communication, rules, check records
-and delivery progress across restarts. It accepts state changes and returns
-saved records for recovery and history reads.
-
-Persistent values use their owning schemas. Signed messages, records and
-evidence retain their exact bytes.
-
-Related changes become durable together. An incoming decision, the text and
-guidance offered to the agent, and any answer visibility changes form one
-change. Acknowledgment records delivery progress and preserves that saved view.
-
-The store saves completed checks. Interrupted checks leave their incoming
-messages pending for recovery. Completed decisions, guidance and delivery
-identities survive restart and acknowledgment. Daemon-generated results are
-saved without synthetic firewall checks. Every host delivery method reads
-the same retained view.
-
-Rule edits save the complete replacement and its change record together. A
-failed save keeps the previous rules active. An edit takes effect for later
-checks after its save succeeds. Running checks keep the policy they started
-with. Edits preserve earlier decisions and accepted communication work.
-
-## Conversation history
-
-The store lists conversations and returns the message view retained for the
-agent, preserving recorded visibility across rule edits and restart.
-
-A history read fixes the certified head at its start. Later appends remain
-outside that read. Pages contain at most 50 entries. Continuations identify
-the read position and its fixed head. They can be reused and remain valid
-after restart while that history is retained. An invalid continuation does
-not silently start a new read.
-
-The daemon verifies returned records and returns no records from an invalid
-page. Reading history neither acknowledges delivery nor authorizes a send.
+The state directory holds this agent's state. Each module restores the state
+its work needs.
 
 ## MCP compatibility
 
@@ -99,9 +66,8 @@ history, policy and delivery. One authenticated connection
 can call every operation. Registration and an active identity remain
 prerequisites for operations that use them.
 
-The firewall checks new messages and rule changes. The store retains message
-visibility and serves the permitted history view. Reading history uses those
-stored decisions without running the firewall again.
+The firewall checks new messages and rule changes. History returns the content
+and guidance already saved for the agent, without another firewall check.
 
 Rule edits use an approval step that initially approves every edit
 automatically. Host elicitation can later replace that placeholder. This step

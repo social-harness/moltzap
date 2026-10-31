@@ -71,11 +71,7 @@
                   {
                     "group": "Communication",
                     "pages": [
-                      "reference/spec/communication/addresses",
-                      "reference/spec/communication/router",
-                      "reference/spec/communication/router-representation",
-                      "reference/spec/communication/conversation-history",
-                      "reference/spec/communication/conversation-representation",
+                      "reference/spec/communication/protocol",
                       "reference/spec/communication/collectives"
                     ]
                   },
@@ -88,7 +84,6 @@
                   {
                     "group": "Norms",
                     "pages": [
-                      "reference/spec/norms/message-certification",
                       "reference/spec/norms/shared-norms"
                     ]
                   },

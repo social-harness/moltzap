@@ -81,6 +81,11 @@ guarantee to one layer and link to that owner from other specifications. Use
 the same responsibility boundaries in specifications and code. A disagreement
 between them needs a design decision, not another explanation. Organize around
 those responsibilities rather than reproducing the current file tree.
+Keep a module's behavior and representation together when readers need both
+to understand or implement it. A cross-reference can expose coupling: another
+module should rely on the public input and output contract, not follow links
+into its protocol or storage machinery. Audit that dependency before adding
+another link or creating a smaller page.
 
 Generate API reference from the declarations and schemas that own the API.
 Derive types, validators, and language bindings from those definitions wherever
@@ -272,7 +277,10 @@ Read the complete draft after editing it. Check that the opening establishes
 its purpose, each section serves that purpose, and each paragraph adds
 something the intended reader needs. Watch for changes of purpose within a
 page, such as a setup procedure turning into a catalogue of every setting.
-Rewrite awkward passages in place.
+Rewrite awkward passages in place. Preserve the owner's edits and deliberate
+cuts. Rewrite an adequate passage only to fix a concrete reader problem or an
+agreed contract change. Reorganizing a document does not justify restoring cut
+material or restating it under another heading.
 
 Review a specification with the source closed. Ask the reader to identify
 the actors, follow a concrete input through the system, explain the result,

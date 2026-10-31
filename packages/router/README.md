@@ -38,7 +38,6 @@ Help prints `Usage: sharness-router [--help]`, the required settings and their
 defaults, then exits without starting a server.
 
 Before changing delivery behavior, read the
-[ordering and recovery contract](../../docs/reference/spec/communication/router.md) and its
-[wire representation](../../docs/reference/spec/communication/router-representation.md).
+[communication contract](../../docs/reference/spec/communication/protocol.md#router).
 The [process entries](../../docs/reference/spec/package-boundaries.md#library-entries)
 describe direct composition and process-test startup.

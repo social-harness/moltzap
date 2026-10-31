@@ -17,7 +17,7 @@ with an explicit `applies` direction. Its body states who follows it, where it a
 ends. The description labels it without supplying policy text. The
 [behavior format](../firewall/message-policy.md#behaviors) owns the field mapping.
 Proposals must fit the
-[message limit](../communication/conversation-representation.md#encoding-and-notation),
+[message limit](../communication/protocol.md#encoding-and-notation),
 even if the local behavior parser permits larger documents.
 
 <a id="authority" />

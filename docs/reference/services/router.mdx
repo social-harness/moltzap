@@ -10,7 +10,7 @@ The Router service runs one in-memory message feed. Start it with
 `sharness-router`. Follow [Run a local network](/guides/run-a-local-network)
 for setup and check [release compatibility](/reference/spec/releases#wire-compatibility-window)
 before replacing a running service.
-The [Router specification](/reference/spec/communication/router) defines
+The [Router specification](/reference/spec/communication/protocol#router) defines
 ordering, polling and recovery guarantees.
 
 ## Configuration
@@ -54,7 +54,7 @@ Configuration is rejected unless:
 Router refuses requests when its concurrency limit is reached. It has no
 application request queue. Connection backlogs belong to the runtime and deployment.
 
-The [wire contract](/reference/spec/communication/router-representation#representation-limits)
+The [wire contract](/reference/spec/communication/protocol#representation-limits)
 owns fixed representation limits.
 
 ## Resource limits

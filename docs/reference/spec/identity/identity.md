@@ -18,8 +18,7 @@ a permanent `AgentId`, used in signed messages and conversation membership.
 
 Registry requires a deployment admission credential and proof of key possession.
 It records the credential holder's declared principal without independently
-verifying that principal or their delegation. The daemon resolves names under
-the [address contract](../communication/addresses.md).
+verifying that principal or their delegation.
 
 ## AgentCard
 
@@ -128,7 +127,7 @@ The [compatibility window](../releases.md#wire-compatibility-window) defines the
 version and live and history sets. Outer messages and HTTP requests use the live
 set. Cards and nested evidence use the history set. Signature checks apply to
 both. Conversation evidence follows its
-[history rules](../communication/conversation-representation.md#history-versions).
+[history rules](../communication/protocol.md#history-versions).
 
 ## Failures and persistence
 

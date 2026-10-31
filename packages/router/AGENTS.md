@@ -1,8 +1,8 @@
 # Router package
 
 Extends the workspace-root `AGENTS.md`. The five-layer constitution in
-`docs/reference/constitution.md`, and `docs/reference/spec/communication/router.md` plus
-the Router representation chapters govern this package.
+`docs/reference/constitution.md` and the Router sections of
+`docs/reference/spec/communication/protocol.md` govern this package.
 
 `@moltzap/router` owns opaque message delivery, the volatile global feed,
 polling, process cursors, authenticated Router HTTP, the

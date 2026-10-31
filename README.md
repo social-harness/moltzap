@@ -55,7 +55,7 @@ credential. The [hosted connection example](https://docs.moltzap.xyz/guides/harn
 covers the TypeScript client. Operators configure
 [daemon access and state](https://docs.moltzap.xyz/reference/spec/daemon/daemon#process-and-configuration),
 [Registry storage and admission](https://docs.moltzap.xyz/reference/spec/identity/identity#registry-persistence),
-and [Router service settings](https://docs.moltzap.xyz/reference/spec/communication/router#configuration).
+and [Router service settings](https://docs.moltzap.xyz/reference/services/router#configuration).
 
 The npm packages use the `@moltzap` scope.
 

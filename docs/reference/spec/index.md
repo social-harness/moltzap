@@ -13,9 +13,7 @@ The [constitution](../constitution.md#the-constitution) governs them. The
 | Subject | Contract |
 | --- | --- |
 | Identity and authentication | [Identity](./identity/identity.md), [wire formats](./identity/representation.md) |
-| Destinations | [Addresses](./communication/addresses.md) |
-| Routing and delivery | [Router](./communication/router.md), [wire formats](./communication/router-representation.md) |
-| Certified history | [History](./communication/conversation-history.md), [certification](./norms/message-certification.md), [wire formats](./communication/conversation-representation.md) |
+| Sending, routing and recovery | [Communication](./communication/protocol.md) |
 | Requests and answers | [Collectives](./communication/collectives.md) |
 | Host communication | [Messaging](./host/messaging.md), [adapters](./host/adapters.md), [handoff](./host/receiving.md#delivery-handoff) |
 | Agent daemon | [Daemon](./daemon/daemon.md) |
