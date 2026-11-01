@@ -1,14 +1,18 @@
 /**
  * @file Offline run of the holder's daemon: judges each message in `PP_CASES`
- * (JSONL of `{id, rule, holder, history, message}`, `rule` a protocol text
- * file) with the form and state checks, and the values question when
- * `JEV_KEY_FILE` names a key. A refused message is answered by a responder
- * that runs `claude -p` with no tools, MCP servers, settings or session, from
- * the empty directory `PP_RESPONDER_DIR`. The first act the answer spells out
- * is then judged as the sender's next message, to see whether following the
- * answer gets the message through, unless it leaves a value for the sender
- * to supply as <what is needed>. Writes one JSONL line per case to
- * `PP_RESULTS`. Skipped unless the files are named.
+ * with the form and state checks, and the values question when
+ * `JEV_KEY_FILE` names a key. A case is JSONL `{id, holder, history, message}`
+ * plus either `rule`, one protocol text file that governs every message, or
+ * `norms`, a list of `{doc, rule}` (a norm document and its protocol block)
+ * routed by norm-router, whose selector is then the Jev applicability
+ * question. A refused message is answered by a responder that runs `claude -p`
+ * with no tools, MCP servers, settings or session, from the empty directory
+ * `PP_RESPONDER_DIR`, or, when the case sets `responder: "pointer"`, by a
+ * pointer to the norm in code. The first act an answer spells out is then
+ * judged as the sender's next message, to see whether following the answer
+ * gets the message through, unless it leaves a value for the sender to
+ * supply in angle brackets. Writes one JSONL line per case to `PP_RESULTS`.
+ * Skipped unless the files are named.
  */
 
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
@@ -16,9 +20,18 @@ import { Command } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { it } from "@effect/vitest";
 import { Effect, Redacted } from "effect";
+import type { DecisionProvider } from "./contract/index.js";
 import { makeFirewall, TextRule } from "./index.js";
 import { makeJevDecisionProvider } from "./jev.js";
 import { makeProtocolCheck } from "./protocol-check.js";
+import {
+  type HeldNorm,
+  makeJevSelector,
+  makeNormRouter,
+  pointerResponder,
+  type Routed,
+  type Selector,
+} from "./norm-router.js";
 import { makeProtocolForm } from "./protocol-form.js";
 import {
   guidanceText,
@@ -32,10 +45,33 @@ import { codeFixedParameters, makeProtocolState } from "./protocol-state.js";
 
 interface Case {
   readonly id: string;
-  readonly rule: string;
   readonly holder: string;
+  readonly rule?: string;
+  readonly norms?: ReadonlyArray<{
+    readonly doc: string;
+    readonly rule: string;
+  }>;
+  readonly responder?: "answer" | "pointer";
   readonly history: readonly Post[];
   readonly message: Post;
+}
+
+/** A norm document's name and description, from its frontmatter, and its body. */
+function normDocument(path: string): {
+  readonly name: string;
+  readonly description: string;
+  readonly text: string;
+} {
+  const doc = readFileSync(path, "utf8");
+  const front = /^---\n([\s\S]*?)\n---\n/u.exec(doc);
+  const field = (key: string) =>
+    new RegExp(`^${key}:\\s*(.+)$`, "mu").exec(front?.[1] ?? "")?.[1]?.trim() ??
+    "";
+  return {
+    name: field("name"),
+    description: field("description"),
+    text: doc.slice(front?.[0].length ?? 0).trim(),
+  };
 }
 
 const configured =
@@ -137,43 +173,48 @@ live(
         process.env.PP_MODEL ?? "claude-sonnet-5-5",
         process.env.PP_RESPONDER_DIR ?? "",
       );
-      const pipelines = new Map<
-        string,
-        ReturnType<typeof makeProtocolPipeline>
-      >();
-      const pipelineFor = Effect.fn("pipelineFor")(function* (c: Case) {
-        const key = `${c.rule}\u0000${c.holder}`;
-        const known = pipelines.get(key);
-        if (known !== undefined) {
-          return known;
-        }
-        const protocol = readFileSync(c.rule, "utf8").trim();
-        const rule = new TextRule({
-          id: "protocol",
-          kind: "norm",
-          text: protocol,
-          feedback: {
-            text: "This message does not follow the protocol.",
-            nextAction: "revise",
-          },
-        });
+      const provider: DecisionProvider | undefined =
+        process.env.JEV_KEY_FILE === undefined
+          ? undefined
+          : makeJevDecisionProvider({
+              apiKey: Redacted.make(
+                readFileSync(process.env.JEV_KEY_FILE, "utf8").trim(),
+              ),
+              model: "jev-1.13.0",
+            });
+      const heldNorm = Effect.fn("heldNorm")(function* (
+        holder: string,
+        protocolFile: string,
+        doc: {
+          readonly name: string;
+          readonly description: string;
+          readonly text: string;
+        },
+        mode: "answer" | "pointer",
+      ) {
+        const protocol = readFileSync(protocolFile, "utf8").trim();
+        const rule = (id: string) =>
+          new TextRule({
+            id,
+            kind: "norm",
+            text: protocol,
+            feedback: {
+              text: "This message does not follow the protocol.",
+              nextAction: "revise",
+            },
+          });
         const checks = [
-          makeProtocolForm({ id: "form", rule: { ...rule, id: "form" } }),
-          makeProtocolState({ id: "state", rule: { ...rule, id: "state" } }),
-          ...(process.env.JEV_KEY_FILE === undefined
+          makeProtocolForm({ id: "form", rule: rule("form") }),
+          makeProtocolState({ id: "state", rule: rule("state") }),
+          ...(provider === undefined
             ? []
             : [
                 makeProtocolCheck({
                   id: "values",
-                  rules: [rule],
-                  provider: makeJevDecisionProvider({
-                    apiKey: Redacted.make(
-                      readFileSync(process.env.JEV_KEY_FILE, "utf8").trim(),
-                    ),
-                    model: "jev-1.13.0",
-                  }),
+                  rules: [rule("protocol")],
+                  provider,
                   question: VALUES_QUESTION,
-                  hiddenParameters: codeFixedParameters(rule.text),
+                  hiddenParameters: codeFixedParameters(protocol),
                 }),
               ]),
         ];
@@ -189,12 +230,43 @@ live(
         });
         const pipeline = makeProtocolPipeline({
           protocol,
-          holder: c.holder,
+          holder,
           firewall,
-          responder,
+          responder:
+            mode === "pointer" ? pointerResponder(doc.name) : responder,
         });
-        pipelines.set(key, pipeline);
-        return pipeline;
+        const norm: HeldNorm = { ...doc, protocol, judge: pipeline.judge };
+        return norm;
+      });
+      const routers = new Map<string, ReturnType<typeof makeNormRouter>>();
+      const routerFor = Effect.fn("routerFor")(function* (c: Case) {
+        const mode = c.responder ?? "answer";
+        const key = JSON.stringify([c.holder, c.rule, c.norms, mode]);
+        const known = routers.get(key);
+        if (known !== undefined) {
+          return known;
+        }
+        const norms =
+          c.norms === undefined
+            ? [
+                yield* heldNorm(
+                  c.holder,
+                  c.rule ?? "",
+                  { name: "protocol", description: "the protocol", text: "" },
+                  mode,
+                ),
+              ]
+            : yield* Effect.forEach(c.norms, (norm) =>
+                heldNorm(c.holder, norm.rule, normDocument(norm.doc), mode),
+              );
+        const only = norms.length === 1 ? norms[0]?.name : undefined;
+        const selector: Selector =
+          provider === undefined || only !== undefined
+            ? { select: () => Effect.succeed(only) }
+            : makeJevSelector(provider);
+        const router = makeNormRouter({ norms, selector });
+        routers.set(key, router);
+        return router;
       });
       const cases = readFileSync(process.env.PP_CASES ?? "", "utf8")
         .split("\n")
@@ -206,8 +278,8 @@ live(
         cases,
         (c) =>
           Effect.gen(function* () {
-            const pipeline = yield* pipelineFor(c);
-            const outcome = yield* pipeline.judge(c.history, c.message);
+            const router = yield* routerFor(c);
+            const outcome: Routed = yield* router.judge(c.history, c.message);
             const suggested =
               outcome.kind === "refused" ? firstAct(outcome.answer) : undefined;
             const asks =
@@ -215,7 +287,7 @@ live(
             const resend =
               suggested === undefined || asks
                 ? undefined
-                : yield* pipeline.judge(c.history, {
+                : yield* router.judge(c.history, {
                     ...c.message,
                     text: suggested,
                   });
@@ -227,6 +299,7 @@ live(
                   outcome.kind === "pass"
                     ? {
                         kind: "pass",
+                        norm: outcome.norm,
                         guidance: outcome.guidance.map((g) => ({
                           agent: g.agent,
                           acts: g.allowed.map((act) => act.name),
@@ -239,9 +312,9 @@ live(
                 resend:
                   resend === undefined
                     ? undefined
-                    : resend.kind === "pass"
-                      ? "pass"
-                      : resend.reasons,
+                    : resend.kind === "refused"
+                      ? resend.reasons
+                      : resend.kind,
               })}\n`,
             );
           }),

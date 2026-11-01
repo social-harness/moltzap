@@ -1201,6 +1201,23 @@ export function allowedNext(
 }
 
 /**
+ * Whether `history` leaves a request of `protocol` open, so that every
+ * message in the conversation falls under the protocol until it closes.
+ * @param protocol The protocol text.
+ * @param history The admitted messages so far, oldest first.
+ * @returns True while a request the protocol opened has had no final act.
+ */
+export function hasOpenRequest(
+  protocol: string,
+  history: readonly Post[],
+): boolean {
+  const idParameter = idParameterOf(protocol);
+  return (
+    replay(declaredStates(protocol), history, idParameter).open !== undefined
+  );
+}
+
+/**
  * Build the experimental state check for one protocol rule.
  * @param options The middleware id and the rule whose text declares the acts' states.
  * @returns Middleware usable in either direction of `makeFirewall`.
