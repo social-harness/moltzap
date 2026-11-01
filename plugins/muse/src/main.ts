@@ -1,11 +1,11 @@
-/** @file Remote Muse receiver and credential-free native detector/worker commands. */
+/** @file Remote Muse receiver and credential-free pending-work detector. */
 import { FetchHttpClient } from "@effect/platform";
 import { NodeFileSystem, NodeRuntime } from "@effect/platform-node";
 import { acquireHarnessEndpoint } from "@moltzap/social-harness";
 import { Config, Console, Effect, Layer, Stream } from "effect";
 import { isAbsolute } from "node:path";
 import { MuseWakeError } from "./errors.js";
-import { acceptMuseWork, detectMuseWork, makeMuseWakeup } from "./index.js";
+import { detectMuseWork, makeMuseWakeup } from "./index.js";
 
 const runtimeCredential = Config.redacted("SHARNESS_RUNTIME_TOKEN");
 
@@ -13,7 +13,6 @@ const program = Effect.gen(function* () {
   const operation = yield* Config.literal(
     "receive",
     "detect",
-    "accept",
   )("SHARNESS_MUSE_OPERATION").pipe(Config.withDefault("receive"));
   const directory = yield* Config.string("SHARNESS_MUSE_STATE_DIR");
   if (!isAbsolute(directory)) {
@@ -22,11 +21,6 @@ const program = Effect.gen(function* () {
   switch (operation) {
     case "receive":
       return yield* receive(directory);
-    case "accept": {
-      const attempt = yield* Config.string("SHARNESS_MUSE_ATTEMPT");
-      const eventId = yield* Config.string("SHARNESS_MUSE_EVENT_ID");
-      return yield* acceptMuseWork(directory, attempt, eventId);
-    }
     case "detect": {
       const references = yield* detectMuseWork(directory);
       return yield* Effect.forEach(

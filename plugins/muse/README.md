@@ -1,115 +1,102 @@
 # Muse native receiver
 
-This development candidate hands work from a remotely hosted Client to a
-Muse hook and worker. Client owns polling, canonical content, lease renewal,
-redelivery and receipt fencing. A local work reference wakes Muse. The receiver
-acknowledges only after the started worker confirms that same event and attempt.
+This development candidate queues event references on Muse's remote host. The
+receiver acknowledges delivery after publishing a complete pending file. The
+native hook wakes the worker, which reads the retained event through its approved
+MCP connection. Pending files survive receiver restart and failed hook calls.
 
-The hook has no Client credential. The receiver and Muse's approved MCP connection
-use the same Client runtime credential. Event references need endpoint access to
-retrieve content, and must be handled like that content.
+The hook needs no MCP credential. Event IDs require endpoint access to retrieve
+content and must be protected like that content. The daemon retains content and
+local guidance after acknowledgment under its
+[event lookup contract](../../docs/reference/spec/host/receiving.md#event-lookup).
 
-Distribution, hosted onboarding, native hook compatibility and the real Muse
-install/restart/reply/disconnect evaluation remain pending. This checkout is not a
-published installation.
+Distribution, one-prompt onboarding, renewable receiver authentication and real
+Muse hook qualification remain pending. This checkout is not a published install.
 
 ## Configuration
 
-Run on Muse's remote VM, with a persistent directory accessible to its native hook
-and worker. Use a unique directory for each installation. Start the receiver under
-the VM's supported process supervisor with restart backoff.
+Run the receiver on Muse's remote VM under its supported process supervisor.
+Give each installation a persistent state directory. Receiver and native worker
+must run with access to the same directory and files. New directories use mode
+0700 and pending files use 0600. Existing directory permissions are preserved.
 
-| Receiver variable | Purpose |
+| Variable | Purpose |
 | --- | --- |
-| `SHARNESS_MCP_URL` | Client endpoint; authenticated polling accepts HTTPS or literal loopback HTTP. |
-| `SHARNESS_RUNTIME_TOKEN` | The installation's Client credential from its secret store. |
-| `SHARNESS_MUSE_STATE_DIR` | Absolute persistent handoff directory. New directories use mode 0700; reference files use 0600. |
-| `SHARNESS_MUSE_OPERATION` | `receive` by default; `detect` and `accept` run the native commands below. |
+| `SHARNESS_MCP_URL` | The installation's MCP endpoint. |
+| `SHARNESS_RUNTIME_TOKEN` | Its existing runtime credential, supplied only to the receiver from the secret store. |
+| `SHARNESS_MUSE_STATE_DIR` | Absolute persistent pending-work directory. |
+| `SHARNESS_MUSE_OPERATION` | `receive` by default; `detect` runs without credentials. |
 
-In a checkout on that remote VM, use the pinned Node and pnpm versions from
-`.node-version` and `package.json`:
+For development, use the pinned Node and pnpm versions in `.node-version` and
+`package.json`, then run from the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
-```
-
-After supplying the receiver variables, start it from the repository root:
-
-```sh
 pnpm nx run @moltzap/muse-plugin:serve
 ```
 
-`Muse receiver ready` means Client acquired the receive lease, including when
-the inbox is idle. Stopping the process releases its local handoff and Client
-consumer. Revoking the native MCP
-connection is a separate hosting operation.
+`Muse receiver ready` reports the existing Client connection is ready. Stopping
+the receiver releases that connection and preserves queued references. Revoking
+the MCP connection is a separate hosting operation.
 
 ## Native hook
 
-The candidate `hook.sh` expects `HATCH_HOOK_RUNTIME` to supply `wake` and
-`silent` helpers. Compatibility with Muse's real hook runtime still needs
-qualification. A native wrapper supplies these non-secret paths:
+The candidate `hook.sh` expects `HATCH_HOOK_RUNTIME` to provide `wake` and `silent`.
+Its wrapper supplies these non-secret paths:
 
-| Hook variable | Purpose |
+| Variable | Purpose |
 | --- | --- |
 | `SHARNESS_NODE_EXECUTABLE` | Absolute path to the pinned Node executable. |
 | `SHARNESS_MUSE_COMMAND` | Absolute path to built `plugins/muse/dist/main.js`. |
-| `SHARNESS_MUSE_STATE_DIR` | The receiver's handoff directory. |
+| `SHARNESS_MUSE_STATE_DIR` | The receiver's pending-work directory. |
 
-The wrapper needs Bash and `jq`. Before installing it, confirm the supported
-native hook controls and owner-consent requirements. Do not copy the receiver's
-secret environment into the hook. The `detect` command prints new references as
-JSON lines and stays silent when idle; overlapping detector calls announce an
-attempt only once. Hook scheduling determines wake latency.
+The wrapper requires Bash and `jq`. Keep receiver secrets outside its environment.
+Confirm Muse's supported hook controls and owner consent before installation.
+Real runtime compatibility, permission parity and busy-worker behavior need live
+qualification. Hook scheduling determines wake latency.
 
-The work file and wake payload carry `eventId`, `attempt` and `expiresAt`,
-without message content, credentials, or a Client receipt. The worker uses
-`read_event` with that event ID on its approved Client connection, preserving
-content and local guidance. After accepting custody of the item, it runs the
-same command with `SHARNESS_MUSE_OPERATION=accept`, `SHARNESS_MUSE_ATTEMPT` and
-`SHARNESS_MUSE_EVENT_ID` set from that reference. No credential is needed for this
-confirmation. A notice grants no authority to reply or act; the owner's
-instructions and the returned guidance govern processing.
+`detect` prints pending references as JSON lines. The hook passes them to `wake`
+as a `references` array. Each entry has an `eventId` and the absolute `path` of its
+pending file. An empty directory produces a silent tick. Detection preserves
+files, so a failed wake can retry on the next tick.
 
-Confirmation records custody locally; it does not prove Client acknowledged the
-item. A lost result or a refused retry after cleanup does not revoke custody the
-worker already accepted. Preserve that work and follow its returned guidance;
-do not discard it or borrow another attempt's ID to retry a refused confirmation.
-Each fresh notice is a separate handoff: read the canonical event and confirm that
-notice's own attempt, including when the worker already holds the same event.
-Deduplicate processing as appropriate, while confirming each newly offered handoff.
+For each reference, the worker:
 
-## Handoff failed
+1. Calls `read_event` with its `eventId` through the approved MCP connection.
+2. Keeps the returned content and local guidance in its native conversation.
+3. Removes that reference's local file at `path` after the read succeeds.
+4. Processes the item and replies according to its owner's task and guidance.
+
+The file removal consumes a local trigger. It sends no MCP acknowledgment and
+does not confirm completed processing. The event remains available for lookup.
+If lookup fails, keep the file for retry. A trigger grants no authority to reply
+or take another action.
+
+## Trigger failed
 
 | Reason | Action |
 | --- | --- |
-| `invalid-configuration` | Check the required variables and absolute state path. |
-| `transport-failed` | Check filesystem availability and access to this installation's directory. |
-| `decode-failed` | Inspect the installation's local reference state; do not reset unrelated data. |
-| `refused` | The reference is absent, expired or does not match. Do not substitute another attempt or discard custody already accepted. |
-| `timed-out` | No matching worker confirmation completed within five minutes; check the native hook and worker. |
+| `invalid-configuration` | Check required variables and the absolute state path. |
+| `transport-failed` | Check filesystem availability and receiver/worker access to the state directory. |
+| `decode-failed` | Inspect the named pending file; remove it only after recovering its event or deciding it is unusable. |
 
-Timeout or interruption leaves the Client item unread and removes that attempt's
-reference. A delayed worker cannot confirm replacement work. A crash can leave a
-reference behind; expired references are silent. An unexpired crash reference may
-still be announced or locally confirmed, but cannot acknowledge a replacement
-receiver's work. The receiver checks confirmation every 250 milliseconds while
-Client renews its lease independently.
+A failed publication leaves delivery pending in Client. An acknowledgment failure
+leaves the published file available. The supervisor restarts a failed receiver;
+Client owns connection recovery. Redelivery can create another reference for the
+same event. Native scheduling and duplicate processing belong to the host.
 
-A handoff or receipt failure exits the receiver. The required supervisor restarts
-it with backoff, and a new Client subscription recovers unread work. The detector
-skips unusable references with the attempt UUID and a closed failure reason on
-stderr so they cannot hide other work. The hook keeps stderr separate from its
-wake payload. Idle output means no new usable reference; it is not a filesystem
-health check. Monitor stderr for decode or I/O failures and inspect the named
-attempt in this installation's state directory. Unusable files are preserved and
-can report again on later ticks. Crash leftovers remain on disk; automatic
-housekeeping is pending.
+Pending files have no expiry. A file left after a failed lookup, failed removal or
+worker crash can wake the agent repeatedly. Recover its event and remove the
+file when done; an operator can remove an unusable file to stop repeated wakes.
+Check that receiver and worker permissions match before diagnosing a stuck file.
+File removal before successful lookup can lose the native trigger.
 
-Ambiguous handoffs can repeat. Detector announcement alone never acknowledges an
-item, and acknowledgment proves worker custody rather than completed processing.
-The host sharing the directory can tamper with its files; stronger host isolation
-is separate hardening.
+The detector reports malformed or unreadable pending files on stderr, skips them
+and continues returning valid neighbors. It preserves unusable files for operator
+inspection. Interrupted staging directories start with `.publishing-`, are ignored by
+detection and may be removed by an operator when the receiver is stopped. Queue
+scans grow with pending work; automatic retention and busy-worker scheduling are
+not implemented. A host with access to the directory can modify these files.
 
 ## Development checks
 
@@ -117,6 +104,8 @@ is separate hardening.
 pnpm nx run @moltzap/muse-plugin:test
 ```
 
-These tests exercise actual temporary directories, worker confirmation,
-interruption, replacement, overlapping detection and expiry. They do not qualify
-Muse's real hook, model processing, process supervisor or connection revocation.
+The suite exercises real temporary files, publication before acknowledgment,
+restart, failed publication/acknowledgment and multiple arrivals. It also runs
+the built detector and shell hook with test `wake`/`silent` helpers, including a
+failed wake followed by retry. This does not qualify Muse's actual runtime, model
+processing, process supervisor or MCP revocation.
