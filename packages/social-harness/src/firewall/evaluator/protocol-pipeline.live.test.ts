@@ -51,15 +51,16 @@ interface Case {
     readonly doc: string;
     readonly rule: string;
   }>;
-  readonly responder?: "answer" | "pointer";
+  readonly responder?: "answer" | "pointer" | "repair" | "registered";
   readonly history: readonly Post[];
   readonly message: Post;
 }
 
-/** A norm document's name and description, from its frontmatter, and its body. */
+/** A norm document's name, description and registered feedback, from its frontmatter, and its body. */
 function normDocument(path: string): {
   readonly name: string;
   readonly description: string;
+  readonly feedback: string;
   readonly text: string;
 } {
   const doc = readFileSync(path, "utf8");
@@ -70,7 +71,32 @@ function normDocument(path: string): {
   return {
     name: field("name"),
     description: field("description"),
+    feedback: /^\s+text:\s*(.+)$/mu.exec(front?.[1] ?? "")?.[1]?.trim() ?? "",
     text: doc.slice(front?.[0].length ?? 0).trim(),
+  };
+}
+
+/** A refusal reason that is about timing alone, which repair answers in code. */
+const TIMING = /may not be sent at this point/u;
+
+/**
+ * Repair for the sending agent's own draft: what failed and the acts allowed
+ * now, in code; for a form or value mistake, also the corrected message from
+ * the quarantined model.
+ */
+function repairResponder(model: Responder): Responder {
+  return {
+    respond: (input) => {
+      const code = [
+        `Your draft was not sent. What the checks found: ${input.reasons.join("; ")}.`,
+        guidanceText(input.protocol, input.allowed),
+      ].join("\n\n");
+      return input.reasons.every((reason) => TIMING.test(reason))
+        ? Effect.succeed(code)
+        : model
+            .respond(input)
+            .pipe(Effect.map((fix) => `${code}\n\nSuggested message:\n${fix}`));
+    },
   };
 }
 
@@ -188,9 +214,10 @@ live(
         doc: {
           readonly name: string;
           readonly description: string;
+          readonly feedback: string;
           readonly text: string;
         },
-        mode: "answer" | "pointer",
+        mode: "answer" | "pointer" | "repair" | "registered",
       ) {
         const protocol = readFileSync(protocolFile, "utf8").trim();
         const rule = (id: string) =>
@@ -233,7 +260,19 @@ live(
           holder,
           firewall,
           responder:
-            mode === "pointer" ? pointerResponder(doc.name) : responder,
+            mode === "pointer"
+              ? pointerResponder(doc.name)
+              : mode === "repair"
+                ? repairResponder(responder)
+                : mode === "registered"
+                  ? {
+                      respond: () =>
+                        Effect.succeed(
+                          doc.feedback ||
+                            `This message does not follow the ${doc.name} protocol.`,
+                        ),
+                    }
+                  : responder,
         });
         const norm: HeldNorm = { ...doc, protocol, judge: pipeline.judge };
         return norm;
@@ -252,7 +291,12 @@ live(
                 yield* heldNorm(
                   c.holder,
                   c.rule ?? "",
-                  { name: "protocol", description: "the protocol", text: "" },
+                  {
+                    name: "protocol",
+                    description: "the protocol",
+                    feedback: "",
+                    text: "",
+                  },
                   mode,
                 ),
               ]
@@ -281,7 +325,10 @@ live(
             const router = yield* routerFor(c);
             const outcome: Routed = yield* router.judge(c.history, c.message);
             const suggested =
-              outcome.kind === "refused" ? firstAct(outcome.answer) : undefined;
+              outcome.kind === "refused" &&
+              (c.responder ?? "answer") === "answer"
+                ? firstAct(outcome.answer)
+                : undefined;
             const asks =
               suggested !== undefined && /<[^<>\n]+>/u.test(suggested);
             const resend =
