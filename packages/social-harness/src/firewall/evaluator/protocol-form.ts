@@ -11,7 +11,6 @@
 import { Effect } from "effect";
 import type {
   MessageMiddleware,
-  MiddlewareInput,
   MiddlewareResult,
   RuleDescription,
 } from "./contract/index.js";
@@ -23,7 +22,8 @@ interface Parameter {
   readonly list?: "list" | "list-or-none";
 }
 
-interface Act {
+/** One declared act: the role that sends it and its parameters. */
+export interface Act {
   readonly role: string;
   readonly parameters: ReadonlyMap<string, Parameter>;
 }
@@ -145,19 +145,14 @@ function formErrors(
 
 /**
  * The role each participant plays, from the acts it already sent: a sender's
- * role is whichever role declares the acts in its history. A participant
- * whose history spans two roles, or two participants claiming one role, plays
- * none.
+ * role is whichever role declares the acts in its history.
  */
 function rolesFromHistory(
   acts: ReadonlyMap<string, Act>,
-  input: MiddlewareInput,
+  history: ReadonlyArray<{ readonly sender: string; readonly text: string }>,
 ): ReadonlyMap<string, ReadonlySet<string>> {
   const roles = new Map<string, Set<string>>();
-  for (const entry of input.context.history) {
-    if (entry.admission !== "admitted") {
-      continue;
-    }
+  for (const entry of history) {
     const parsed = parseAct(entry.text);
     const act = typeof parsed === "string" ? undefined : acts.get(parsed.name);
     if (act !== undefined) {
@@ -167,6 +162,33 @@ function rolesFromHistory(
     }
   }
   return roles;
+}
+
+/**
+ * The roles `sender` may play: those of the acts it already sent, or, before
+ * it has sent one, every role no other participant has taken. Empty when
+ * every role is taken by others, which leaves the role to the state check.
+ * @param acts The protocol's declared acts.
+ * @param history The admitted messages so far.
+ * @param sender The participant whose roles are wanted.
+ * @returns The role names, and whether its earlier acts span two roles.
+ */
+export function rolesFor(
+  acts: ReadonlyMap<string, Act>,
+  history: ReadonlyArray<{ readonly sender: string; readonly text: string }>,
+  sender: string,
+): { readonly roles: ReadonlySet<string>; readonly mixed: boolean } {
+  const known = rolesFromHistory(acts, history);
+  const own = known.get(sender) ?? new Set<string>();
+  const others = [...known.entries()]
+    .filter(([other]) => other !== sender)
+    .flatMap(([, roles]) => [...roles]);
+  const claimed = new Set(
+    [...acts.values()]
+      .map((act) => act.role)
+      .filter((role) => !others.includes(role)),
+  );
+  return { roles: own.size > 0 ? own : claimed, mixed: own.size > 1 };
 }
 
 /**
@@ -188,20 +210,16 @@ export function makeProtocolForm(options: {
     check: (input) =>
       Effect.sync(() => {
         const { message } = input.event;
-        const history = rolesFromHistory(acts, input);
-        const own = history.get(message.sender) ?? new Set<string>();
-        const others = [...history.entries()]
-          .filter(([sender]) => sender !== message.sender)
-          .flatMap(([, roles]) => [...roles]);
-        const claimed = new Set(
-          [...acts.values()]
-            .map((act) => act.role)
-            .filter((role) => !others.includes(role)),
+        const { roles, mixed } = rolesFor(
+          acts,
+          input.context.history.filter(
+            (entry) => entry.admission === "admitted",
+          ),
+          message.sender,
         );
-        const senderRoles = own.size > 0 ? own : claimed;
         const errors = [
-          ...formErrors(acts, message.text, senderRoles),
-          ...(own.size > 1 ? ["sender's earlier acts span two roles"] : []),
+          ...formErrors(acts, message.text, roles),
+          ...(mixed ? ["sender's earlier acts span two roles"] : []),
         ];
         const result: MiddlewareResult = {
           findings: [

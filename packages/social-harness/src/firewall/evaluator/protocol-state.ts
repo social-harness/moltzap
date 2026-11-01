@@ -16,7 +16,7 @@ import type {
   MiddlewareResult,
   RuleDescription,
 } from "./contract/index.js";
-import { declaredActs, parseAct } from "./protocol-form.js";
+import { declaredActs, parseAct, rolesFor } from "./protocol-form.js";
 
 type Condition =
   | {
@@ -459,6 +459,11 @@ export function declaredStates(
   return declarations;
 }
 
+/** The parameter that carries a request's id: the one "id in :p" names. */
+function idParameterOf(protocol: string): string {
+  return /id in :([a-z-]+)/u.exec(protocol)?.[1] ?? "request";
+}
+
 /**
  * The parameters of each act whose values code fixes completely: the request
  * id, "one of" values, and option numbers a check resolves. The decision
@@ -469,7 +474,7 @@ export function declaredStates(
 export function codeFixedParameters(
   protocol: string,
 ): ReadonlyMap<string, ReadonlySet<string>> {
-  const idParameter = /id in :([a-z-]+)/u.exec(protocol)?.[1] ?? "request";
+  const idParameter = idParameterOf(protocol);
   const states = declaredStates(protocol);
   const fixed = new Map<string, ReadonlySet<string>>();
   for (const [name, act] of declaredActs(protocol)) {
@@ -537,10 +542,11 @@ const agentKey = (name: string) => name.trim().replace(/^agent:/u, "");
 const membersOf = (request: Request) =>
   new Set(listItems(request.acts[0]?.values.get("members")).map(agentKey));
 
+/** The items of a list of numbers; an item that is not one number stays as written, so it matches none. */
 const numbersOf = (value: string | undefined) =>
   (value ?? "").trim() === "none"
     ? []
-    : listItems(value).map((item) => /^\s*(\d+)/u.exec(item)?.[1] ?? item);
+    : listItems(value).map((item) => /^(\d+)$/u.exec(item)?.[1] ?? item);
 
 const canonical = (act: SentAct) =>
   JSON.stringify([act.sender, act.name, [...act.values].sort()]);
@@ -577,6 +583,18 @@ function latestPerSender(
     }
   }
   return [...latest.values()];
+}
+
+/** The numbers listed in :`q` of every act in `answers`. */
+function numbersInEvery(answers: readonly SentAct[], q: string): string[] {
+  return (
+    answers.reduce<string[] | undefined>((shared, e) => {
+      const numbers = numbersOf(e.values.get(q));
+      return shared === undefined
+        ? numbers
+        : shared.filter((n) => numbers.includes(n));
+    }, undefined) ?? []
+  );
 }
 
 interface Range {
@@ -863,24 +881,21 @@ function checkErrors(
       case "number-in-every": {
         const n = (act.values.get(check.p) ?? "").trim();
         const answers = latestPerSender(open, check.act);
-        return answers.length > 0 &&
-          answers.every((e) => numbersOf(e.values.get(check.q)).includes(n))
-          ? []
-          : [`:${check.p} is not in every ${check.act}`];
-      }
-      case "none-in-every": {
-        const answers = latestPerSender(open, check.act);
-        const common = answers.reduce<string[] | undefined>((shared, e) => {
-          const numbers = numbersOf(e.values.get(check.q));
-          return shared === undefined
-            ? numbers
-            : shared.filter((n) => numbers.includes(n));
-        }, undefined);
-        return (common ?? []).length === 0
+        const common = numbersInEvery(answers, check.q);
+        return answers.length > 0 && common.includes(n)
           ? []
           : [
-              `some number is in every ${check.act}: ${(common ?? []).join(", ")}`,
+              `:${check.p} is not in every ${check.act}; ${common.length === 0 ? "no number is" : `the numbers in every ${check.act} are ${common.join(", ")}`}`,
             ];
+      }
+      case "none-in-every": {
+        const common = numbersInEvery(
+          latestPerSender(open, check.act),
+          check.q,
+        );
+        return common.length === 0
+          ? []
+          : [`some number is in every ${check.act}: ${common.join(", ")}`];
       }
       case "matches-item": {
         const n = (act.values.get(check.q) ?? "").trim();
@@ -1053,6 +1068,138 @@ function apply(
   state.requests.get(id)?.acts.push(act);
 }
 
+/** A message as the state check reads it: its sender, recipients and text. */
+interface Post {
+  readonly text: string;
+  readonly sender: string;
+  readonly recipients: readonly string[];
+}
+
+/** The act `message` carries, or undefined when it is not one. */
+function actOf(message: Post): SentAct | undefined {
+  const parsed = parseAct(message.text);
+  return typeof parsed === "string"
+    ? undefined
+    : {
+        name: parsed.name,
+        values: new Map(parsed.values),
+        sender: message.sender,
+        recipients: message.recipients,
+      };
+}
+
+/** The requests that replaying the acts in `history` leaves. */
+function replay(
+  declarations: ReadonlyMap<string, Declaration>,
+  history: readonly Post[],
+  idParameter: string,
+): State {
+  const state: State = { requests: new Map() };
+  for (const message of history) {
+    const act = actOf(message);
+    if (act !== undefined) {
+      apply(declarations.get(act.name), act, state, idParameter);
+    }
+  }
+  return state;
+}
+
+/** Checks that read only the conversation, so they settle whether an act may be sent at all. */
+const STATE_ONLY_CHECKS: ReadonlySet<Check["kind"]> = new Set([
+  "none-in-every",
+  "no-range-in-every",
+]);
+
+/** One act a participant may send next, as the protocol text declares it. */
+export interface NextAct {
+  readonly name: string;
+  /** The act's lines from the protocol text, the open request's id filled in. */
+  readonly declaration: string;
+}
+
+/** The lines declaring act `name` in `protocol`, from "(name" to the blank line after it. */
+function declarationOf(protocol: string, name: string): string[] {
+  const lines = protocol.split("\n");
+  const start = lines.findIndex((line) =>
+    new RegExp(`^\\s+\\(${name}\\s*$`, "u").test(line),
+  );
+  if (start < 0) {
+    return [];
+  }
+  const end = lines.findIndex(
+    (line, index) => index > start && line.trim() === "",
+  );
+  return lines.slice(start, end < 0 ? undefined : end);
+}
+
+/** Whether `candidate` passes the declaration's "when" lines and its checks on the conversation alone. */
+function mayBeSent(
+  declaration: Declaration,
+  candidate: SentAct,
+  state: State,
+  idParameter: string,
+): boolean {
+  const conversationChecks = {
+    ...declaration,
+    checks: declaration.checks.filter(({ check }) =>
+      STATE_ONLY_CHECKS.has(check.kind),
+    ),
+  };
+  return (
+    matchingWhen(declaration, candidate, state, idParameter) !== undefined &&
+    checkErrors(conversationChecks, candidate, state).length === 0
+  );
+}
+
+/**
+ * The acts `sender` may send next: those of a role it can play (see
+ * protocol-form → rolesFor) with a "when" line that holds now for an act
+ * from it to a recipient not yet excluded, carrying the open request's id,
+ * and whose checks on the conversation alone pass.
+ * Guidance for an agent that does not hold the protocol is built from these.
+ * @param protocol The protocol text.
+ * @param history The admitted messages so far, oldest first.
+ * @param sender The agent the guidance is for.
+ * @returns The allowed acts, in the order the protocol declares them.
+ */
+export function allowedNext(
+  protocol: string,
+  history: readonly Post[],
+  sender: string,
+): readonly NextAct[] {
+  const declarations = declaredStates(protocol);
+  const idParameter = idParameterOf(protocol);
+  const state = replay(declarations, history, idParameter);
+  const { roles } = rolesFor(declaredActs(protocol), history, sender);
+  const id = state.open?.id;
+  const filled = (line: string) =>
+    id === undefined
+      ? line
+      : line.replace(
+          new RegExp(`^(\\s+:${idParameter}\\s+).*?(\\))?$`, "u"),
+          `$1${id}$2`,
+        );
+  return [...declaredActs(protocol)]
+    .filter(([name, act]) => {
+      const declaration = declarations.get(name);
+      const candidate: SentAct = {
+        name,
+        values: new Map([[idParameter, id ?? "\u0000"]]),
+        sender,
+        recipients: [],
+      };
+      return (
+        (roles.size === 0 || roles.has(act.role)) &&
+        declaration !== undefined &&
+        mayBeSent(declaration, candidate, state, idParameter)
+      );
+    })
+    .map(([name]) => ({
+      name,
+      declaration: declarationOf(protocol, name).map(filled).join("\n"),
+    }));
+}
+
 /**
  * Build the experimental state check for one protocol rule.
  * @param options The middleware id and the rule whose text declares the acts' states.
@@ -1063,37 +1210,21 @@ export function makeProtocolState(options: {
   readonly rule: RuleDescription & { readonly text: string };
 }): MessageMiddleware {
   const declarations = declaredStates(options.rule.text);
-  const idParameter =
-    /id in :([a-z-]+)/u.exec(options.rule.text)?.[1] ?? "request";
+  const idParameter = idParameterOf(options.rule.text);
   const { id, kind, guidance, feedback } = options.rule;
-  const actOf = (message: {
-    readonly text: string;
-    readonly sender: string;
-    readonly recipients: readonly string[];
-  }): SentAct | undefined => {
-    const parsed = parseAct(message.text);
-    return typeof parsed === "string"
-      ? undefined
-      : {
-          name: parsed.name,
-          values: new Map(parsed.values),
-          sender: message.sender,
-          recipients: message.recipients,
-        };
-  };
   return {
     id: options.id,
     revision: "protocol-state-v3",
     rules: [{ id, kind, guidance, feedback }],
     check: (input: MiddlewareInput) =>
       Effect.sync(() => {
-        const state: State = { requests: new Map() };
-        for (const entry of input.context.history) {
-          const act = entry.admission === "admitted" ? actOf(entry) : undefined;
-          if (act !== undefined) {
-            apply(declarations.get(act.name), act, state, idParameter);
-          }
-        }
+        const state = replay(
+          declarations,
+          input.context.history.filter(
+            (entry) => entry.admission === "admitted",
+          ),
+          idParameter,
+        );
         const candidate = actOf(input.event.message);
         const declaration =
           candidate === undefined
