@@ -5,6 +5,7 @@
  */
 
 import { Clock, Effect, Option, Schema } from "effect";
+import { adviceOf, learnNames } from "../../daemon/norm-spike.js";
 import { createHash, randomBytes } from "node:crypto";
 import { InboundItem } from "../../communication/collectives/inbound.js";
 import {
@@ -243,6 +244,7 @@ export const assess = Effect.fn("assessMessage")(function* (
   input: AssessmentInput,
 ) {
   const environment = captureEnvironment(liveEnvironment);
+  learnNames([environment.localAgentCard, ...input.cards]);
   const context = yield* contextFrom(environment, input.evidence, input.cards);
   const checkId = mintCheckId();
   yield* environment.store.beginFirewallAttempt({
@@ -438,10 +440,14 @@ export function mintCheckId(): string {
  * @returns The refusal with its check reference and registered feedback.
  */
 export function refusedSend(checked: CheckedMessage): FirewallSendError {
+  const advice = adviceOf(checked.result.checks);
   return new FirewallSendError({
     checkId: checked.completion.checkId,
     refusal: refusalReason(checked.result.reason),
-    feedback: checked.result.feedback,
+    feedback:
+      advice === undefined
+        ? checked.result.feedback
+        : [...checked.result.feedback, { nextAction: "revise", text: advice }],
   });
 }
 
@@ -671,10 +677,24 @@ function guidanceProjection(
   EndpointStoreError
 > {
   return Effect.gen(function* () {
-    const instructions =
+    const advice = adviceOf(result.checks);
+    const base =
       input.direction === "incoming"
         ? result.guidance
         : result.guidance.filter((entry) => "uncertain" in entry);
+    const instructions =
+      advice === undefined || input.direction !== "incoming"
+        ? base
+        : [
+            ...base,
+            {
+              middlewareId: "norms",
+              ruleId: "norms",
+              expectation: "permitted" as const,
+              subjects: [],
+              instruction: advice,
+            },
+          ];
     if (instructions.length === 0) {
       return { result };
     }

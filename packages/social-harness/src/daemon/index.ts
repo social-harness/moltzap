@@ -4,6 +4,7 @@
  */
 
 import { NodeHttpClient } from "@effect/platform-node";
+import { createHash } from "node:crypto";
 import { Data, Duration, Effect, Layer } from "effect";
 import { Router } from "../communication/router/api/client.js";
 import {
@@ -42,6 +43,7 @@ import {
   requireAdmission,
   requireAdmissionToCreate,
 } from "./registration/index.js";
+import { normSpikeEnabled, normsMiddleware } from "./norm-spike.js";
 import { spanExport } from "./telemetry.js";
 
 // safer-arch-ignore no-large-public-surface: Daemon process composition, firewall installation and the actual Registry and Router client tags with their operation values share the trusted service embedding boundary.
@@ -138,7 +140,7 @@ export namespace Daemon {
       const installation = yield* firewallInstallation(
         configuration,
         readCredential,
-        composed,
+        composed ?? spikeFirewall(),
       ).pipe(
         Effect.mapError(daemonPolicyConfigurationError),
         Effect.mapError(configurationFailure),
@@ -300,6 +302,28 @@ export namespace Daemon {
       }
     }
   }
+}
+
+/** SPIKE: the negotiated-norms firewall, when `SHARNESS_EXPERIMENT_NORMS` is set. */
+function spikeFirewall(): FirewallInstallation | undefined {
+  if (!normSpikeEnabled) {
+    return undefined;
+  }
+  return {
+    options: {
+      mode: "enforcement",
+      incoming: [normsMiddleware],
+      outgoing: [normsMiddleware],
+      settings: {
+        timeoutMilliseconds: 30_000,
+        middlewareTimeoutMilliseconds: 20_000,
+        maximumInputBytes: 4_000_000,
+        maximumResultBytes: 2_000_000,
+      },
+      facts: [],
+      codeDigest: createHash("sha256").update("norm-spike-v1").digest("hex"),
+    },
+  };
 }
 
 function networkLayer(configuration: DaemonProcessConfiguration) {

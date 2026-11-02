@@ -20,6 +20,8 @@ import type {
 import type { DaemonRegistrationState } from "../registration/index.js";
 import { CollectiveEmitError } from "../../communication/collectives/index.js";
 import { SendError } from "../../communication/conversations/errors.js";
+import { MessageAddressInput } from "../../communication/records/values.js";
+import { beforeSend, normSpikeEnabled, runOutbox } from "../norm-spike.js";
 import { Router } from "../../communication/router/index.js";
 import {
   type HostDelivery,
@@ -436,6 +438,18 @@ export const makeDaemon = (
       delivery,
       ...(input.firewall === undefined ? {} : { firewall: input.firewall }),
     };
+    if (normSpikeEnabled) {
+      yield* runOutbox(() => {
+        const identity = state.identity;
+        return identity.kind === "running"
+          ? (raw) =>
+              identity.protocol.collectives.send(
+                { to: MessageAddressInput.make(raw.to), text: raw.text },
+                "result",
+              )
+          : undefined;
+      }).pipe(Effect.forkIn(daemonScope));
+    }
     const reconciler = publishPendingMessages(environment);
     yield* delivery.runAdmission(Effect.ignore(reconciler)).pipe(
       Effect.catchAllCause((cause) =>
@@ -515,12 +529,32 @@ function daemonDelivery(
       if (state.identity.kind !== "running") {
         return undefined;
       }
-      const { collectives } = state.identity.protocol;
+      const { collectives, agentCard } = state.identity.protocol;
       return {
         ...collectives,
         send: (request, failureDelivery) =>
           checkExperimentSend(input.bootstrap.configuration, request).pipe(
-            Effect.zipRight(collectives.send(request, failureDelivery)),
+            Effect.zipRight(
+              normSpikeEnabled && "text" in request
+                ? beforeSend(request, agentCard.agentName, (raw) =>
+                    collectives.send(
+                      { to: MessageAddressInput.make(raw.to), text: raw.text },
+                      "result",
+                    ),
+                  )
+                : Effect.succeed(true),
+            ),
+            Effect.flatMap((started) =>
+              started
+                ? collectives.send(request, failureDelivery)
+                : Effect.fail(
+                    new SendError({
+                      reason: "content-invalid",
+                      detail:
+                        "no addressee accepted the norms this agent holds for the task, so the message was not sent",
+                    }),
+                  ),
+            ),
           ),
       };
     },
