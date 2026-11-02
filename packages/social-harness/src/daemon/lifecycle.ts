@@ -22,6 +22,7 @@ import {
 import { WIRE_VERSION } from "../identity/wire-version.js";
 import { packageVersion } from "../release/index.js";
 import { DaemonRuntimeError, runtimeFailure } from "./errors.js";
+import { normSpikeEnabled, readNorms } from "./norm-spike.js";
 import {
   type DaemonManagementOperations,
   makeDaemonManagementOperations,
@@ -130,6 +131,7 @@ function makeHandler(
         ...(input.firewall?.policy === undefined
           ? {}
           : { policy: input.firewall.policy }),
+        ...(normSpikeEnabled ? { norms: readNorms } : {}),
         ...daemon.deliveryOperations,
         protocolActive: daemon.protocolActive,
       }),

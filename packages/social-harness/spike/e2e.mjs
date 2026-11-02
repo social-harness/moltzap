@@ -183,6 +183,20 @@ async function inbox(name) {
   return seen;
 }
 
+async function norms(name) {
+  const result = await clients[name].callTool({
+    name: "read_norms",
+    arguments: {},
+  });
+  const page = result.structuredContent ?? {};
+  console.log(`\n=== ${name}'s read_norms: ${JSON.stringify(page.tasks)}`);
+  for (const norm of page.norms ?? []) {
+    console.log(
+      `--- norm ${norm.name} (${norm.text.length} chars): ${norm.description}`,
+    );
+  }
+}
+
 const candidates =
   "[1 Mon 10:00–10:30 | 2 Tue 11:00–11:30 | 3 Wed 13:00–13:30]";
 console.log(
@@ -195,15 +209,20 @@ await send(
 );
 await sleep(4000);
 await inbox("sarah-agent");
-await send("sarah-agent", "agent:alvarez-agent", "I can make options 1 and 3.");
+await norms("sarah-agent");
 await send(
   "sarah-agent",
-  "agent:alvarez-agent",
+  "group:alvarez-agent,john-agent,sarah-agent",
+  "I can make options 1 and 3.",
+);
+await send(
+  "sarah-agent",
+  "group:alvarez-agent,john-agent,sarah-agent",
   "(availability\n  :meeting m1\n  :free [1 | 3])",
 );
 await send(
   "john-agent",
-  "agent:alvarez-agent",
+  "group:alvarez-agent,john-agent,sarah-agent",
   "(availability\n  :meeting m1\n  :free [3])",
 );
 await sleep(4000);

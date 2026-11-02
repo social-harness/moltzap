@@ -121,6 +121,8 @@ type ClosedOperationError = Readonly<{ readonly reason: string }>;
 /** Structural daemon operations projected onto the loopback MCP boundary. */
 export interface HarnessMcpOperations extends DeliveryOperations {
   readonly policy?: FirewallPolicyOperations;
+  /** SPIKE: the negotiated norms in force, when the norm spike is on. */
+  readonly norms?: () => Effect.Effect<HarnessNormsResult>;
   /**
    * Whether the daemon's protocol is up. The catalog lists the
    * post-registration tools, and admits their calls and the inbox
@@ -144,6 +146,33 @@ export interface HarnessMcpOperations extends DeliveryOperations {
     input: ManagementReadConversationRequest,
   ) => Effect.Effect<ManagementReadConversationResult, ClosedOperationError>;
 }
+
+/**
+ * SPIKE: what `read_norms` returns. Each task the daemon negotiated names the
+ * conversation it lives in and its norms; each norm the daemon holds or
+ * adopted carries its whole BEHAVIOR.md text.
+ */
+const readNormsSchema = Schema.Struct({
+  tasks: Schema.Array(
+    Schema.Struct({
+      conversation: Schema.String,
+      task: Schema.String,
+      initiator: Schema.String,
+      members: Schema.Array(Schema.String),
+      norms: Schema.Array(Schema.String),
+    }),
+  ),
+  norms: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      description: Schema.String,
+      text: Schema.String,
+    }),
+  ),
+});
+
+/** SPIKE: the `read_norms` result. */
+export type HarnessNormsResult = typeof readNormsSchema.Type;
 
 /** Official handler with one content-free daemon notification edge. */
 export interface HarnessMcpEventHandler extends McpHttpHandler {
@@ -188,6 +217,7 @@ const registerOutput = resultSchema(managementRegisterResultSchema);
 const emptyInput = requestSchema(emptyRequestSchema);
 const statusOutput = resultSchema(managementStatusResultSchema);
 const policyReadOutput = resultSchema(policyReadSchema);
+const readNormsOutput = resultSchema(readNormsSchema);
 const policyUpdateInput = requestSchema(policyUpdateSchema);
 const policyUpdateOutput = resultSchema(policyUpdateResultSchema);
 const decisionsInput = requestSchema(firewallDecisionsRequestSchema);
@@ -419,6 +449,13 @@ const toolListings = {
     outputSchema: policyReadOutput,
     annotations: localRead,
   },
+  read_norms: {
+    description:
+      "Read the norms in force for you: each task your daemon agreed to, with the conversation it lives in, its task, initiator, members and norm names, and the whole text of every norm you hold or adopted. Every message in a task's conversation must be one act its norm allows; read the norm before you write there.",
+    inputSchema: emptyInput,
+    outputSchema: readNormsOutput,
+    annotations: localRead,
+  },
   policy_update: {
     description: `Add or remove editable English rules, such as a shared norm the agent agreed to: add takes whole rules or {"behavior": "<BEHAVIOR.md text>"}, which adds a shared norm's BEHAVIOR.md exactly as proposed; remove takes rule ids, and removing and adding one id replaces it. Fails with invalid-rule for an added id that already exists, a BEHAVIOR.md without valid YAML frontmatter between --- lines (no code fence or other text before it), or one that lacks name, description or guidance, is not kind norm, or is over 64 KiB, a removed id that does not exist, or more than ${String(MAXIMUM_EDITABLE_RULES)} rules; fixed-rule for a fixed rule's id; and not-configured when the message policy has no english block. Returns the new activeRevision once the rules are active; changes are not retroactive: admitted guidance, held items and bound sends remain unchanged.`,
     inputSchema: policyUpdateInput,
@@ -551,6 +588,7 @@ const ownerEventTools = [
 
 /** The local and owner tools that follow registration, after `status`. */
 const activeTools = [
+  "read_norms",
   "policy_read",
   "policy_update",
   "firewall_decisions",
@@ -578,7 +616,12 @@ const roleCatalogs = {
   },
   runtime: {
     inactive: [],
-    active: [SEARCH_AGENTS_TOOL, HARNESS_SEND_TOOL, HARNESS_READ_EVENT_TOOL],
+    active: [
+      SEARCH_AGENTS_TOOL,
+      HARNESS_SEND_TOOL,
+      HARNESS_READ_EVENT_TOOL,
+      "read_norms",
+    ],
   },
 } as const satisfies Readonly<Record<HarnessMcpRole, RoleCatalog>>;
 
@@ -774,6 +817,13 @@ const toolHandlers = {
       fallbackReason: "persistence-failed",
     },
   ),
+  read_norms: makeToolHandler(emptyInput, emptyRequestSchema, readNormsOutput, {
+    execute: (operations) =>
+      operations.norms?.() ?? Effect.fail({ reason: "not-configured" }),
+    label: "Norms read",
+    allowedReasons: POLICY_REASONS,
+    fallbackReason: "not-configured",
+  }),
   policy_update: makeToolHandler(
     policyUpdateInput,
     policyUpdateSchema,

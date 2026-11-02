@@ -9,11 +9,15 @@
  *   with a `propose`.
  * - A participant's daemon fetches a norm it lacks (`get-norm`, answered with
  *   `norm-text` in code), accepts by policy, and on `start` adopts the norms
- *   for the task's members. Its agent receives `start` with a notice carrying
- *   the norm, and, if its earlier message to the initiator was refused, why.
- * - During a task, every message among its members must be an act of a task
- *   norm. The sender's own firewall refuses a failing draft with what failed
- *   and the acts allowed now (repair); the receiver withholds a failing message.
+ *   for the task's members. Its agent receives `start` with a notice naming
+ *   the norm, which it reads with the `read_norms` tool, and, if its earlier
+ *   message in the conversation was refused, why.
+ * - A task is one conversation: the group or direct conversation it was
+ *   proposed in. propose, start and withdraw go there; get-norm, norm-text,
+ *   accept and reject go privately to the agent they answer, so the task's
+ *   conversation never waits on them. Every message in it must be an act of a task norm. The
+ *   sender's own firewall refuses a failing draft with what failed and the
+ *   acts allowed now (repair); the receiver withholds a failing message.
  *
  * Negotiation acts never reach an agent except `start`. State lives in memory,
  * keyed by agent names; firewall inputs carry ids, translated through the
@@ -31,6 +35,7 @@ import {
   makeProtocolForm,
   parseAct,
 } from "../firewall/evaluator/protocol-form.js";
+import type { HarnessNormsResult } from "../harness/mcp/tools.js";
 import {
   allowedNext,
   makeProtocolState,
@@ -84,13 +89,10 @@ interface Task {
   readonly answers: Map<string, "accept" | "reject">;
   readonly answered: Deferred.Deferred<void>;
   accepted: boolean;
-  /** Every admitted task message among the members, across their conversations, in order. */
-  readonly log: Array<{
-    readonly id: string;
-    readonly sender: string;
-    readonly recipients: readonly string[];
-    readonly text: string;
-  }>;
+  /** The conversation the task lives in: its participants' names, sorted. */
+  readonly conversation: string;
+  /** Where this daemon sends the task's acts: that conversation's address. */
+  readonly address: string;
 }
 
 /** A send the daemon makes on its own account. */
@@ -214,8 +216,17 @@ const listNames = (value: string | undefined) =>
     .map((item) => item.trim().replace(/^agent:/u, ""))
     .filter((item) => item !== "");
 
-const covers = (task: Task, participants: readonly string[]) =>
-  participants.every((name) => task.members.includes(name));
+/** A conversation's key: its participants' names, sorted and joined. */
+const conversationOf = (participants: readonly string[]) =>
+  [...new Set(participants)].sort().join(",");
+
+/** The address this daemon sends to in a conversation with `participants`. */
+function addressFor(participants: readonly string[], me: string): string {
+  const unique = [...new Set(participants)].sort();
+  return unique.length > 2
+    ? `group:${unique.join(",")}`
+    : `agent:${unique.find((name) => name !== me) ?? me}`;
+}
 
 function taskFor(
   participants: readonly string[],
@@ -223,7 +234,11 @@ function taskFor(
 ): Task | undefined {
   return [...state.tasks]
     .reverse()
-    .find((task) => task.status === status && covers(task, participants));
+    .find(
+      (task) =>
+        task.status === status &&
+        task.conversation === conversationOf(participants),
+    );
 }
 
 function newTask(
@@ -232,6 +247,7 @@ function newTask(
   members: string[],
   norms: string[],
   role: Task["role"],
+  me: string,
 ): Task {
   const created: Task = {
     task,
@@ -243,7 +259,8 @@ function newTask(
     answers: new Map(),
     answered: Effect.runSync(Deferred.make<void>()),
     accepted: false,
-    log: [],
+    conversation: conversationOf(members),
+    address: addressFor(members, me),
   };
   state.tasks.push(created);
   return created;
@@ -322,28 +339,6 @@ function normFor(task: Task, text: string): Norm | undefined {
   return norms[0];
 }
 
-/**
- * The input as the task sees it: its history is the task's own log across
- * the members' conversations (a group call and private answers), not the one
- * conversation the firewall captured.
- */
-function inTask(task: Task, input: MiddlewareInput): MiddlewareInput {
-  return {
-    ...input,
-    context: {
-      ...input.context,
-      history: task.log.map((entry) => ({
-        id: entry.id,
-        sender: entry.sender,
-        recipients: entry.recipients as [string, ...string[]],
-        text: entry.text,
-        visibility: "runtime" as const,
-        admission: "admitted" as const,
-      })),
-    },
-  } as MiddlewareInput;
-}
-
 function historyPosts(input: MiddlewareInput) {
   return input.context.history
     .filter((entry) => entry.admission === "admitted")
@@ -352,19 +347,6 @@ function historyPosts(input: MiddlewareInput) {
       recipients: entry.recipients,
       text: entry.text,
     }));
-}
-
-/** Record a message the task admitted, once. */
-function logged(task: Task, input: MiddlewareInput): void {
-  const message = input.event.message;
-  if (!task.log.some((entry) => entry.id === message.id)) {
-    task.log.push({
-      id: message.id,
-      sender: message.sender,
-      recipients: message.recipients,
-      text: message.text,
-    });
-  }
 }
 
 function repair(norm: Norm, input: MiddlewareInput, errors: readonly string[]) {
@@ -397,9 +379,9 @@ function notice(task: Task, me: string): string {
     .map((name) => state.norms.get(name))
     .filter((norm) => norm !== undefined);
   const lines = [
-    `Your messaging daemon accepted, for you, the task "${task.task}" proposed by agent:${task.initiator}. Every message among ${agents(task.members)} in this task must follow the norm ${norms.map((n) => n.name).join(", ")}. Read it below before you reply.`,
+    `Your messaging daemon accepted, for you, the task "${task.task}" proposed by agent:${task.initiator}. Every message among ${agents(task.members)} in this task must follow the norm ${norms.map((n) => n.name).join(", ")}. Read it with the read_norms tool before you reply.`,
   ];
-  const earlier = state.lastSent.get(task.initiator);
+  const earlier = state.lastSent.get(task.conversation);
   const first = norms[0];
   if (earlier !== undefined && first !== undefined) {
     const parsed = parseAct(earlier);
@@ -408,14 +390,35 @@ function notice(task: Task, me: string): string {
       !first.protocol.includes(`(${parsed.name}`)
     ) {
       lines.push(
-        `Your earlier message to agent:${task.initiator} was not delivered: it is not a message the norm allows (${typeof parsed === "string" ? parsed : `unknown act ${parsed.name}`}). Send it again in the norm's form.\n\n${guidanceText(first.protocol, allowedNext(first.protocol, [], me))}`,
+        `Your earlier message in this conversation was not delivered: it is not a message the norm allows (${typeof parsed === "string" ? parsed : `unknown act ${parsed.name}`}). Send it again in the norm's form.\n\n${guidanceText(first.protocol, allowedNext(first.protocol, [], me))}`,
       );
     }
   }
-  for (const norm of norms) {
-    lines.push(`The norm ${norm.name}:\n${norm.document}`);
-  }
   return lines.join("\n\n");
+}
+
+/**
+ * The norms in force, for the `read_norms` tool: the started tasks and every
+ * norm held or adopted, with its whole text.
+ * @returns The tasks and norms.
+ */
+export function readNorms(): Effect.Effect<HarnessNormsResult> {
+  return Effect.sync(() => ({
+    tasks: state.tasks
+      .filter((task) => task.status === "started")
+      .map((task) => ({
+        conversation: task.address,
+        task: task.task,
+        initiator: `agent:${task.initiator}`,
+        members: task.members.map((name) => `agent:${name}`),
+        norms: task.norms,
+      })),
+    norms: [...state.norms.values()].map((norm) => ({
+      name: norm.name,
+      description: norm.description,
+      text: norm.document,
+    })),
+  }));
 }
 
 /** Decide on a proposal once every norm it names is known. */
@@ -447,6 +450,7 @@ const negotiate = Effect.fn("normSpike.negotiate")(function* (
 ) {
   const me = input.context.agentId;
   const sender = input.event.message.sender;
+  const here = [sender, ...input.event.message.recipients];
   const taskId = values.get("task") ?? "";
   const task = state.tasks.find((t) => t.task === taskId);
   switch (name) {
@@ -458,9 +462,10 @@ const negotiate = Effect.fn("normSpike.negotiate")(function* (
       const created = newTask(
         taskId,
         sender,
-        [sender, ...members],
+        here,
         listNames(values.get("norms")),
         "participant",
+        me,
       );
       for (const norm of created.norms.filter((n) => !state.norms.has(n))) {
         yield* enqueue({
@@ -573,16 +578,19 @@ export const normsMiddleware: MessageMiddleware = {
             taskFor(participants, "proposed") === undefined
           ) {
             const stranger = newTask(
-              `${[...state.held].join(" and ")} with agent:${message.sender}`,
+              [...state.held]
+                .map((name) => state.norms.get(name)?.description ?? name)
+                .join("; "),
               me,
-              [me, message.sender],
+              participants,
               [...state.held],
               "initiator",
+              me,
             );
             yield* enqueue({
               kind: "initiate",
               task: stranger,
-              to: `agent:${message.sender}`,
+              to: stranger.address,
             });
           }
           state.seen.add(message.id);
@@ -590,21 +598,12 @@ export const normsMiddleware: MessageMiddleware = {
         }
         return pass();
       }
-      if (direction === "incoming" && task.role === "participant") {
-        // A participant sees only its own part of the task (the others' private
-        // answers never reach it), so it cannot judge the initiator's acts; the
-        // initiator checked them before sending.
-        logged(task, input);
-        return pass();
-      }
-      const scoped = inTask(task, input);
-      const { norm, errors } = yield* checkUnder(task, scoped);
+      const { norm, errors } = yield* checkUnder(task, input);
       if (norm === undefined || errors.length === 0) {
-        logged(task, input);
         return pass();
       }
       return direction === "outgoing"
-        ? refuse("outgoing", repair(norm, scoped, errors))
+        ? refuse("outgoing", repair(norm, input, errors))
         : refuse("incoming");
     }).pipe(Effect.orDie),
 };
@@ -673,9 +672,7 @@ export const beforeSend = Effect.fn("normSpike.beforeSend")(function* (
     return true;
   }
   const others = addressees(input.to, me);
-  for (const name of others) {
-    state.lastSent.set(name, text);
-  }
+  state.lastSent.set(conversationOf([me, ...others]), text);
   const parsed = parseAct(text);
   if (
     state.held.size === 0 ||
@@ -702,6 +699,7 @@ export const beforeSend = Effect.fn("normSpike.beforeSend")(function* (
     participants,
     [...state.held],
     "initiator",
+    me,
   );
   return yield* initiate(task, input.to, send);
 });
