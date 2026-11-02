@@ -86,13 +86,18 @@ export const noHistoryExport: HistoryExportPort = Object.freeze({
  * agent. An experiment must not die because its transcript file did, and the
  * truncation is explicit in the file rather than silent.
  *
- * The file is created on the first write.
+ * The file is created, empty, when the export opens, so an agent that never
+ * sends or receives still yields its transcript file instead of failing a
+ * harvest that requires it.
  */
 export function makeHistoryExport(
   path: string,
 ): Effect.Effect<HistoryExportPort, never, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
+    yield* fileSystem
+      .writeFileString(path, "", { flag: "a" })
+      .pipe(Effect.ignore);
     const gate = yield* Effect.makeSemaphore(1);
     let enabled = true;
     const append = (record: HistoryExportRecord) =>

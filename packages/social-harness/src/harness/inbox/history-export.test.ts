@@ -58,8 +58,9 @@ function decodeFile(text: string): readonly HistoryExportRecord[] {
 }
 
 /**
- * A file system whose first append fails and whose later appends are kept,
- * so the one failure line the export writes afterwards can be observed.
+ * A file system whose first append of a record fails and whose later appends
+ * are kept, so the one failure line the export writes afterwards can be
+ * observed. The empty append that creates the file on open succeeds.
  * @param writes Where every append that the file system accepted lands.
  * @returns The layer, failing exactly once.
  */
@@ -68,6 +69,9 @@ function failingOnce(writes: string[]) {
   return FileSystem.layerNoop({
     writeFileString: (...[, data]) =>
       Effect.suspend(() => {
+        if (data === "") {
+          return Effect.void;
+        }
         if (failuresLeft > 0) {
           failuresLeft -= 1;
           return Effect.fail(
@@ -120,8 +124,24 @@ const stopsAfterOneFailureLine = () =>
     ]);
   });
 
+const createsEmptyFileOnOpen = () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const directory = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "sharness-history-export-",
+    });
+    const path = join(directory, "history.ndjson");
+    yield* makeHistoryExport(path);
+
+    expect(yield* fileSystem.readFileString(path)).toBe("");
+  }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
+
 describe("history export", () => {
   it("appends one decodable line per record", appendsDecodableLines);
+  it(
+    "creates an empty file when it opens, before any record",
+    createsEmptyFileOnOpen,
+  );
   it(
     "records one failure line, then stops exporting and keeps serving",
     stopsAfterOneFailureLine,
