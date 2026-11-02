@@ -269,6 +269,19 @@ function newTask(
 const enqueue = (job: Job) => Queue.offer(state.outbox, job);
 
 /**
+ * One line of the spike's record in the daemon log, `norms {json}`: every
+ * send the daemon makes itself and every check of a message, with its text,
+ * so a run's negotiation and refusals can be read from the harvested log.
+ * @param record The fields to record.
+ * @returns The logging effect.
+ */
+function record(record: Readonly<Record<string, unknown>>) {
+  return Effect.logInfo(
+    `norms ${JSON.stringify({ at: new Date().toISOString(), self: state.self, ...record })}`,
+  );
+}
+
+/**
  * The raw send, recording each text as the daemon's own so the outgoing
  * check passes it as a negotiation act. An agent's message that only looks
  * like one is checked under its task's norm like any other.
@@ -279,7 +292,11 @@ function own(send: RawSend): RawSend {
   return (input) =>
     Effect.suspend(() => {
       state.own.set(input.text, (state.own.get(input.text) ?? 0) + 1);
-      return send(input);
+      return record({
+        event: "daemon-send",
+        to: input.to,
+        text: input.text,
+      }).pipe(Effect.andThen(send(input)));
     });
 }
 
@@ -586,68 +603,84 @@ export const normsMiddleware: MessageMiddleware = {
     },
   ],
   check: (raw) =>
-    Effect.gen(function* () {
-      const input = named(raw);
-      const direction = input.event.direction;
-      const message = input.event.message;
-      const me = input.context.agentId;
-      state.self = me;
-      const parsed = parseAct(message.text);
-      if (direction === "outgoing" && ownSend(message.text)) {
-        return pass();
-      }
-      if (
-        direction === "incoming" &&
-        typeof parsed !== "string" &&
-        NEGOTIATION.has(parsed.name)
-      ) {
-        const first = !state.seen.has(message.id);
-        state.seen.add(message.id);
-        const advice = first
-          ? yield* negotiate(input, parsed.name, new Map(parsed.values))
-          : undefined;
-        return parsed.name === "start" ? pass(advice) : refuse("incoming");
-      }
-      const participants = [
-        ...new Set([message.sender, ...message.recipients]),
-      ];
-      const task = taskFor(participants, "started");
-      if (task === undefined) {
-        if (direction === "incoming" && state.held.size > 0) {
-          if (
-            !state.seen.has(message.id) &&
-            taskFor(participants, "proposed") === undefined
-          ) {
-            const stranger = newTask(
-              [...state.held]
-                .map((name) => state.norms.get(name)?.description ?? name)
-                .join("; "),
-              me,
-              participants,
-              [...state.held],
-              "initiator",
-              me,
-            );
-            yield* enqueue({
-              kind: "initiate",
-              task: stranger,
-              to: stranger.address,
-            });
-          }
-          state.seen.add(message.id);
-          return refuse("incoming");
-        }
-        return pass();
-      }
-      const { norm, errors } = yield* checkUnder(task, input);
-      if (norm === undefined || errors.length === 0) {
-        return pass();
-      }
-      return direction === "outgoing"
-        ? refuse("outgoing", repair(norm, input, errors))
-        : refuse("incoming");
-    }).pipe(Effect.orDie),
+    decide(raw).pipe(
+      Effect.tap((result) => {
+        const input = named(raw);
+        return record({
+          event: "check",
+          direction: input.event.direction,
+          from: input.event.message.sender,
+          to: input.event.message.recipients,
+          text: input.event.message.text,
+          outcome: result.findings[0]?.outcome,
+          advice: result.trace?.data,
+        });
+      }),
+    ),
 };
+
+/** The norms decision for one message, before it is recorded. */
+function decide(raw: MiddlewareInput) {
+  return Effect.gen(function* () {
+    const input = named(raw);
+    const direction = input.event.direction;
+    const message = input.event.message;
+    const me = input.context.agentId;
+    state.self = me;
+    const parsed = parseAct(message.text);
+    if (direction === "outgoing" && ownSend(message.text)) {
+      return pass();
+    }
+    if (
+      direction === "incoming" &&
+      typeof parsed !== "string" &&
+      NEGOTIATION.has(parsed.name)
+    ) {
+      const first = !state.seen.has(message.id);
+      state.seen.add(message.id);
+      const advice = first
+        ? yield* negotiate(input, parsed.name, new Map(parsed.values))
+        : undefined;
+      return parsed.name === "start" ? pass(advice) : refuse("incoming");
+    }
+    const participants = [...new Set([message.sender, ...message.recipients])];
+    const task = taskFor(participants, "started");
+    if (task === undefined) {
+      if (direction === "incoming" && state.held.size > 0) {
+        if (
+          !state.seen.has(message.id) &&
+          taskFor(participants, "proposed") === undefined
+        ) {
+          const stranger = newTask(
+            [...state.held]
+              .map((name) => state.norms.get(name)?.description ?? name)
+              .join("; "),
+            me,
+            participants,
+            [...state.held],
+            "initiator",
+            me,
+          );
+          yield* enqueue({
+            kind: "initiate",
+            task: stranger,
+            to: stranger.address,
+          });
+        }
+        state.seen.add(message.id);
+        return refuse("incoming");
+      }
+      return pass();
+    }
+    const { norm, errors } = yield* checkUnder(task, input);
+    if (norm === undefined || errors.length === 0) {
+      return pass();
+    }
+    return direction === "outgoing"
+      ? refuse("outgoing", repair(norm, input, errors))
+      : refuse("incoming");
+  }).pipe(Effect.orDie);
+}
 
 /** Propose, wait for answers, then start or withdraw; returns whether the task started. */
 const initiate = Effect.fn("normSpike.initiate")(function* (
