@@ -210,6 +210,10 @@ await Promise.all(
   ),
 );
 await sleep(8000);
+console.log(
+  "\n######## an agent's act named like a negotiation act is checked under the norm",
+);
+await send("alvarez-agent", group, "(propose\n  :meeting m1\n  :slot 3)");
 for (const name of everyone) {
   const seen = await inbox(name);
   console.log(

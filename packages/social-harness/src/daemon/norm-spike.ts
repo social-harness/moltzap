@@ -148,6 +148,7 @@ const state = {
   tasks: [] as Task[],
   seen: new Set<string>(),
   lastSent: new Map<string, string>(),
+  own: new Map<string, number>(),
   outbox: Effect.runSync(Queue.unbounded<Job>()),
 };
 
@@ -267,6 +268,35 @@ function newTask(
 }
 
 const enqueue = (job: Job) => Queue.offer(state.outbox, job);
+
+/**
+ * The raw send, recording each text as the daemon's own so the outgoing
+ * check passes it as a negotiation act. An agent's message that only looks
+ * like one is checked under its task's norm like any other.
+ * @param send The raw send.
+ * @returns The recording send.
+ */
+function own(send: RawSend): RawSend {
+  return (input) =>
+    Effect.suspend(() => {
+      state.own.set(input.text, (state.own.get(input.text) ?? 0) + 1);
+      return send(input);
+    });
+}
+
+/** Whether `text` is a send the daemon recorded as its own; consumes it. */
+function ownSend(text: string): boolean {
+  const count = state.own.get(text) ?? 0;
+  if (count === 0) {
+    return false;
+  }
+  if (count === 1) {
+    state.own.delete(text);
+  } else {
+    state.own.set(text, count - 1);
+  }
+  return true;
+}
 
 const pass = (advice?: string): MiddlewareResult => ({
   findings: [{ ruleId: "norms", outcome: "pass" }],
@@ -556,10 +586,14 @@ export const normsMiddleware: MessageMiddleware = {
       const me = input.context.agentId;
       state.self = me;
       const parsed = parseAct(message.text);
-      if (typeof parsed !== "string" && NEGOTIATION.has(parsed.name)) {
-        if (direction === "outgoing") {
-          return pass();
-        }
+      if (direction === "outgoing" && ownSend(message.text)) {
+        return pass();
+      }
+      if (
+        direction === "incoming" &&
+        typeof parsed !== "string" &&
+        NEGOTIATION.has(parsed.name)
+      ) {
         const first = !state.seen.has(message.id);
         state.seen.add(message.id);
         const advice = first
@@ -673,11 +707,7 @@ export const beforeSend = Effect.fn("normSpike.beforeSend")(function* (
   }
   const others = addressees(input.to, me);
   state.lastSent.set(conversationOf([me, ...others]), text);
-  const parsed = parseAct(text);
-  if (
-    state.held.size === 0 ||
-    (typeof parsed !== "string" && NEGOTIATION.has(parsed.name))
-  ) {
+  if (state.held.size === 0) {
     return true;
   }
   const participants = [me, ...others];
@@ -701,7 +731,7 @@ export const beforeSend = Effect.fn("normSpike.beforeSend")(function* (
     "initiator",
     me,
   );
-  return yield* initiate(task, input.to, send);
+  return yield* initiate(task, input.to, own(send));
 });
 
 /** Drains the daemon's own sends: replies, and stranger negotiations, forked. */
@@ -710,11 +740,12 @@ export const runOutbox = Effect.fn("normSpike.runOutbox")(function* (
 ) {
   for (;;) {
     const job = yield* Queue.take(state.outbox);
-    let send = sender();
-    while (send === undefined) {
+    let raw = sender();
+    while (raw === undefined) {
       yield* Effect.sleep("1 second");
-      send = sender();
+      raw = sender();
     }
+    const send = own(raw);
     if (job.kind === "send") {
       yield* send({ to: job.to, text: job.text }).pipe(
         Effect.tapError((error) =>
