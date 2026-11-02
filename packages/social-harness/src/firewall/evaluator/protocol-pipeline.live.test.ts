@@ -51,7 +51,12 @@ interface Case {
     readonly doc: string;
     readonly rule: string;
   }>;
-  readonly responder?: "answer" | "pointer" | "repair" | "registered";
+  readonly responder?:
+    | "answer"
+    | "pointer"
+    | "repair"
+    | "repair-code"
+    | "registered";
   readonly history: readonly Post[];
   readonly message: Post;
 }
@@ -84,14 +89,15 @@ const TIMING = /may not be sent at this point/u;
  * now, in code; for a form or value mistake, also the corrected message from
  * the quarantined model.
  */
-function repairResponder(model: Responder): Responder {
+function repairResponder(model?: Responder): Responder {
   return {
     respond: (input) => {
       const code = [
         `Your draft was not sent. What the checks found: ${input.reasons.join("; ")}.`,
         guidanceText(input.protocol, input.allowed),
       ].join("\n\n");
-      return input.reasons.every((reason) => TIMING.test(reason))
+      return model === undefined ||
+        input.reasons.every((reason) => TIMING.test(reason))
         ? Effect.succeed(code)
         : model
             .respond(input)
@@ -217,7 +223,7 @@ live(
           readonly feedback: string;
           readonly text: string;
         },
-        mode: "answer" | "pointer" | "repair" | "registered",
+        mode: "answer" | "pointer" | "repair" | "repair-code" | "registered",
       ) {
         const protocol = readFileSync(protocolFile, "utf8").trim();
         const rule = (id: string) =>
@@ -264,15 +270,17 @@ live(
               ? pointerResponder(doc.name)
               : mode === "repair"
                 ? repairResponder(responder)
-                : mode === "registered"
-                  ? {
-                      respond: () =>
-                        Effect.succeed(
-                          doc.feedback ||
-                            `This message does not follow the ${doc.name} protocol.`,
-                        ),
-                    }
-                  : responder,
+                : mode === "repair-code"
+                  ? repairResponder()
+                  : mode === "registered"
+                    ? {
+                        respond: () =>
+                          Effect.succeed(
+                            doc.feedback ||
+                              `This message does not follow the ${doc.name} protocol.`,
+                          ),
+                      }
+                    : responder,
         });
         const norm: HeldNorm = { ...doc, protocol, judge: pipeline.judge };
         return norm;
