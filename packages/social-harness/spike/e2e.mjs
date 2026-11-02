@@ -188,13 +188,11 @@ async function norms(name) {
     name: "read_norms",
     arguments: {},
   });
-  const page = result.structuredContent ?? {};
-  console.log(`\n=== ${name}'s read_norms: ${JSON.stringify(page.tasks)}`);
-  for (const norm of page.norms ?? []) {
-    console.log(
-      `--- norm ${norm.name} (${norm.text.length} chars): ${norm.description}`,
-    );
-  }
+  const text = result.content?.[0]?.text ?? "";
+  console.log(
+    `\n=== ${name}'s read_norms: ${text.length} chars, structured ${result.structuredContent !== undefined}`,
+  );
+  console.log(text.split("\n").slice(0, 4).join("\n"));
 }
 
 const candidates =

@@ -35,7 +35,6 @@ import {
   makeProtocolForm,
   parseAct,
 } from "../firewall/evaluator/protocol-form.js";
-import type { HarnessNormsResult } from "../harness/mcp/tools.js";
 import {
   allowedNext,
   makeProtocolState,
@@ -428,27 +427,35 @@ function notice(task: Task, me: string): string {
 }
 
 /**
- * The norms in force, for the `read_norms` tool: the started tasks and every
- * norm held or adopted, with its whole text.
- * @returns The tasks and norms.
+ * The norms in force, for the `read_norms` tool, as plain text: the started
+ * tasks, then each norm held or adopted, once, without its frontmatter. The
+ * host shows a tool's structured content beside its text and again in its
+ * details, so a structured result put the norm in front of the model three
+ * times, each JSON-escaped.
+ * @returns The text the tool returns.
  */
-export function readNorms(): Effect.Effect<HarnessNormsResult> {
-  return Effect.sync(() => ({
-    tasks: state.tasks
-      .filter((task) => task.status === "started")
-      .map((task) => ({
-        conversation: task.address,
-        task: task.task,
-        initiator: `agent:${task.initiator}`,
-        members: task.members.map((name) => `agent:${name}`),
-        norms: task.norms,
-      })),
-    norms: [...state.norms.values()].map((norm) => ({
-      name: norm.name,
-      description: norm.description,
-      text: norm.document,
-    })),
-  }));
+export function readNorms(): Effect.Effect<string> {
+  return Effect.sync(() => {
+    const tasks = state.tasks.filter((task) => task.status === "started");
+    const lines = [
+      tasks.length === 0
+        ? "You are in no negotiated task."
+        : "Tasks your messaging daemon agreed to. Every message in a task's conversation must be one act its norm allows.",
+      ...tasks.map(
+        (task) =>
+          `- In ${task.address}: "${task.task}", proposed by agent:${task.initiator}; members ${agents(task.members)}; norms ${task.norms.join(", ")}.`,
+      ),
+    ];
+    for (const norm of state.norms.values()) {
+      lines.push(
+        "",
+        `# Norm ${norm.name}: ${norm.description}`,
+        "",
+        norm.document.replace(/^---\n[\s\S]*?\n---\n/u, "").trim(),
+      );
+    }
+    return lines.join("\n");
+  });
 }
 
 /** Decide on a proposal once every norm it names is known. */
