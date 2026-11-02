@@ -238,6 +238,11 @@ export const contextFrom = Effect.fn("firewallContext")(function* (
  * the chain decides; enforcement admits only an allowed message. The chain
  * is marked as `firewall-check` work under its direction, since its stages
  * export only as each ends and its bound is configurable.
+ *
+ * SPIKE: an incoming check ignores this agent's own uncertified send in the
+ * conversation. Otherwise a peer's message that arrives while the agent's own
+ * reply is in flight holds, and an incoming hold is final, so every member
+ * replying at once loses the others' replies.
  */
 export const assess = Effect.fn("assessMessage")(function* (
   liveEnvironment: FirewallEnvironment,
@@ -245,7 +250,13 @@ export const assess = Effect.fn("assessMessage")(function* (
 ) {
   const environment = captureEnvironment(liveEnvironment);
   learnNames([environment.localAgentCard, ...input.cards]);
-  const context = yield* contextFrom(environment, input.evidence, input.cards);
+  const context = yield* contextFrom(
+    environment,
+    input.direction === "incoming"
+      ? { ...input.evidence, pendingOutgoing: false }
+      : input.evidence,
+    input.cards,
+  );
   const checkId = mintCheckId();
   yield* environment.store.beginFirewallAttempt({
     checkId,
