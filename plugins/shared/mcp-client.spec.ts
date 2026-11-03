@@ -1,4 +1,4 @@
-/** @file A host's accepted callback controls acknowledgment on the shared MCP connection. */
+/** @file Inbox reads record delivery before native host callbacks run. */
 import { Client, ProtocolError } from "@modelcontextprotocol/client";
 import {
   Deferred,
@@ -63,7 +63,7 @@ const inboxFixture = Effect.gen(function* () {
 
 describe("shared inbox reception", () => {
   it.each(["poll", "push", "native"] as const)(
-    "acknowledges after host acceptance over %s",
+    "records delivery before host acceptance over %s",
     (receiveMode) =>
       Effect.gen(function* () {
         const fixture = yield* inboxFixture;
@@ -90,7 +90,7 @@ describe("shared inbox reception", () => {
           );
         }).pipe(Effect.forkScoped);
         yield* Deferred.await(entered);
-        expect(yield* Ref.get(fixture.acknowledged)).toBe(0);
+        expect(yield* Ref.get(fixture.acknowledged)).toBe(1);
         yield* Deferred.succeed(accepted, undefined);
         yield* Deferred.await(fixture.receipt);
         yield* Fiber.interrupt(receiver);
@@ -98,7 +98,7 @@ describe("shared inbox reception", () => {
       }).pipe(Effect.scoped, Effect.runPromise),
   );
 
-  it("leaves an unsuccessful callback pending", () =>
+  it("keeps a failed callback from undoing delivery", () =>
     Effect.gen(function* () {
       const fixture = yield* inboxFixture;
       const connection = yield* acquireMcpConnection(
@@ -110,7 +110,7 @@ describe("shared inbox reception", () => {
           .consumeInbox({}, () => Effect.fail("host-refused"))
           .pipe(Effect.flip),
       ).toBe("host-refused");
-      expect(yield* Ref.get(fixture.acknowledged)).toBe(0);
+      expect(yield* Ref.get(fixture.acknowledged)).toBe(1);
     }).pipe(Effect.scoped, Effect.runPromise));
 
   it("interrupts a pending callback when its connection closes", () =>
@@ -135,7 +135,7 @@ describe("shared inbox reception", () => {
       yield* Scope.close(scope, Exit.void);
       yield* Deferred.await(interrupted);
       yield* Fiber.await(receiver);
-      expect(yield* Ref.get(fixture.acknowledged)).toBe(0);
+      expect(yield* Ref.get(fixture.acknowledged)).toBe(1);
     }).pipe(Effect.scoped, Effect.runPromise));
 });
 
@@ -252,14 +252,6 @@ describe("management failures", () => {
       },
       data: { reason: "unknown-event" },
       tag: "InboxError",
-    },
-    {
-      request: {
-        name: "acknowledge_delivery",
-        arguments: { deliveryToken: entry.deliveryToken },
-      },
-      data: { reason: "unknown-delivery" },
-      tag: "DeliveryAcknowledgeError",
     },
     {
       request: { name: "search_conversations", arguments: {} },

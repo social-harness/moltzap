@@ -30,6 +30,7 @@ import {
   ToolAnnotations,
 } from "../../vendor/effect-mcp/McpSchema.js";
 import { makeHttpApp, McpServer } from "../../vendor/effect-mcp/McpServer.js";
+import { InboxError } from "../inbox.js";
 import { validationIssues } from "../message-format.js";
 import { SocialHarness } from "../social-harness.js";
 import {
@@ -124,7 +125,19 @@ function installMessageTools(
     yield* bind(server, {
       name: "read_inbox",
       definition: toolDefinitions.read_inbox,
-      execute: harness.listInbox,
+      execute: Effect.fn(function* (request) {
+        const page = yield* harness.listInbox(request);
+        for (const item of page.items) {
+          yield* harness
+            .acknowledgeDelivery(item.deliveryToken)
+            .pipe(
+              Effect.catchTag("DeliveryAcknowledgeError", () =>
+                Effect.fail(new InboxError({ reason: "persistence-failed" })),
+              ),
+            );
+        }
+        return page;
+      }),
       failure: reasonError,
       visible: registered,
     });
@@ -132,14 +145,6 @@ function installMessageTools(
       name: "read_event",
       definition: toolDefinitions.read_event,
       execute: ({ eventId }) => harness.getInboxEvent(eventId),
-      failure: reasonError,
-      visible: registered,
-    });
-    yield* bind(server, {
-      name: "acknowledge_delivery",
-      definition: toolDefinitions.acknowledge_delivery,
-      execute: ({ deliveryToken }) =>
-        harness.acknowledgeDelivery(deliveryToken).pipe(Effect.as({})),
       failure: reasonError,
       visible: registered,
     });
