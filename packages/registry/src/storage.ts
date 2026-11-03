@@ -3,27 +3,25 @@
 import type { SqlError } from "@effect/sql/SqlError";
 import { SqlClient } from "@effect/sql/SqlClient";
 import {
-  AgentCard,
   AgentId,
-  type AgentId as AgentIdValue,
+  AgentIdentityCard,
+  type AgentPublicKey,
   type AgentSigningAuthority,
-  type Ed25519PublicKey,
-  type VerifiedAgentCard,
+  type VerifiedAgentIdentityCard,
 } from "@moltzap/social-harness";
 import {
-  agentCardSigning,
+  agentIdentityCardSigning,
   httpErrors,
   registryContract,
+  wireVersions,
 } from "@moltzap/social-harness/internal";
 import { Clock, Data, Effect, Schema } from "effect";
 import { randomBytes } from "node:crypto";
-import { AgentCardIssuedAt, issueAgentCard } from "./issuance.js";
-import { createRegistrySchema } from "./schema.js";
 
 /* eslint-disable @typescript-eslint/naming-convention -- Closed HTTP error constructors retain their class names when bound from the service capability. */
 const { InternalServerError, UnavailableError } = httpErrors;
 /* eslint-enable @typescript-eslint/naming-convention -- Restore variable naming after binding error constructors. */
-const ed25519PublicKeyThumbprintUri = agentCardSigning.publicKeyId;
+const ed25519PublicKeyThumbprintUri = agentIdentityCardSigning.publicKeyId;
 
 /** Storage initialization failed before the Registry became ready. */
 export class RegistryStorageInitializationError extends Data.TaggedError(
@@ -32,6 +30,37 @@ export class RegistryStorageInitializationError extends Data.TaggedError(
   readonly reason: "incompatible" | "signer-mismatch" | "unavailable";
 }> {}
 
+/** Created atomically with the format marker and signer binding in an empty namespace. */
+const createRegistrySchema = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql.unsafe(`
+    CREATE TABLE sharness_registry_metadata (
+      singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+      signer_thumbprint text NOT NULL
+    );
+    CREATE TABLE sharness_registry_agents (
+      agent_id text PRIMARY KEY,
+      principal_id text NOT NULL,
+      agent_name text NOT NULL UNIQUE,
+      public_key_thumbprint text NOT NULL UNIQUE,
+      agent_card_bytes bytea NOT NULL
+    );
+    CREATE TABLE sharness_registry_operations (
+      public_key_thumbprint text NOT NULL,
+      operation_id text NOT NULL,
+      request_bytes bytea NOT NULL,
+      result_bytes bytea NOT NULL,
+      PRIMARY KEY (public_key_thumbprint, operation_id)
+    );
+    CREATE TABLE sharness_registry_nonces (
+      nonce text PRIMARY KEY,
+      expires_at bigint NOT NULL
+    );
+    CREATE INDEX sharness_registry_nonces_expiry
+      ON sharness_registry_nonces (expires_at);
+  `);
+}).pipe(Effect.withSpan("createRegistrySchema"));
+
 const LEDGER_TABLE = "sharness_registry_ledger_20261029_3";
 
 type StorageError =
@@ -39,7 +68,7 @@ type StorageError =
   | InstanceType<typeof httpErrors.InternalServerError>;
 type StorageInput = Readonly<{
   sql: SqlClient;
-  registrySignerPublicKey: Ed25519PublicKey;
+  registrySignerPublicKey: AgentPublicKey;
   operationTimeoutMilliseconds: number;
 }>;
 type RegisterInput = Readonly<{
@@ -76,16 +105,12 @@ export interface RegistryStorage {
 }
 
 /**
- * Initializes an empty schema or validates the current format and its signer.
- *
- * @param input Initialization dependencies.
- * @param input.sql Exclusive SQL capability for this Registry process.
- * @param input.registrySignerPublicKey Pinned Registry verification key.
- * @returns An effect that completes only after storage is ready.
+ * Requires exclusive use of the SQL client during initialization. An occupied
+ * namespace must have the current format and the configured Registry signer.
  */
 export function initializeRegistryStorage(input: {
   readonly sql: SqlClient;
-  readonly registrySignerPublicKey: Ed25519PublicKey;
+  readonly registrySignerPublicKey: AgentPublicKey;
 }): Effect.Effect<void, RegistryStorageInitializationError> {
   return runStorageInitialization(input).pipe(
     Effect.mapError((error) =>
@@ -103,13 +128,8 @@ export function initializeRegistryStorage(input: {
 }
 
 /**
- * Creates durable Registry operations over one initialized SQL client.
- *
- * @param input Storage dependencies and operation bounds.
- * @param input.sql Initialized SQL capability.
- * @param input.registrySignerPublicKey Pinned Registry verification key.
- * @param input.operationTimeoutMilliseconds Complete SQL operation deadline.
- * @returns Durable Registry operations.
+ * Requires an initialized SQL client and its pinned Registry verification key.
+ * The configured deadline covers each complete storage operation.
  */
 export function makeRegistryStorage(input: StorageInput): RegistryStorage {
   return Object.freeze({
@@ -206,19 +226,20 @@ const withStorageDeadline = <A>(
 
 const decodeStoredCard = (
   bytes: Uint8Array,
-  registrySignerPublicKey: Ed25519PublicKey,
+  registrySignerPublicKey: AgentPublicKey,
 ): Effect.Effect<
-  VerifiedAgentCard,
+  VerifiedAgentIdentityCard,
   InstanceType<typeof httpErrors.InternalServerError>
 > =>
   internalFailure(
-    registryContract.registryAgentCardCodec
-      .decode(bytes)
-      .pipe(
-        Effect.flatMap((agentCard) =>
-          AgentCard.verify({ agentCard, registrySignerPublicKey }),
-        ),
+    registryContract.registryIdentityCardCodec.decode(bytes).pipe(
+      Effect.flatMap((agentCard) =>
+        AgentIdentityCard.verify({
+          identityCard: agentCard,
+          registrySignerPublicKey,
+        }),
       ),
+    ),
   );
 
 const encodeResult = (
@@ -233,7 +254,7 @@ const encodeResult = (
 
 const decodeResult = (
   bytes: Uint8Array,
-  registrySignerPublicKey: Ed25519PublicKey,
+  registrySignerPublicKey: AgentPublicKey,
 ): Effect.Effect<
   typeof registryContract.registerResultSchema.Type,
   InstanceType<typeof httpErrors.InternalServerError>
@@ -245,8 +266,8 @@ const decodeResult = (
       if (result.kind !== "registered") {
         return Object.freeze({ kind: result.kind });
       }
-      const agentCard = yield* AgentCard.verify({
-        agentCard: result.agentCard,
+      const agentCard = yield* AgentIdentityCard.verify({
+        identityCard: result.agentCard,
         registrySignerPublicKey,
       });
       return Object.freeze({ kind: "registered", agentCard });
@@ -254,7 +275,7 @@ const decodeResult = (
   );
 
 const mintAgentId = (): Effect.Effect<
-  AgentIdValue,
+  AgentId,
   InstanceType<typeof httpErrors.InternalServerError>
 > =>
   internalFailure(
@@ -274,7 +295,7 @@ const retainedCount = (
 const mintUnusedAgentId = (
   sql: SqlClient,
 ): Effect.Effect<
-  AgentIdValue,
+  AgentId,
   SqlError | InstanceType<typeof httpErrors.InternalServerError>
 > =>
   Effect.gen(function* () {
@@ -293,7 +314,7 @@ const mintUnusedAgentId = (
   });
 
 const issueTime = (): Effect.Effect<
-  typeof AgentCardIssuedAt.Type,
+  typeof agentIdentityCardSigning.issuedAt.Type,
   InstanceType<typeof httpErrors.InternalServerError>
 > =>
   internalFailure(
@@ -303,7 +324,7 @@ const issueTime = (): Effect.Effect<
           .toISOString()
           .replace(".000Z", "Z"),
       ),
-      Effect.flatMap(Schema.decodeUnknown(AgentCardIssuedAt)),
+      Effect.flatMap(Schema.decodeUnknown(agentIdentityCardSigning.issuedAt)),
     ),
   );
 
@@ -382,10 +403,10 @@ const bindStorageMetadata = (input: {
     }),
   );
 
-/** Only an empty namespace can initialize; an existing namespace must carry the current format. */
+/** Only an empty namespace can initialize. An existing namespace must carry the current format. */
 function runStorageInitialization(input: {
   readonly sql: SqlClient;
-  readonly registrySignerPublicKey: Ed25519PublicKey;
+  readonly registrySignerPublicKey: AgentPublicKey;
 }) {
   return Effect.gen(function* () {
     const rows = yield* input.sql`
@@ -529,17 +550,21 @@ const insertNewAgent = (
     const agentId = yield* mintUnusedAgentId(input.sql);
     const issuedAt = yield* issueTime();
     const agentCard = yield* internalFailure(
-      issueAgentCard({
-        agentId,
-        principalId: call.request.principalId,
-        agentName: call.request.agentName,
-        publicKey: call.request.publicKey,
-        issuedAt,
-        registrySigningAuthority: call.registrySigningAuthority,
-      }),
+      agentIdentityCardSigning.sign(
+        {
+          kind: "agentCard",
+          sharnessVersion: yield* wireVersions.emitted,
+          agentId,
+          principalId: call.request.principalId,
+          agentName: call.request.agentName,
+          publicKey: call.request.publicKey,
+          issuedAt,
+        },
+        call.registrySigningAuthority,
+      ),
     );
     const agentCardBytes = yield* internalFailure(
-      registryContract.registryAgentCardCodec.encode(agentCard),
+      registryContract.registryIdentityCardCodec.encode(agentCard),
     );
     yield* input.sql`
       INSERT INTO sharness_registry_agents

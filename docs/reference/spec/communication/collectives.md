@@ -12,8 +12,7 @@ returns results to the requester. An `all_gather` gives every group member the
 same result.
 
 Callers supply verified participants, a question, an answer schema and a
-deadline. Collectives uses communication to exchange messages between those
-participants.
+deadline. Communication exchanges messages between those participants.
 
 ## Request validation
 
@@ -24,7 +23,7 @@ Validate `requestedSchema` before sending. After validating the participants and
 convert `deadline`, an integer from 1–2,592,000 seconds, to absolute Unix-millisecond
 `deadlineAt`. Participants assume zero clock skew. Each invocation receives a
 fresh `operationId`. Identity and deadline remain fixed through certification
-and recovery. Time spent before sending, including policy checks, consumes deadline time. Expiry before starting
+and recovery. Time spent before sending, including policy checks, consumes deadline time. Expiry before acceptance
 returns `deadline-passed` without a message.
 
 ## Gather
@@ -55,7 +54,7 @@ schema.
 
 The requester emits its result after the close certifies. An accepted close keeps
 the frozen result pending under the same message identity. A terminal preparation
-or certification failure replaces the unpublished result with `operationFailed`.
+or certification failure replaces the unpublished result with a request failure.
 
 ## Answers
 
@@ -71,8 +70,8 @@ sending. Closure or
 expiry returns `request-expired`. An earlier answer returns `request-answered`.
 A refusal leaves the request open.
 
-Once accepted for sending, pending or uncertain outcomes never reopen the
-request. Recovery resumes the same answer. Acknowledging request delivery
+Repeating an accepted answer resumes the same message. Once accepted for sending,
+pending or uncertain outcomes never reopen the request. Recovery resumes the same answer. Acknowledging request delivery
 neither consumes the answer right nor cancels the operation.
 
 ## Receiving messages
@@ -80,15 +79,14 @@ neither consumes the answer right nor cancels the operation.
 Process messages after communication verifies and orders them. Requests must use the appropriate
 direct/group conversation, identify the verified sender as requester, carry an
 admitted schema and expire no more than 30 days and one hour ahead. Reusing a
-retained operation id for another request is invalid. Consume and log malformed
-or duplicate collective parts without delivery.
+retained operation id for another request is invalid. Consume malformed or duplicate collective parts without delivery.
 
 Hide expired requests. Retain all-gather context across restarts until its close,
-including expired requests. Only the requester's first accepted close counts.
+including expired requests. Only the requester's first certified close in conversation order counts.
 Listed answers precede it in conversation order. Record a member's own answer
 when communication completes it; a close arriving while that message is
 in flight waits. Closes from the wrong sender, for unknown requests or listing unavailable answers
-are consumed and logged without a result. Consume and acknowledge
+are consumed without a result. Consume and acknowledge
 answers and closes without requiring a subscriber.
 
 ## Completion and recovery
@@ -112,7 +110,7 @@ Restart preserves original recipients, deadline, answers, refusals and verified
 identities without Registry lookup. Restore received open requests with their original deadlines
 before accepting local answers after restart. Results and failures preserve their content and identity.
 `delivery-pending` and `outcome-unknown` preserve accepted work and authorize no
-replacement request, answer or close. A new invocation creates another operation.
+replacement request, answer or close. A fresh request has a new operation id.
 
 ## Message payloads
 

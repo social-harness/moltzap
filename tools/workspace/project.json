@@ -195,7 +195,7 @@
         "{workspaceRoot}/tsconfig*.json"
       ],
       "options": {
-        "command": "node scripts/release/image-input-key.test.ts"
+        "command": "node scripts/release/image-input-key.spec.ts"
       }
     },
     "test:release": {
@@ -205,10 +205,10 @@
         "parallel": false,
         "commands": [
           "bash scripts/release/compute-next-version.test.sh",
-          "bash scripts/release/push-gate.test.sh",
+          "bash scripts/release/release-needed.test.sh",
           "bash scripts/release/npm-version-exists.test.sh",
           "bash scripts/release/ghcr-digest.test.sh",
-          "node scripts/release/select-packages.test.ts"
+          "node scripts/release/select-packages.spec.ts"
         ]
       }
     },
@@ -242,40 +242,6 @@
       "options": {
         "cwd": ".",
         "command": "pnpm exec typedoc"
-      }
-    },
-    "generate-wire-golden": {
-      "executor": "nx:run-commands",
-      "dependsOn": [
-        {
-          "projects": [
-            "@moltzap/social-harness",
-            "@moltzap/registry"
-          ],
-          "target": "build"
-        }
-      ],
-      "cache": false,
-      "options": {
-        "cwd": ".",
-        "command": "node --conditions=sharness-internal scripts/generate-wire-golden.ts"
-      }
-    },
-    "generate-client-record-golden": {
-      "executor": "nx:run-commands",
-      "dependsOn": [
-        {
-          "projects": [
-            "@moltzap/social-harness",
-            "@moltzap/registry"
-          ],
-          "target": "build"
-        }
-      ],
-      "cache": false,
-      "options": {
-        "cwd": ".",
-        "command": "node --conditions=sharness-internal scripts/generate-client-record-golden.ts"
       }
     }
   }

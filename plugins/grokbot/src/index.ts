@@ -1,5 +1,4 @@
-/** @file Candidate HTTPS wake adapter; Client owns receive and recovery. */
-import type { InboundDelivery } from "@moltzap/social-harness";
+/** @file Hands event references to a candidate Grok HTTPS routine. */
 import {
   FetchHttpClient,
   HttpClient,
@@ -26,7 +25,7 @@ class GrokWakeError extends Data.TaggedError("GrokWakeError")<{
   }
 }
 
-/** Local validation precedes lease acquisition; it does not establish native approval or availability. */
+/** Checks URL and key syntax without establishing native approval or availability. */
 export const validateGrokRoutine = Effect.fn("Grok.validateRoutine")(function* (
   routine: GrokRoutine,
 ) {
@@ -41,15 +40,15 @@ export const validateGrokRoutine = Effect.fn("Grok.validateRoutine")(function* (
 });
 
 /**
- * HTTP acceptance permits the Client receipt; it does not prove model processing.
- * The request closes before acknowledgment. No response content is consumed and
- * no provider retry occurs here; an ambiguous handoff can produce another wake.
+ * Returns after HTTP acceptance and request cleanup, without reading the body.
+ * The inbox consumer then acknowledges handoff, before model processing.
+ * This call never retries. Uncertain acceptance can produce another wake on redelivery.
  */
 export const deliverToGrokBot = Effect.fn("Grok.deliver")(function* (
   routine: GrokRoutine,
-  delivery: Pick<InboundDelivery, "eventId" | "acknowledge">,
+  delivery: { readonly deliveryToken: string },
 ) {
-  yield* invokeRoutine(routine, delivery.eventId).pipe(
+  yield* invokeRoutine(routine, delivery.deliveryToken).pipe(
     Effect.scoped,
     Effect.timeoutFail({
       duration: "3 seconds",
@@ -57,7 +56,6 @@ export const deliverToGrokBot = Effect.fn("Grok.deliver")(function* (
     }),
     Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
   );
-  yield* delivery.acknowledge;
 });
 
 function invokeRoutine(routine: GrokRoutine, eventId: string) {

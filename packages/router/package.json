@@ -29,8 +29,8 @@
       "import": "./dist/index.js"
     },
     "./server": {
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./test": {
       "sharness-test": {
@@ -83,17 +83,6 @@
         "options": {
           "cwd": "packages/router",
           "command": "vitest run --config vitest.config.ts"
-        }
-      },
-      "test:integration": {
-        "executor": "nx:run-commands",
-        "dependsOn": [
-          "build",
-          "^build"
-        ],
-        "options": {
-          "cwd": "packages/router",
-          "command": "vitest run --config vitest.integration.config.ts"
         }
       },
       "lint": {

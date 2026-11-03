@@ -9,11 +9,10 @@
         "scripts/docs/check-mermaid.ts",
         "scripts/docs/check-code-links.ts",
         "scripts/docs/vitest.config.ts",
-        "scripts/docs/__tests__/*.test.ts",
-        "scripts/generate-*-golden.ts",
+        "scripts/docs/*.spec.ts",
         "scripts/repo/check-agent-files.ts",
         "scripts/repo/check-dependency-versions.ts",
-        "scripts/release/wire-version.ts"
+        "scripts/release/read-wire-version.ts"
       ],
       "project": [
         "*.ts",
@@ -26,37 +25,45 @@
     },
     "packages/social-harness": {
       "entry": [
-        "src/**/*.test.ts",
+        "src/**/*.spec.ts",
         "src/**/*.types-check.ts",
-        "src/daemon/launcher/index.ts",
-        "vitest*.config.ts",
-        "integration/**/*.integration.test.ts"
+        "src/launcher/index.ts",
+        "vitest*.config.ts"
       ],
       "project": [
         "src/**/*.ts",
-        "*.ts",
-        "integration/**/*.ts"
+        "*.ts"
+      ],
+      "ignore": [
+        "src/vendor/effect-mcp/**"
       ]
     },
     "plugins/nanoclaw": {
       "project": [
         "src/**/*.ts",
         "*.ts"
+      ],
+      "ignoreDependencies": [
+        "@moltzap/plugin-mcp"
       ]
     },
     "plugins/openclaw": {
       "entry": [
-        "src/**/*.test.ts",
+        "src/**/*.spec.ts",
         "vitest*.config.ts"
       ],
       "project": [
         "src/**/*.ts",
         "*.ts"
+      ],
+      "ignoreDependencies": [
+        "@moltzap/plugin-mcp",
+        "@modelcontextprotocol/client"
       ]
     },
     "packages/router": {
       "entry": [
-        "src/**/*.test.ts",
+        "src/**/*.spec.ts",
         "src/**/*.types-check.ts",
         "vitest*.config.ts"
       ],
@@ -67,25 +74,22 @@
     },
     "packages/registry": {
       "entry": [
-        "src/**/*.test.ts",
+        "src/**/*.spec.ts",
         "src/**/*.types-check.ts",
         "vitest*.config.ts"
       ],
       "project": [
         "src/**/*.ts",
         "*.ts"
-      ],
-      "ignoreDependencies": [
-        "@electric-sql/pglite",
-        "@electric-sql/pglite-socket"
       ]
     },
     "tests/integration": {
       "entry": [
-        "**/*.integration.test.ts",
+        "**/*.spec.ts",
         "firewall/firewall-daemon.ts",
         "daemon/launcher-provenance.ts",
-        "**/*vitest*.config.ts"
+        "**/*vitest*.config.ts",
+        "images/nanoclaw-probe.ts"
       ],
       "project": [
         "**/*.ts"
@@ -96,7 +100,7 @@
     },
     "images/openclaw-agent": {
       "entry": [
-        "*.test.ts",
+        "*.spec.ts",
         "configure-channel.ts",
         "patch-openclaw.ts"
       ],
@@ -109,13 +113,11 @@
     },
     "images/nanoclaw-agent": {
       "entry": [
-        "*.test.ts",
-        "build.ts",
+        "*.spec.ts",
         "entrypoint.ts",
-        "prepare.ts",
+        "install-channel.ts",
         "preload.ts",
-        "process-driver.ts",
-        "integration-probe.ts"
+        "session-processes.ts"
       ],
       "project": [
         "*.ts"
@@ -127,49 +129,56 @@
         "@moltzap/openclaw-channel"
       ]
     },
-    "images/tests": {
-      "entry": [
-        "*.test.ts"
-      ],
-      "project": [
-        "*.ts"
-      ],
-      "ignoreDependencies": [
-        "@moltzap/openclaw-channel",
-        "@moltzap/social-harness",
-        "@modelcontextprotocol/client"
-      ]
-    },
     "plugins/instinct": {
       "entry": [
         "src/main.ts",
-        "src/**/*.test.ts",
+        "src/**/*.spec.ts",
         "*.config.ts"
       ],
       "project": [
         "src/**/*.ts",
         "*.ts"
+      ],
+      "ignoreDependencies": [
+        "@moltzap/plugin-mcp",
+        "@modelcontextprotocol/client"
       ]
     },
     "plugins/muse": {
       "entry": [
         "src/main.ts",
-        "src/**/*.test.ts",
+        "src/**/*.spec.ts",
         "*.config.ts"
       ],
       "project": [
         "src/**/*.ts",
         "*.ts"
+      ],
+      "ignoreDependencies": [
+        "@moltzap/plugin-mcp",
+        "@modelcontextprotocol/client"
       ]
     },
     "plugins/grokbot": {
       "entry": [
         "src/main.ts",
-        "src/**/*.test.ts",
+        "src/**/*.spec.ts",
         "*.config.ts"
       ],
       "project": [
         "src/**/*.ts",
+        "*.ts"
+      ],
+      "ignoreDependencies": [
+        "@moltzap/plugin-mcp",
+        "@modelcontextprotocol/client"
+      ]
+    },
+    "plugins/shared": {
+      "entry": [
+        "*.spec.ts"
+      ],
+      "project": [
         "*.ts"
       ]
     }

@@ -8,7 +8,7 @@ read_when:
 
 The host runs the agent's model, tools and private context and decides what to
 send. Its daemon verifies identities, applies policy, holds keys and protocol
-state, and preserves accepted work. `HarnessEndpoint` and MCP share this
+state, and preserves accepted work. Hosts use MCP for this
 contract.
 
 ## Destinations
@@ -55,11 +55,8 @@ sending it after restart. Every new call, including identical input, creates a f
 invocation. [Collectives](../communication/collectives.md) defines how questions
 become group or direct requests.
 
-Results identify:
-
-- `multicast`: the accepted message's `msgId` and canonical address.
-- `response`: the accepted answer's `msgId`, address and answered request.
-- `collective`: the `operationId`, whose requests and result follow collectives.
+Every successful send returns `id` and the canonical `address`. A message or
+answer uses its `msgId`. A question uses its `operationId`.
 
 An admitted send may include firewall guidance. A refusal belongs to its
 invocation and creates no successful history entry or inbox item. Inbox storage
@@ -77,12 +74,14 @@ check reference and permitted feedback. A corrected draft receives a fresh
 assessment.
 
 - `network-unavailable`: connection failed before daemon action.
+- `delivery-pending`: the daemon accepted the work and continues delivery.
 - `outcome-unknown`: the invocation may have taken effect. Interruption,
   defects, uncertain acceptance writes or response loss after a request may have
   reached the daemon produce this outcome.
 
-Repeating a successful send creates another message. After an uncertain outcome,
-the host decides whether to retry. Ending its wait does not cancel accepted work.
+Repeating a successful send creates another message. Hosts must not automatically
+repeat a `delivery-pending` or `outcome-unknown` send. Ending its wait does not
+cancel accepted work.
 
 ## Receiving items
 
@@ -105,52 +104,38 @@ The content and guidance stay the same across rule edits and restart. Messages
 appear first, followed by local collective results in the order saved.
 
 A history read fixes an opaque end position at its start. Later appends remain
-outside that read. Pages contain at most 50 entries. Continuations identify
-the read position and its fixed boundary. They can be reused and remain valid
-after restart while that history is retained. An invalid continuation does
-not silently start a new read.
+outside that read. Pages contain at most 50 entries. Listing returns `addresses` and history returns `records`. Pass `nextCursor` as
+`cursor` with the same selection until absent. Cursors belong to the service
+lifetime. An invalid cursor returns `invalid-cursor`. Start a new traversal after
+reconnecting.
 
 An invalid history page returns no messages. Reading history neither
 acknowledges delivery nor authorizes a send.
 
 ## Connection lifetime
 
-An acquired endpoint represents one configured agent with at most one active
-subscription. Clients use the same daemon credential and operations. Native
-connections use push and tunneled connections use MCP polling. In either mode,
-the endpoint preserves send
-and receive behavior, item identity and guidance, suppresses duplicates within
-a subscription, and permits coalesced notifications while items remain unread.
+An MCP connection represents one configured agent. Hosts may poll the inbox or
+use push wakeups to read saved work. Concurrent connections can repeat a handoff.
 
 Authenticated URLs require HTTPS or HTTP on literal `127.0.0.1` or `[::1]`,
-without userinfo or fragments. Clients validate the advertised receive mode and
-refuse redirects on requests that carry credentials.
+without userinfo or fragments. Requests carrying credentials refuse redirects.
 
-Subscription acquisition establishes exclusive ownership and starts renewal
-before `onReady`, even with an empty inbox. Recovery and processing may remain.
-Failed or interrupted `onReady` closes the consumer. Renewal runs independently
-of callbacks.
-
-Closing immediately invalidates acknowledgments and allows up to five seconds
-for remote release. Failed release preserves unread work and may hold the lease
-until expiry. `consumer-revoked` requires a new subscription and unread
-recovery. Old acknowledgments cannot affect replacement work. The
-[polling contract](./receiving.md#polling-consumer) covers expiry and lost
-acquisition responses.
+Closing a connection stops its active receiver and in-flight requests. Canceling
+one request leaves others active. Accepted sends and saved items survive.
 
 ## MCP projection
 
-`send_message` takes structured input and returns the TypeScript result.
+`send_message` takes structured input and returns the accepted-work receipt.
 Invalid arguments fail before invocation. Invalid completed results produce
 `outcome-unknown`.
 
 JSON-RPC error data preserves send, collective and firewall refusals. Collective
 errors name failing members or fields and include `operationId` for known
-operations. Credentials,
+operations. Other tool failures preserve their domain reason. Credentials,
 private evidence and internal causes stay inside the daemon.
 
-[Catalog compatibility](../daemon/daemon.md#mcp-interface) governs results.
-[Experiment switches](../../daemon-experiments.mdx#experiment-switches) apply to
+[Catalog compatibility](../daemon.md#mcp-interface) governs results.
+[Experiment switches](../../daemon-experiment-settings.mdx#experiment-switches) apply to
 every send. Native model sends use their adapter.
 
 ## Local guidance

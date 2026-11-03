@@ -11,24 +11,21 @@ import type { ChannelInboundTurnPlan } from "openclaw/plugin-sdk/channel-inbound
 import type { OpenClawPluginDefinition } from "openclaw/plugin-sdk/plugin-entry";
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import {
-  acquireHarnessEndpoint,
-  type AgentView,
+  type AgentCard,
   groupMembers,
   type GuidanceBodyOrigin,
-  type HarnessEndpoint,
-  type InboundDelivery,
-  type InboundItem,
   type Message,
   MessageAddressInput,
   type MessageAddressInput as MessageAddressInputValue,
   type MessageTextError,
+  packageVersion,
   parseMessageText,
+  type PermittedItem,
   renderCollectiveRequest,
   renderCollectiveResult,
   renderContent,
   renderLocalGuidance,
-  replyAddress,
-  type SendInput,
+  type SendRequest,
   type SendResult,
 } from "@moltzap/social-harness";
 import {
@@ -39,7 +36,6 @@ import {
   Option,
   Redacted,
   Schema,
-  Stream,
 } from "effect";
 import { absurd } from "effect/Function";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Native host plugins read one credential without requiring a platform service from the host.
@@ -59,6 +55,12 @@ import {
   defineChannelMessageAdapter,
   waitUntilAbort,
 } from "openclaw/plugin-sdk/channel-outbound";
+import {
+  acquireMcpConnection,
+  callTool,
+  type InboxEntry,
+  type McpConnection,
+} from "#sharness-mcp/mcp-client";
 
 /** The sender OpenClaw records for a turn the endpoint itself emitted. */
 const ENDPOINT_SENDER_NAME = "Social Harness";
@@ -68,22 +70,14 @@ const TARGET_HINT =
   'Use an explicit "agent:<name>" or "group:<member>,<member>,..." address';
 const LOG_PREVIEW_CHARS = 80;
 
-/**
- * The message tool actions Social Harness handles. Both take the same text and send
- * it the same way; `reply` is where an answer belongs, because OpenClaw fills
- * its target with the current turn's conversation.
- */
+/** OpenClaw supplies the current conversation as the target for reply. */
 const MESSAGE_ACTIONS = ["send", "reply"] as const;
 type MessageAction = (typeof MESSAGE_ACTIONS)[number];
 
-/**
- * The plugin entry point that produced an outbound send, named in its gateway
- * log line: the model's `message` tool action, or OpenClaw's own
- * `message.send.text` delivery.
- */
+/** Distinguishes model tool sends from OpenClaw core sends in gateway logs. */
 type OutboundOrigin = `message-action:${MessageAction}` | "send.text";
 
-/** The operation an outbound log line names; an answer is a collective response. */
+/** The operation an outbound log line names. An answer is a collective response. */
 type OutboundOperation = "plain" | "gather" | "all_gather" | "answer";
 
 type OpenClawTargetKind = "user" | "group";
@@ -129,14 +123,10 @@ interface ResolvedMessageTarget {
   readonly display: string;
 }
 
-/**
- * The account whose endpoint performs sends. `log` is the gateway log sink of
- * the account task, kept so outbound sends, which arrive outside that task,
- * log to the same `openclaw.log` as inbound turns.
- */
+/** Keeps outbound logs on the account's gateway sink even outside its inbound task. */
 interface ConnectedAccount {
   readonly accountId: string;
-  readonly endpoint: HarnessEndpoint;
+  readonly endpoint: McpConnection;
   readonly log?: ChannelLogSink;
 }
 
@@ -172,7 +162,7 @@ interface InboundTurnInput {
   readonly turn: HostTurn;
 }
 
-/** One host send before validation; the host supplies each field untyped. */
+/** One host send before validation. The host supplies each field untyped. */
 interface TextSend {
   readonly accountId?: string | null;
   readonly to: unknown;
@@ -244,12 +234,10 @@ const isMessageAddressInput = Schema.is(MessageAddressInput);
 const carriesTargets = Schema.is(Schema.NonEmptyArray(Schema.Unknown));
 
 /**
- * OpenClaw supplies a separate runtime for each account connection. Each
- * connection holds its endpoint until the stream ends or OpenClaw aborts it.
- * Inbound callback success permits acknowledgment of host handoff. The host
- * owns processing and retry policy, and final assistant text stays private.
+ * Each account retains its own runtime and MCP connection until reception ends
+ * or OpenClaw aborts it. Inbound callback success permits acknowledgment of host
+ * handoff. OpenClaw owns processing and retries. Final assistant text stays private.
  *
- * @returns The Social Harness channel plugin.
  * @internal
  */
 export function createChannelPlugin(): ChannelPlugin<Account> {
@@ -324,16 +312,8 @@ function createConfigSection() {
 }
 
 /**
- * The message tool's `send` and `reply` actions for Social Harness. OpenClaw routes
- * every model `send` and `reply` here because the adapter defines no prepared
- * payload or gateway execution mode. Both read the text with the Client's one
- * parser, so a message's text states its operation; a `reply` with no
- * target gets the current turn's conversation from OpenClaw. The tool result
- * carries the local firewall's guidance on an admitted send, so the model
- * reads it with the result. `message.send.text` remains for the sends
- * OpenClaw's core makes itself.
- * @param connectedAccount The account whose endpoint performs the operation.
- * @returns The action adapter registered on the channel plugin.
+ * Returns firewall guidance with accepted tool sends. OpenClaw supplies the
+ * current conversation for reply. Core sends use message.send.text.
  */
 function createMessageActions(
   connectedAccount: ConnectedAccountState,
@@ -460,12 +440,8 @@ function startAccountConnection(
 }
 
 /**
- * Returns the OpenClaw services for an account task.
- *
- * OpenClaw creates a channel runtime for each account task. Reading it here
- * prevents the registered plugin from retaining another account's runtime.
- * @param ctx The account connection context supplied by OpenClaw.
- * @returns The routing and inbound services scoped to this account task.
+ * Reads the runtime from this account task so another account's runtime
+ * cannot be retained by the shared plugin.
  */
 function requireOpenClawAccountRuntime(
   ctx: ChannelGatewayContext<Account>,
@@ -529,20 +505,20 @@ function acquireAccountEndpoint() {
       catch: () =>
         new OpenClawConfigurationError({
           detail:
-            "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#mcp-credential-file",
+            "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file. Docs: https://docs.moltzap.xyz/guides/run-an-agent-daemon#mcp-credential-file",
         }),
     });
-    return yield* acquireHarnessEndpoint(endpoint, {
-      credential: Redacted.make(credential),
-      receiveMode: "push",
-    });
+    return yield* acquireMcpConnection(
+      { endpoint, credential: Redacted.make(credential) },
+      { name: "sharness-openclaw", version: packageVersion },
+    );
   });
 }
 
 function runAccountConnection(
   ctx: ChannelGatewayContext<Account>,
   runtime: OpenClawAccountRuntime,
-  endpoint: HarnessEndpoint,
+  endpoint: McpConnection,
   connectedAccount: ConnectedAccountState,
 ) {
   return Effect.sync(() => {
@@ -578,26 +554,17 @@ function runAccountConnection(
 }
 
 /**
- * Consumes messages until the stream ends or OpenClaw aborts the account.
- *
- * The stream can complete or fail independently of the account abort signal.
- * Racing both operations sends every result through the cleanup in
- * `runAccountConnection`.
- * @param ctx The account task and abort signal supplied by OpenClaw.
- * @param runtime OpenClaw routing and inbound services for this account task.
- * @param endpoint The daemon-backed message stream for this account.
- * @returns An effect that ends with the stream or the abort signal.
+ * Ends when reception finishes or OpenClaw aborts the account. Either path
+ * returns through the connection's cleanup.
  */
 function consumeInboundMessages(
   ctx: ChannelGatewayContext<Account>,
   runtime: OpenClawAccountRuntime,
-  endpoint: HarnessEndpoint,
+  endpoint: McpConnection,
 ) {
   return Effect.raceFirst(
-    endpoint.messages.pipe(
-      Stream.runForEach((delivery) =>
-        handleInboundDelivery(ctx, runtime, delivery),
-      ),
+    endpoint.consumeInbox({ receiveMode: "push" }, (delivery) =>
+      handleInboxEntry(ctx, runtime, delivery),
     ),
     Effect.tryPromise({
       try: () => waitUntilAbort(ctx.abortSignal),
@@ -626,12 +593,16 @@ function reportConnected(
   });
 }
 
-function handleInboundDelivery(
+function handleInboxEntry(
   ctx: ChannelGatewayContext<Account>,
   runtime: OpenClawAccountRuntime,
-  delivery: InboundDelivery,
+  delivery: InboxEntry,
 ) {
-  const projected = inboundItemTurn(delivery.item, delivery.eventId);
+  const projected = inboundItemTurn(
+    delivery.item,
+    delivery.deliveryToken,
+    delivery.address,
+  );
   const guidance = delivery.guidance;
   const turn: HostTurn =
     guidance === undefined
@@ -642,9 +613,7 @@ function handleInboundDelivery(
             delivery.item.kind === "collectiveRequest"
               ? renderCollectiveRequest(
                   delivery.item,
-                  requestAnswerInstructions(
-                    replyAddress(delivery.item.message),
-                  ),
+                  requestAnswerInstructions(delivery.address),
                   guidance,
                 )
               : renderLocalGuidance(guidance, {
@@ -654,23 +623,22 @@ function handleInboundDelivery(
         };
   return logInbound(ctx, turn).pipe(
     Effect.zipRight(runOpenClawTurn(ctx, runtime, turn)),
-    Effect.zipRight(delivery.acknowledge),
   );
 }
 
 /**
- * Render one inbound item as the turn its kind defines. Each kind has one
- * fixed form, the same for every agent. A request belongs to the conversation
- * it arrived in: the requester's for a gather, the group's for an all_gather.
- * A result or a failure is attributed to Social Harness, not to any member, and
- * belongs to the conversation its operation addressed.
- * @param item The item the endpoint delivered.
- * @returns The turn OpenClaw runs.
+ * Gathers enter the requester's conversation. All_gathers enter the group.
+ * Results and failures are attributed to Social Harness in the conversation
+ * the operation addressed.
  */
-function inboundItemTurn(item: InboundItem, eventId: string): HostTurn {
+function inboundItemTurn(
+  item: PermittedItem,
+  eventId: string,
+  address: MessageAddressInputValue,
+): HostTurn {
   switch (item.kind) {
     case "multicast":
-      return multicastTurn(item.message, eventId);
+      return multicastTurn(item.message, eventId, address);
     case "collectiveRequest":
       return addressedTurn(
         {
@@ -678,16 +646,13 @@ function inboundItemTurn(item: InboundItem, eventId: string): HostTurn {
           origin: "peer",
           sender: agentSender(item.message.author),
         },
-        replyAddress(item.message),
-        renderCollectiveRequest(
-          item,
-          requestAnswerInstructions(replyAddress(item.message)),
-        ),
+        address,
+        renderCollectiveRequest(item, requestAnswerInstructions(address)),
       );
     case "collectiveResult":
-      return endpointTurn(eventId, item.to, renderCollectiveResult(item));
+      return endpointTurn(eventId, address, renderCollectiveResult(item));
     case "operationFailed":
-      return endpointTurn(eventId, item.to, item.error);
+      return endpointTurn(eventId, address, item.error);
     default:
       return absurd(item);
   }
@@ -698,14 +663,18 @@ function requestAnswerInstructions(to: MessageAddressInputValue): string {
   return `Send the answer once as the whole message text, with the message tool's reply action or send to ${to}.`;
 }
 
-function multicastTurn(message: Message, eventId: string): HostTurn {
+function multicastTurn(
+  message: Message,
+  eventId: string,
+  address: MessageAddressInputValue,
+): HostTurn {
   return addressedTurn(
     {
       id: eventId,
       origin: "peer",
       sender: agentSender(message.author),
     },
-    replyAddress(message),
+    address,
     renderContent(message.content),
   );
 }
@@ -741,7 +710,7 @@ function addressedTurn(
     : { ...author, kind: "group", address, members, body };
 }
 
-function agentSender(agent: AgentView): TurnSender {
+function agentSender(agent: AgentCard): TurnSender {
   return { id: `agent:${agent.agentName}`, name: agent.agentName };
 }
 
@@ -871,10 +840,8 @@ function modelBody(turn: HostTurn): string {
 }
 
 /**
- * Every Social Harness sender is another principal's agent or the collective layer,
- * so the sender is marked as a bot. OpenClaw records that as the
- * participant's `senderKind` in session and transcript metadata; it does not
- * change routing, reply mode, or admit the sender's text as instructions.
+ * Marks peers and Social Harness as bot senders in host metadata. This does
+ * not grant their text authority or change routing and reply behavior.
  */
 function inboundSenderFacts(turn: HostTurn) {
   return { ...turn.sender, isBot: true };
@@ -914,13 +881,9 @@ function inboundGroupFacts(turn: HostTurn) {
 }
 
 /**
- * Final assistant text never becomes a Social Harness message. A launcher's OpenClaw
- * configuration selects tool-only visible replies, and this callback withholds
- * anything that still reaches it, so the `message` tool with an explicit
- * target is the only send path. Non-empty text reaching here means OpenClaw
- * fell back to automatic delivery, which it does when the `message` tool is
- * outside the tool policy, or the model wrote a reply without the tool; the
- * warning is the only trace of that, so it names the size, never the text.
+ * Withholds automatic replies so final assistant text stays private. A warning
+ * records only the size when text reaches this callback, which can indicate a
+ * missing message tool or a model reply that bypassed it.
  */
 function withholdFinalText(
   ctx: ChannelGatewayContext<Account>,
@@ -937,7 +900,7 @@ function withholdFinalText(
 function removeConnectedEndpoint(
   connectedAccount: ConnectedAccountState,
   accountId: string,
-  active: HarnessEndpoint,
+  active: McpConnection,
 ): Effect.Effect<void> {
   return Effect.sync(() => {
     if (
@@ -961,23 +924,16 @@ function sendOpenClawText(
 }
 
 /**
- * Perform one host send as the one Client operation its text states. A
- * refused send fails with an error whose message OpenClaw returns to the
- * model as the tool error: the text's failing fields, or the Client's
- * refusal. Each send, completed or refused, writes one gateway log line
- * naming `origin`, so a run's log tells a model tool send from a send
- * OpenClaw made itself; a refusal before the text parses names no operation.
- * @param connectedAccount The account whose endpoint performs the operation.
- * @param origin The plugin entry point the send arrived through.
- * @param params The host's account, address and text.
- * @returns The parsed input and the endpoint's result.
+ * Performs the operation stated in the message text and returns refusals as
+ * model-facing tool errors. Each attempt logs its origin. A parse failure
+ * has no operation to log.
  */
 function sendText(
   connectedAccount: ConnectedAccountState,
   origin: OutboundOrigin,
   params: TextSend,
 ) {
-  return readSendInput(params).pipe(
+  return readSendRequest(params).pipe(
     Effect.tapError((error) =>
       logOutboundFailure(
         connectedAccount,
@@ -987,7 +943,12 @@ function sendText(
     ),
     Effect.flatMap((input) =>
       requireEndpoint(connectedAccount, params).pipe(
-        Effect.flatMap((endpoint) => endpoint.send(input)),
+        Effect.flatMap((connection) =>
+          callTool(connection.client, {
+            name: "send_message",
+            arguments: { input },
+          }),
+        ),
         Effect.tapBoth({
           onFailure: (error) =>
             logOutboundFailure(
@@ -998,7 +959,7 @@ function sendText(
           onSuccess: (result) =>
             logOutbound(
               connectedAccount,
-              `${outboundLogPrefix(origin, params, outboundOperation(input))} operationId=${result.operationId ?? "-"} msgId=${result.msgId ?? "-"} chars=${textLength(params)}: ${textPreview(params)}`,
+              `${outboundLogPrefix(origin, params, outboundOperation(input))} id=${result.id} chars=${textLength(params)}: ${textPreview(params)}`,
             ),
         }),
         Effect.map((result) => ({ input, result })),
@@ -1007,7 +968,7 @@ function sendText(
   );
 }
 
-function outboundOperation(input: SendInput): OutboundOperation {
+function outboundOperation(input: SendRequest): OutboundOperation {
   if ("collectiveResponse" in input) {
     return "answer";
   }
@@ -1045,10 +1006,7 @@ function logOutboundFailure(
   });
 }
 
-/**
- * Write one completed send's line to the connected account's gateway log. A
- * send while no account is connected has no gateway log to write to.
- */
+/** Uses the connected account's gateway log. Disconnected sends have no log sink. */
 function logOutbound(
   connectedAccount: ConnectedAccountState,
   line: string,
@@ -1061,7 +1019,7 @@ function logOutbound(
 function requireEndpoint(
   connectedAccount: ConnectedAccountState,
   params: TextSend,
-): Effect.Effect<HarnessEndpoint, OpenClawOutboundError> {
+): Effect.Effect<McpConnection, OpenClawOutboundError> {
   const endpoint = connectedEndpoint(connectedAccount, params.accountId);
   return endpoint === undefined
     ? Effect.fail(
@@ -1074,11 +1032,11 @@ function requireEndpoint(
  * Validate OpenClaw's optional target and text fields before handing them to
  * the shared message-text parser.
  */
-function readSendInput({
+function readSendRequest({
   to,
   text,
 }: TextSend): Effect.Effect<
-  SendInput,
+  SendRequest,
   OpenClawOutboundError | MessageTextError
 > {
   if (!isMessageAddressInput(to)) {
@@ -1095,14 +1053,11 @@ function readSendInput({
 }
 
 /**
- * Accepted messages report their author-scoped id; collective questions report
- * their operation id. OpenClaw records this outgoing result separately from
- * the retained event identity of an incoming turn.
- * @param result The daemon's accepted send.
- * @returns The send result OpenClaw records.
+ * Host send results use the author-scoped message ID or collective operation
+ * ID, independently of an incoming turn's retained event identity.
  */
 function makeMessageSendResult(result: SendResult): ChannelMessageSendResult {
-  const messageId = result.msgId ?? result.operationId;
+  const messageId = result.id;
   return {
     ...(messageId === undefined ? {} : { messageId }),
     receipt: createMessageReceiptFromOutboundResults({
@@ -1123,7 +1078,7 @@ function makeMessageSendResult(result: SendResult): ChannelMessageSendResult {
 function connectedEndpoint(
   connectedAccount: ConnectedAccountState,
   accountId?: string | null,
-): HarnessEndpoint | undefined {
+): McpConnection | undefined {
   const active = connectedAccount.current;
   if (active === undefined) {
     return undefined;

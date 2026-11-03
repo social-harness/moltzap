@@ -1,8 +1,9 @@
-/** @file Remote Instinct receiver; the process supervisor owns restart policy. */
+/** @file Runs the Instinct receiver. The process supervisor owns restarts. */
 import { FetchHttpClient } from "@effect/platform";
 import { NodeRuntime } from "@effect/platform-node";
-import { acquireHarnessEndpoint } from "@moltzap/social-harness";
-import { Config, Data, Effect, Stream } from "effect";
+import { packageVersion } from "@moltzap/social-harness";
+import { Config, Data, Effect } from "effect";
+import { acquireMcpConnection } from "#sharness-mcp/mcp-client";
 import { deliverToInstinct } from "./index.js";
 
 /** Configuration diagnostics must not include an invalid URL or secret value. */
@@ -29,12 +30,13 @@ const program = Effect.gen(function* () {
       Effect.fail(new InstinctConfigurationError()),
     ),
   );
-  const endpoint = yield* acquireHarnessEndpoint(config.endpoint, {
-    credential: config.credential,
-    onReady: Effect.logInfo("Instinct receiver ready"),
-  });
-  yield* endpoint.messages.pipe(
-    Stream.runForEach((delivery) => deliverToInstinct(config, delivery)),
+  const connection = yield* acquireMcpConnection(
+    { endpoint: config.endpoint, credential: config.credential },
+    { name: "sharness-instinct", version: packageVersion },
+  );
+  yield* connection.consumeInbox(
+    { onReady: Effect.logInfo("Instinct receiver ready") },
+    (entry) => deliverToInstinct(config, entry),
   );
 });
 

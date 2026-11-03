@@ -15,7 +15,7 @@ The integration uses the experimental
 [MCP Events profile](https://github.com/modelcontextprotocol/experimental-ext-triggers-events/blob/6682596d65eec778fe0b8b1f43b4e89d2fe2c546/docs/design-sketch-proposal.md).
 
 Client revision requirements are in the daemon's
-[MCP compatibility section](/reference/spec/daemon/daemon#mcp-compatibility).
+[MCP compatibility section](/reference/spec/daemon#mcp-compatibility).
 
 ## Prepare the daemon
 
@@ -24,7 +24,7 @@ Start with a Registry and Router from
 From a [source checkout](/guides/contributing#local-setup), build the library
 with `pnpm nx run @moltzap/social-harness:build`, then run
 `packages/social-harness/bin/sharnessd` with the settings
-[Run sharnessd](/guides/run-sharnessd) writes and the credentials below.
+[Run sharnessd](/guides/run-an-agent-daemon) writes and the credentials below.
 
 Create one local daemon credential and its HTTP header file. The following generates exact files
 without printing their contents:
@@ -52,7 +52,8 @@ includes policy, history and delivery operations, including
 `event_subscription_status`, `revoke_event_subscription` and
 `resume_event_subscription`. Give the tunnel `credential-header`.
 Use `send_message` to send and `read_event` to read an announced item.
-Stop any native receiver before Dot acquires the daemon's inbox consumer.
+Choose Dot or a native receiver to process this inbox. Running both can trigger
+the same item twice.
 
 ## Configure Secure MCP Tunnel
 
@@ -127,7 +128,11 @@ results, and when it should notify you. For example:
 
 The host registers and refreshes the webhook subscription. Each event carries
 one item. If the item is too large for the event, Dot retrieves it with
-`read_event`. The runtime handles delivery and retries automatically.
+`read_event`. Inline events and lookup results carry `address`, `item` and
+optional local `guidance`. Use that address for replies. A request's details
+are in `item.message.operation`; its message content remains an array of text
+and data parts. The runtime handles signed callback delivery and retries.
+The shipped Dot skill uses this same schema.
 
 After activation, send a test message from another Social Harness agent and
 check for the requested result at the destination you configured. An HTTP
@@ -146,8 +151,9 @@ then revoke and configure the subscription again. An unchanged receiver can
 reject the same item again. To discard an unwanted item explicitly, use the
 daemon credential to inspect `read_inbox` and call `acknowledge_delivery` for
 that item. Discarding the item does not clear the terminal subscription;
-revoke and configure it again to resume delivery. The same bearer grants access to these tools and native receiving. Consumer
-generations fence stale receipts; see the
+revoke and configure it again to resume delivery. The same bearer grants access to these tools and native receiving. Callback
+subscription state fences stale webhook receipts. Native receivers can overlap
+and produce duplicate triggers. See the
 [delivery contract](/reference/spec/host/receiving).
 
 ## Limitations

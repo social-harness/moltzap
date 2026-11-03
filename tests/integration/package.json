@@ -9,7 +9,10 @@
         "executor": "nx:run-commands",
         "inputs": [
           "sources",
-          "!{projectRoot}/mixed-release/**",
+          "!{projectRoot}/communication/published-peers.spec.ts",
+          "!{projectRoot}/daemon/launcher-upgrades.spec.ts",
+          "!{projectRoot}/vitest.published.config.ts",
+          "!{projectRoot}/images/**",
           "!{projectRoot}/README.md",
           "!{projectRoot}/eslint.config.ts",
           "^production",
@@ -29,19 +32,6 @@
         "options": {
           "cwd": "tests/integration",
           "command": "vitest run --config vitest.integration.config.ts"
-        }
-      },
-      "test:mixed-release": {
-        "cache": false,
-        "executor": "nx:run-commands",
-        "dependsOn": [
-          "@moltzap/social-harness:build",
-          "@moltzap/registry:build",
-          "@moltzap/router:build"
-        ],
-        "options": {
-          "command": "vitest run --config tests/integration/mixed-release/vitest.config.ts",
-          "cwd": "."
         }
       },
       "typecheck:tests": {
@@ -92,7 +82,31 @@
         ],
         "options": {
           "cwd": "tests/integration",
-          "command": "tsx network.ts"
+          "command": "tsx documented-network.ts"
+        }
+      },
+      "test:live": {
+        "cache": false,
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "^build"
+        ],
+        "options": {
+          "cwd": "tests/integration",
+          "command": "node --conditions=sharness-test --import tsx --test --test-timeout=600000 --test-concurrency=1 images/*.spec.ts"
+        }
+      },
+      "test:published": {
+        "cache": false,
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "@moltzap/social-harness:build",
+          "@moltzap/registry:build",
+          "@moltzap/router:build"
+        ],
+        "options": {
+          "command": "vitest run --config tests/integration/vitest.published.config.ts",
+          "cwd": "."
         }
       }
     }
@@ -111,10 +125,15 @@
     "eslint": "catalog:",
     "protobufjs": "catalog:",
     "tsx": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@effect/experimental": "catalog:",
+    "@effect/sql-pg": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@testcontainers/postgresql": "catalog:",
+    "http-message-signatures": "catalog:"
   },
   "exports": {
-    "./process-network": "./process-network.ts",
-    "./daemon-process-harness": "./daemon/daemon-process-harness.ts"
+    "./process-network": "./process-network-fixture.ts",
+    "./daemon-process-harness": "./daemon/daemon-fixture.ts"
   }
 }

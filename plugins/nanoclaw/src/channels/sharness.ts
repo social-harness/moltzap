@@ -1,23 +1,19 @@
 /** @file Projects the public Social Harness endpoint capability into NanoClaw. */
 import {
-  acquireHarnessEndpoint,
-  type CollectiveError,
-  type ConnectError,
   type DeliveryAcknowledgeError,
-  type FirewallSendError,
+  type FirewallRefusal,
   groupMembers,
   type GuidanceBodyOrigin,
-  type HarnessEndpoint,
-  type InboundDelivery,
-  type InboundItem,
   MessageAddressInput,
+  packageVersion,
   parseMessageText,
+  type PermittedItem,
   renderCollectiveRequest,
   renderCollectiveResult,
   renderContent,
   renderLocalGuidance,
-  replyAddress,
-  SendError,
+  type RequestError,
+  type SendError,
 } from "@moltzap/social-harness";
 import {
   Config,
@@ -30,12 +26,18 @@ import {
   Redacted,
   Schema,
   Scope,
-  Stream,
 } from "effect";
 import { absurd } from "effect/Function";
 import { randomUUID } from "node:crypto";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Native host plugins read one credential without requiring a platform service from the host.
 import { readFile } from "node:fs/promises";
+import {
+  acquireMcpConnection,
+  callTool,
+  type InboxEntry,
+  type McpConnectError,
+  type McpConnection,
+} from "#sharness-mcp/mcp-client";
 import type { ChannelSetup, InboundMessage } from "./adapter.js";
 import { registerChannelAdapter } from "./channel-registry.js";
 
@@ -82,10 +84,9 @@ const channelEnv = Config.all({
 });
 
 interface Activation {
-  readonly endpoint: HarnessEndpoint;
+  readonly endpoint: McpConnection;
   readonly finished: Deferred.Deferred<undefined>;
   readonly scope: Scope.CloseableScope;
-  readonly stopSignal: Deferred.Deferred<undefined>;
   state: "active" | "stopping";
 }
 
@@ -167,12 +168,7 @@ function decodeOutboundOperation(
     : Effect.succeed(text);
 }
 
-/**
- * Read the text from NanoClaw's `messages_out` content: a bare string, or the
- * `text` of the object `send_message` writes.
- * @param message One outbound row as NanoClaw delivers it.
- * @returns The text, or null when the row carries none.
- */
+/** Accepts a bare string or the text field NanoClaw's send_message writes. */
 function extractOutboundText(message: OutboundMessage): string | null {
   const content = message.content;
   if (typeof content === "string") {
@@ -187,11 +183,8 @@ function extractOutboundText(message: OutboundMessage): string | null {
 }
 
 /**
- * Send failures whose message the daemon still delivers, `delivery-pending`, or
- * may already have sent, `outcome-unknown`. NanoClaw's retry is a new send
- * and would send the message a second time, so such a row completes even
- * when the host callback that reports it fails; the model, told the message
- * may have been sent, can resend it deliberately.
+ * Completes uncertain or pending sends even if feedback fails, because a host
+ * retry would create a new send. The model can choose to resend deliberately.
  */
 const POSTED_REFUSALS: ReadonlySet<SendError["reason"]> = new Set([
   "delivery-pending",
@@ -199,9 +192,8 @@ const POSTED_REFUSALS: ReadonlySet<SendError["reason"]> = new Set([
 ]);
 
 /**
- * Send failures NanoClaw's retry must not repeat. The model hears of these;
- * any other failure stays with that retry. An invalid address or content
- * fails the same way again, and `POSTED_REFUSALS` says why the rest do.
+ * Reports these failures to the model instead of asking NanoClaw to retry.
+ * Invalid input would fail again. POSTED_REFUSALS covers pending or uncertain sends.
  */
 const FINAL_REFUSALS: ReadonlySet<SendError["reason"]> = new Set([
   "invalid-address",
@@ -210,10 +202,6 @@ const FINAL_REFUSALS: ReadonlySet<SendError["reason"]> = new Set([
   "content-invalid",
   ...POSTED_REFUSALS,
 ]);
-
-function isFinalRefusal(error: unknown): error is SendError {
-  return error instanceof SendError && FINAL_REFUSALS.has(error.reason);
-}
 
 /** The sender NanoClaw records for an item the endpoint itself emitted. */
 const ENDPOINT_SENDER = "Social Harness";
@@ -304,7 +292,7 @@ class HarnessChannelAdapter {
 
   private start(
     config: ChannelSetup,
-  ): Effect.Effect<void, ConnectError | ChannelError> {
+  ): Effect.Effect<void, McpConnectError | ChannelError> {
     const current = this.activation;
     if (current?.state === "active") {
       this.setupConfig = config;
@@ -326,18 +314,17 @@ class HarnessChannelAdapter {
           finished: yield* Deferred.make<undefined>(),
           scope,
           state: "active",
-          stopSignal: yield* Deferred.make<undefined>(),
         };
         this.setupConfig = config;
         this.activation = activation;
-        yield* endpoint.messages.pipe(
-          Stream.onDone(() => this.beginStopping(activation)),
-          Stream.onError(() => this.beginStopping(activation)),
-          Stream.runForEach((delivery) => this.handleDelivery(delivery)),
-          Effect.raceFirst(Deferred.await(activation.stopSignal)),
-          Effect.ensuring(this.finishActivation(activation)),
-          Effect.forkDaemon,
-        );
+        yield* endpoint
+          .consumeInbox({ receiveMode: "push" }, (delivery) =>
+            this.handleDelivery(delivery),
+          )
+          .pipe(
+            Effect.ensuring(this.finishActivation(activation)),
+            Effect.forkDaemon,
+          );
       }.bind(this),
     ).pipe(Effect.asVoid);
   }
@@ -347,7 +334,7 @@ class HarnessChannelAdapter {
     return activation === null
       ? Effect.void
       : this.beginStopping(activation).pipe(
-          Effect.zipRight(Deferred.succeed(activation.stopSignal, undefined)),
+          Effect.zipRight(Scope.close(activation.scope, Exit.void)),
           Effect.zipRight(Deferred.await(activation.finished)),
         );
   }
@@ -379,7 +366,7 @@ class HarnessChannelAdapter {
 
   private acquireEndpoint(
     scope: Scope.CloseableScope,
-  ): Effect.Effect<HarnessEndpoint, ConnectError | ChannelError> {
+  ): Effect.Effect<McpConnection, McpConnectError | ChannelError> {
     return Effect.try({
       try: () => new URL(this.mcpEndpoint),
       catch: () =>
@@ -396,7 +383,7 @@ class HarnessChannelAdapter {
               Effect.fail(
                 new ChannelError({
                   reason:
-                    "SHARNESS_MCP_CREDENTIAL_FILE is required. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#mcp-credential-file",
+                    "SHARNESS_MCP_CREDENTIAL_FILE is required. Docs: https://docs.moltzap.xyz/guides/run-an-agent-daemon#mcp-credential-file",
                 }),
               ),
             ),
@@ -406,13 +393,13 @@ class HarnessChannelAdapter {
             catch: () =>
               new ChannelError({
                 reason:
-                  "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file. Docs: https://docs.moltzap.xyz/guides/run-sharnessd#mcp-credential-file",
+                  "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file. Docs: https://docs.moltzap.xyz/guides/run-an-agent-daemon#mcp-credential-file",
               }),
           });
-          return yield* acquireHarnessEndpoint(endpoint, {
-            credential: Redacted.make(credential),
-            receiveMode: "push",
-          });
+          return yield* acquireMcpConnection(
+            { endpoint, credential: Redacted.make(credential) },
+            { name: "sharness-nanoclaw", version: packageVersion },
+          );
         }),
       ),
       Scope.extend(scope),
@@ -424,7 +411,7 @@ class HarnessChannelAdapter {
     message: OutboundMessage,
   ): Effect.Effect<
     void,
-    ChannelError | SendError | CollectiveError | FirewallSendError
+    ChannelError | SendError | RequestError | FirewallRefusal
   > {
     const activation = this.activation;
     const config = this.setupConfig;
@@ -442,16 +429,23 @@ class HarnessChannelAdapter {
             onFailure: (error) =>
               this.reportRefusedText(config, to, error.message),
             onSuccess: (input) =>
-              activation.endpoint.send(input).pipe(
+              callTool(activation.endpoint.client, {
+                name: "send_message",
+                arguments: { input },
+              }).pipe(
                 Effect.asVoid,
-                Effect.catchTag("CollectiveError", (error) =>
+                Effect.catchTag("RequestError", (error) =>
                   this.reportRefusedText(config, to, error.message),
                 ),
-                Effect.catchTag("FirewallSendError", (error) =>
+                Effect.catchTag("FirewallRefusal", (error) =>
                   this.reportRefusedText(config, to, error.message),
                 ),
-                Effect.catchIf(isFinalRefusal, (error) =>
-                  this.reportFinalRefusal(config, to, error),
+                Effect.catchTag(
+                  "SendError",
+                  (error): Effect.Effect<void, ChannelError | SendError> =>
+                    FINAL_REFUSALS.has(error.reason)
+                      ? this.reportFinalRefusal(config, to, error)
+                      : Effect.fail(error),
                 ),
               ),
           }),
@@ -461,14 +455,8 @@ class HarnessChannelAdapter {
   }
 
   /**
-   * Report a send refused for a reason in `FINAL_REFUSALS`. A send in
-   * `POSTED_REFUSALS` completes even when its report cannot reach the host,
-   * since failing its row would hand it to NanoClaw's retry.
-   * @param config The host callbacks the delivery started under.
-   * @param to The conversation the text was sent to.
-   * @param error The send's refusal.
-   * @returns Completion once the report is handed to the host or, for a
-   *     sent refusal, logged as unreported.
+   * Completes POSTED_REFUSALS even when feedback fails, so NanoClaw cannot
+   * repeat a send that may already have reached its destination.
    */
   private reportFinalRefusal(
     config: ChannelSetup,
@@ -488,18 +476,9 @@ class HarnessChannelAdapter {
   }
 
   /**
-   * Hand a refused send back to the model as a Social Harness message in the
-   * conversation it was sent to. `send_message` has already returned, so this
-   * is how the model learns of it. The row completes rather than reaching
-   * NanoClaw's retry: a text the parser refuses would fail the same way again,
-   * and a send refused for a reason in `FINAL_REFUSALS` must not be repeated,
-   * for the reasons it gives.
-   * @param config The host callbacks the delivery started under. The channel
-   *     can stop while the send runs, as when the daemon stops, and the report
-   *     still reaches the host rather than failing the row into a retry.
-   * @param to The conversation the text was sent to.
-   * @param report The refusal's text.
-   * @returns Completion after the host callback completed.
+   * Returns refused sends to the model through the captured host callback, even
+   * if the channel stops meanwhile. The tool has already returned. Successful
+   * feedback completes the row instead of retrying unchanged refused input.
    */
   private reportRefusedText(
     config: ChannelSetup,
@@ -514,20 +493,24 @@ class HarnessChannelAdapter {
   }
 
   private handleDelivery(
-    delivery: InboundDelivery,
+    delivery: InboxEntry,
   ): Effect.Effect<void, ChannelError | DeliveryAcknowledgeError> {
     const config = this.setupConfig;
     if (config === null) {
       return Effect.void;
     }
-    const projected = projectItem(delivery.item, delivery.eventId);
+    const projected = projectItem(
+      delivery.item,
+      delivery.deliveryToken,
+      delivery.address,
+    );
     let text = projected.text;
     if (delivery.guidance !== undefined) {
       text =
         delivery.item.kind === "collectiveRequest"
           ? renderCollectiveRequest(
               delivery.item,
-              `Send the answer once as the whole text of send_message to ${replyAddress(delivery.item.message)}.`,
+              `Send the answer once as the whole text of send_message to ${delivery.address}.`,
               delivery.guidance,
             )
           : renderLocalGuidance(delivery.guidance, {
@@ -542,16 +525,12 @@ class HarnessChannelAdapter {
         ...projected,
         text,
       }),
-    ).pipe(Effect.zipRight(delivery.acknowledge));
+    );
   }
 
   /**
-   * Hand one projected message to NanoClaw's main session, replying to its
-   * Social Harness address.
-   * @param config The host callbacks from the active setup.
-   * @param address The Social Harness conversation the message belongs to.
-   * @param inbound The message in NanoClaw's inbox shape.
-   * @returns Completion after the host callback completed.
+   * Awaits handoff to the main session with a reply route to the Social Harness
+   * conversation.
    */
   private handToHost(
     config: ChannelSetup,
@@ -597,13 +576,17 @@ class HarnessChannelAdapter {
 }
 
 /** Each item keeps its canonical attribution and conversation before guidance is added. */
-function projectItem(item: InboundItem, eventId: string): ProjectedItem {
+function projectItem(
+  item: PermittedItem,
+  eventId: string,
+  address: MessageAddressInput,
+): ProjectedItem {
   switch (item.kind) {
     case "multicast":
       return {
         origin: "peer",
         id: eventId,
-        address: replyAddress(item.message),
+        address: address,
         sender: `agent:${item.message.author.agentName}`,
         text: renderContent(item.message.content),
       };
@@ -611,18 +594,18 @@ function projectItem(item: InboundItem, eventId: string): ProjectedItem {
       return {
         origin: "peer",
         id: eventId,
-        address: replyAddress(item.message),
+        address: address,
         sender: `agent:${item.message.author.agentName}`,
         text: renderCollectiveRequest(
           item,
-          `Send the answer once as the whole text of send_message to ${replyAddress(item.message)}.`,
+          `Send the answer once as the whole text of send_message to ${address}.`,
         ),
       };
     case "collectiveResult":
       return {
         origin: "endpoint",
         id: eventId,
-        address: item.to,
+        address,
         sender: ENDPOINT_SENDER,
         text: renderCollectiveResult(item),
       };
@@ -630,7 +613,7 @@ function projectItem(item: InboundItem, eventId: string): ProjectedItem {
       return {
         origin: "endpoint",
         id: eventId,
-        address: item.to,
+        address,
         sender: ENDPOINT_SENDER,
         text: item.error,
       };

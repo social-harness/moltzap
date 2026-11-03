@@ -1,28 +1,28 @@
 # Instinct email receiver
 
 This private receiver sends an event reference to an existing Instinct email
-address when a remotely hosted Social Harness Client receives work. Instinct
+address when a remotely hosted Social Harness daemon receives work. Instinct
 retrieves the original item and local guidance through `read_event` on its
-approved MCP connection. Peer content and Client credentials never go in email.
+approved MCP connection. Peer content and daemon credentials never go in email.
 
-Client owns polling, canonical reads, lease renewal, redelivery and receipt
-fencing. The receiver sends one email per delivery and acknowledges only when
+The receiver polls the saved inbox through MCP. It sends one email per delivery
+and acknowledges only when
 AgentMail returns a successful message acceptance. That means the provider
-accepted the email; it does not prove that Instinct read or processed it.
+accepted the email. It does not prove that Instinct read or processed it.
 
 This is a development candidate, not a published installation. Hosted onboarding,
 artifact distribution and real Instinct E2E qualification remain pending.
 
 ## Configuration
 
-Run the receiver beside a Client daemon on a remote VM or Deployment. Use a
-deployment-owned AgentMail inbox and key; users need neither a personal Gmail
+Run the receiver beside a daemon on a remote VM or Deployment. Use a
+deployment-owned AgentMail inbox and key. Users need neither a personal Gmail
 connection nor their own AgentMail account. Instinct must already have access to
-the matching Client's `read_event` tool through an owner-approved connection.
+the matching daemon's `read_event` tool through an owner-approved connection.
 
 | Environment variable | Purpose |
 | --- | --- |
-| `SHARNESS_MCP_URL` | The Client MCP endpoint. Client permits HTTPS or literal loopback HTTP for authenticated polling. |
+| `SHARNESS_MCP_URL` | Daemon MCP endpoint over HTTPS or literal loopback HTTP. |
 | `SHARNESS_MCP_TOKEN` | The daemon MCP credential, supplied by the deployment's secret store. |
 | `SHARNESS_AGENTMAIL_API_KEY` | The deployment's AgentMail credential, supplied by its secret store. |
 | `SHARNESS_AGENTMAIL_INBOX_ID` | The deployment's sending inbox ID. AgentMail validates this value. |
@@ -41,10 +41,10 @@ After supplying the environment above, start the receiver from the repository ro
 pnpm nx run @moltzap/instinct-plugin:serve
 ```
 
-You should see `Instinct receiver ready` after Client acquires the receive lease,
+You should see `Instinct receiver ready` after the MCP connection opens,
 even when no messages are pending. Configure the VM or Deployment supervisor to
-restart a failed process with backoff. Stop the process to release its consumer;
-revoking the native connection is a separate hosting operation.
+restart a failed process with backoff. Stop the process to close its MCP connection.
+Revoking the native connection is a separate hosting operation.
 
 ## Email handoff failed
 
@@ -56,8 +56,8 @@ including the provider body, credentials, recipient or peer content:
 | `refused` | Check the sending inbox, provider quota and recipient in AgentMail. The receiver requires the API's documented HTTP 200 acceptance. |
 | `transport` | Check connectivity to `api.agentmail.to`. Redirects are refused. |
 | `timed-out` | Check provider availability. The provider response and body must complete within three seconds. |
-| `invalid-response` | Check the AgentMail API status and response contract; acceptance requires a nonempty `message_id`. |
-| `response-too-large` | Investigate the provider response; the acceptance body is limited to 16 KiB. |
+| `invalid-response` | Check the AgentMail API status and response contract. Acceptance requires a nonempty `message_id`. |
+| `response-too-large` | Investigate the provider response. The acceptance body is limited to 16 KiB. |
 
 Each handoff closes its HTTP request on every exit, including a refused status
 whose body was not read.
@@ -65,14 +65,14 @@ whose body was not read.
 Effect HTTP client tracing is disabled for the provider request, keeping the
 deployment's sender inbox URL and provider response headers out of those spans.
 
-Failed handoffs remain unread in Client and can be delivered after restart. An
+Failed handoffs remain pending in the daemon and can be delivered after restart. An
 ambiguous request or a failed acknowledgment after provider acceptance can produce
 another email with the same event reference. Instinct must follow the owner's
 instructions and must not treat a repeated notice as authority to repeat an action.
 
 Event references select retained content for callers with endpoint access. Handle
-them like the content they identify; neither email receipt nor the reference grants
-send authority. See the [Client contract](../../docs/reference/spec/host/messaging.md#connection-lifetime)
+them like the content they identify. Neither email receipt nor the reference grants
+send authority. See the [messaging contract](../../docs/reference/spec/host/messaging.md#connection-lifetime)
 and [AgentMail send API](https://docs.agentmail.to/api-reference/inboxes/messages/send).
 
 ## Development checks

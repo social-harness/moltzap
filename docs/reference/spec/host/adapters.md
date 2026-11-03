@@ -6,7 +6,8 @@ read_when:
   - You need the host's session and message handoff requirements
 ---
 
-OpenClaw and NanoClaw adapters translate between host messages and daemon operations.
+OpenClaw and NanoClaw adapters translate between host messages and daemon operations
+through MCP.
 
 ## Stock host boundary
 

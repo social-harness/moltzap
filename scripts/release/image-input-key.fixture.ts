@@ -102,7 +102,7 @@ export function fixture(): string {
       version: "1",
       dependencies: { "@fixture/core": "workspace:*" },
     });
-    files[`packages/${service}/src/index.test.ts`] =
+    files[`packages/${service}/src/index.spec.ts`] =
       'import "@fixture/core/test";\n';
     files[`packages/${service}/src/index.ts`] =
       'import "@fixture/core";\nimport "@fixture/core/internal";\n';
@@ -180,7 +180,7 @@ export function clientManifest(): string {
     },
     exports: {
       ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-      "./service": { import: "./dist/daemon/run.js" },
+      "./service": { import: "./dist/harness/run.js" },
       "./test": { "sharness-test": { import: "./dist/test.js" } },
       "./internal": {
         "sharness-internal": {
@@ -224,7 +224,7 @@ function fixtureFiles(
       extends: "../../tsconfig.base.json",
       compilerOptions: { rootDir: "src", outDir: "dist" },
       include: ["src/**/*.ts"],
-      exclude: ["src/**/*.test.ts"],
+      exclude: ["src/**/*.spec.ts"],
     }),
     "packages/social-harness/src/index.ts": "export const publicValue = 1;\n",
     "packages/social-harness/src/internal.ts":
@@ -236,7 +236,7 @@ function fixtureFiles(
     "packages/social-harness/src/only-sync.ts": "export {};",
     "packages/social-harness/src/only-default.ts": "export {};",
     "packages/social-harness/src/test.ts": "export const testOnly = 1;\n",
-    "packages/social-harness/src/daemon/run.ts": "export const daemon = 1;\n",
+    "packages/social-harness/src/harness/run.ts": "export const daemon = 1;\n",
   };
 }
 
@@ -271,10 +271,10 @@ function agentFiles(): Record<string, string> {
     "plugins/openclaw/bin/loader": "#!/usr/bin/env node\nconsole.log('load');",
     "plugins/openclaw/skills/connect/SKILL.md": "Connect to the daemon.",
     "images/openclaw-agent/Dockerfile":
-      "FROM upstream@sha256:host\nCOPY host.sh /host.sh\n",
+      "FROM upstream@sha256:host\nCOPY entrypoint.sh /entrypoint.sh\n",
     "images/openclaw-agent/.dockerignore":
-      "*\n!host.sh\n!patch-openclaw.ts\n!configure-channel.ts\n",
-    "images/openclaw-agent/host.sh": "exec openclaw gateway\n",
+      "*\n!entrypoint.sh\n!patch-openclaw.ts\n!configure-channel.ts\n",
+    "images/openclaw-agent/entrypoint.sh": "exec openclaw gateway\n",
     "images/openclaw-agent/README.md": "Run the host.\n",
   };
 }

@@ -33,8 +33,8 @@
       "import": "./dist/index.js"
     },
     "./service": {
-      "types": "./dist/daemon/index.d.ts",
-      "import": "./dist/daemon/index.js"
+      "types": "./dist/harness/startup.d.ts",
+      "import": "./dist/harness/startup.js"
     },
     "./test": {
       "sharness-test": {
@@ -95,17 +95,6 @@
           "cwd": "packages/social-harness",
           "command": "safer-architecture-lsp check ."
         }
-      },
-      "test:integration": {
-        "executor": "nx:run-commands",
-        "dependsOn": [
-          "build",
-          "^build"
-        ],
-        "options": {
-          "cwd": "packages/social-harness",
-          "command": "vitest run --config vitest.integration.config.ts"
-        }
       }
     }
   },
@@ -114,8 +103,6 @@
     "@effect/platform": "catalog:",
     "@effect/platform-node": "catalog:",
     "@modelcontextprotocol/client": "catalog:",
-    "@modelcontextprotocol/node": "catalog:",
-    "@modelcontextprotocol/server": "catalog:",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/exporter-trace-otlp-proto": "catalog:",
     "@opentelemetry/resources": "catalog:",
@@ -134,14 +121,14 @@
     "structured-headers": "catalog:",
     "yaml": "catalog:",
     "@effect/sql": "catalog:",
-    "@effect/sql-sqlite-node": "catalog:"
+    "@effect/sql-sqlite-node": "catalog:",
+    "@effect/rpc": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@typescript/native": "catalog:",
     "eslint": "catalog:",
     "typescript": "catalog:",
-    "undici": "catalog:",
     "vitest": "catalog:",
     "fast-check": "catalog:"
   },

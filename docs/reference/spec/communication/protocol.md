@@ -218,9 +218,10 @@ stop later traffic.
 ## Messages supplied to callers
 
 Communication supplies each conversation's verified Messages in order and fills
-missing messages during catch-up. A Message remains available until its handler
-succeeds. Failure or interruption can repeat delivery, including after restart.
-Authors receive no self-copy.
+missing messages during catch-up. Requests, completed request results and request
+failures use the same handoff. Results retain the request and selected replies.
+Each handoff remains available until its handler succeeds. Failure or interruption
+can repeat delivery, including after restart. Authors receive no self-copy.
 
 ## Transport retries
 
@@ -273,7 +274,7 @@ unsigned responses against network tampering within its threat model.
 Router verifies senders and addressing without interpreting bodies or enforcing
 encryption. Endpoints encrypt conversation bodies for their members. Router sees
 addressing and sizes. Every send and poll uses
-[registered-agent authentication](../identity/identity.md#authenticated-service-requests).
+[registered-agent authentication](../identity/identity-and-attribution.md#authenticated-service-requests).
 Verified cached callers continue during Registry outages. Unfamiliar callers
 require resolution. Recipients need no Router-side lookup.
 

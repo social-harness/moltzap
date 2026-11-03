@@ -1,9 +1,6 @@
 /**
- * @file Starts the native NanoClaw host inside the complete agent image. It
- * reads the application configuration, lays out NanoClaw's project directory
- * in the state volume, provisions the agent group, runs the host with the
- * image's preload, and once the host's CLI socket exists, serves it on the
- * configured TCP gateway. The host's exit decides the container's.
+ * @file Starts NanoClaw from persistent state and exposes its CLI over TCP.
+ * The host's exit determines the container's exit.
  */
 import type { Stats } from "node:fs";
 import { type ChildProcess, spawn } from "node:child_process";
@@ -17,8 +14,12 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { type Gateway, type GatewayAddress, startGateway } from "./gateway.ts";
-import { type McpServer, provisionNanoClaw } from "./provision.ts";
+import {
+  type Gateway,
+  type GatewayAddress,
+  startGateway,
+} from "./cli-gateway.ts";
+import { type McpServer, provisionNanoClaw } from "./initialize-agent-group.ts";
 
 const APP_ROOT = "/opt/social-harness/nanoclaw/app";
 const PRELOAD = "/opt/social-harness/nanoclaw/preload.ts";
@@ -49,10 +50,7 @@ interface Supervision {
 
 process.exitCode = await main();
 
-/**
- * Run the host until it exits. A host stopped by `SIGTERM` or `SIGINT`
- * exits the container with 0.
- */
+/** A host stopped by SIGTERM or SIGINT exits the container with zero. */
 async function main(): Promise<number> {
   const config = await loadConfig();
   await materializeProject(config);
@@ -76,8 +74,8 @@ async function main(): Promise<number> {
 }
 
 /**
- * Read the configuration `DEPLOYMENT_NANOCLAW_CONFIG` names, which must place
- * NanoClaw's state where `DEPLOYMENT_NANOCLAW_STATE` says the volume is.
+ * Requires the application's stateDirectory to match DEPLOYMENT_NANOCLAW_STATE
+ * or the default state mount.
  */
 async function loadConfig(): Promise<ApplicationConfig> {
   const configPath = process.env.DEPLOYMENT_NANOCLAW_CONFIG ?? DEFAULT_CONFIG;
@@ -208,10 +206,7 @@ async function materializeProject(
   }
 }
 
-/**
- * Link `target` to `source`, replacing a link to anything else. Any other
- * file at `target` is refused rather than lost.
- */
+/** Replaces an existing link but refuses other files to preserve agent data. */
 async function ensureLink(target: string, source: string): Promise<undefined> {
   const info = await pathInfo(target);
   if (info?.isSymbolicLink() === true) {
@@ -249,8 +244,8 @@ function startHost(config: ApplicationConfig): ChildProcess {
 }
 
 /**
- * Close the gateway and pass `signal` on to the host. A stop that arrives
- * before the gateway listens leaves the gateway open until the host exits.
+ * Closes the gateway and forwards the signal. A gateway that starts after the
+ * signal remains open until the host exits.
  */
 function stopHost(
   host: ChildProcess,
@@ -263,7 +258,7 @@ function stopHost(
   }
 }
 
-/** Wait for the host's CLI socket; a host that exits first fails startup. */
+/** Wait for the host's CLI socket. A host that exits first fails startup. */
 async function waitForSocket(
   socketPath: string,
   host: ChildProcess,

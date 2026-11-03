@@ -40,7 +40,6 @@ const configModuleRules = {
 };
 
 const PACKAGE_SOURCE_FILES = [
-  "integration/**/*.ts",
   "src/**/*.ts",
   "src/**/*.cts",
   "src/**/*.mts",
@@ -50,11 +49,7 @@ const PACKAGE_SOURCE_FILES = [
 ];
 
 const TEST_SUPPORT_FILES = [
-  "integration/**/*.ts",
-  "src/**/*.test.ts",
   "src/**/*.spec.ts",
-  "src/**/*.integration.test.ts",
-  "src/**/*.int.test.ts",
   "src/__tests__/**/*.ts",
   "src/**/__tests__/**/*.ts",
   "src/testing/**/*.ts",
@@ -155,8 +150,7 @@ const strictPlugins = {
 
 /**
  * Flat configuration for one package: the strict preset on sources, scripts,
- * and root configuration modules, plus the test, integration-test, and
- * barrel-documentation presets.
+ * and root configuration modules, plus the test and barrel-documentation presets.
  */
 export function packageEslintConfig(options: PackageEslintOptions) {
   const strictRules = makeStrictRules(options.maxLines);
@@ -172,18 +166,13 @@ export function packageEslintConfig(options: PackageEslintOptions) {
     packageIgnores,
     {
       ...makeStrictBlock(PACKAGE_SOURCE_FILES, languageOptions, strictRules),
-      ignores: ["**/*.test.ts", "**/*.spec.ts"],
+      ignores: ["**/*.spec.ts"],
       rules: {
         ...strictRules,
         "jsdoc/check-tag-names": ["error", { definedTags }],
       },
     },
     makeStrictBlock(TEST_SUPPORT_FILES, languageOptions, strictRules),
-    makePresetBlock(
-      ["src/**/*.integration.test.ts", "integration/**/*.integration.test.ts"],
-      languageOptions,
-      guard.configs.integrationTests,
-    ),
     {
       ...makePresetBlock(
         ["src/**/index.ts"],
@@ -200,6 +189,7 @@ export function packageEslintConfig(options: PackageEslintOptions) {
 /**
  * Flat configuration for the workspace root: root modules, the `images/`
  * helper, and the Node-run scripts under `scripts/`.
+ * Owner specs stay together as their behavior coverage grows.
  */
 export function rootEslintConfig(tsconfigRootDir: string) {
   const languageOptions = makeTsLanguageOptions(tsconfigRootDir, [
@@ -225,6 +215,10 @@ export function rootEslintConfig(tsconfigRootDir: string) {
     ),
     makeEslintDisableCommentRules(languageOptions),
     configModuleRules,
+    {
+      files: ["scripts/**/*.spec.ts"],
+      rules: { "max-lines": "off" },
+    },
   ];
 }
 
@@ -258,7 +252,7 @@ export function agentImageEslintConfig(tsconfigRootDir: string) {
       },
     },
     {
-      files: ["**/*.test.ts"],
+      files: ["**/*.spec.ts"],
       rules: {
         "agent-code-guard/no-example-only-tests": "off",
         "agent-code-guard/no-hardcoded-assertion-literals": "off",
@@ -271,7 +265,7 @@ export function agentImageEslintConfig(tsconfigRootDir: string) {
 /** Flat configuration for tests/integration: the strict preset on every TypeScript file plus the integration-test preset on process suites. */
 export function integrationEslintConfig(
   tsconfigRootDir: string,
-  testFiles: readonly string[] = ["**/*.integration.test.ts"],
+  testFiles: readonly string[] = ["**/*.spec.ts"],
 ) {
   const languageOptions = makeTsLanguageOptions(tsconfigRootDir, [
     "./tsconfig.json",

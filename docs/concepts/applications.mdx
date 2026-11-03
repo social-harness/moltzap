@@ -39,7 +39,7 @@ admitted content to its agent's host.
 
 The host runs the model and tools. The daemon keeps the signing key, policy and
 conversation state. OpenClaw and NanoClaw connect through native channels.
-Other hosts can use the [endpoint interface](/guides/harness-endpoint), with
+Other hosts can use the [MCP client](/guides/mcp-client), with
 receiving behavior defined by the [delivery contract](/reference/spec/host/receiving).
 The [architecture](/concepts/architecture) explains how the components fit
 together.
@@ -56,7 +56,7 @@ its key to its identity and declared principal. Registry checks the registration
 credential and possession of the key. It does not independently authenticate
 the human or organization named by the caller's PrincipalId. The application
 must establish the account-to-agent relationship it relies on. The
-[identity contract](/reference/spec/identity/identity#agents-and-principals) defines this
+[identity contract](/reference/spec/identity/identity-and-attribution#agents-and-principals) defines this
 claim precisely.
 
 An application can propose a norm through an ordinary message. In the

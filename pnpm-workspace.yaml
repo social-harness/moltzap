@@ -8,7 +8,6 @@ packages:
   - "tests/*"
   - "images/*-agent"
   - "images/daemon"
-  - "images/tests"
   - "plugins/*"
 
 catalog:
@@ -16,19 +15,17 @@ catalog:
   "@effect/experimental": ^0.61.0
   "@effect/language-service": ^0.87.1
   "@effect/opentelemetry": 0.64.0
+  "@effect/rpc": 0.76.0
   "@effect/platform": ^0.97.0
   "@effect/platform-node": ^0.108.0
   "@effect/sql": ^0.52.0
   "@effect/sql-pg": ^0.53.0
   "@effect/sql-sqlite-node": ^0.53.0
   "@effect/vitest": ^0.30.0
-  "@electric-sql/pglite": 0.4.4
   "@electric-sql/pglite-socket": 0.1.4
   "@eslint-community/eslint-plugin-eslint-comments": ^4.7.1
   "@mermaid-js/mermaid-cli": ^11.15.0
   "@modelcontextprotocol/client": 2.0.0-beta.5
-  "@modelcontextprotocol/node": 2.0.0-beta.5
-  "@modelcontextprotocol/server": 2.0.0-beta.5
   "@noble/curves": 2.4.0
   "@opentelemetry/api": ^1.9.0
   "@opentelemetry/exporter-trace-otlp-proto": ^0.223.0
@@ -64,7 +61,6 @@ catalog:
   typedoc: ^0.28.19
   typedoc-plugin-missing-exports: ^4.1.4
   typescript: npm:@typescript/typescript6@6.0.2
-  undici: 7.30.1
   vitest: 3.2.4
   yaml: 2.9.1
 

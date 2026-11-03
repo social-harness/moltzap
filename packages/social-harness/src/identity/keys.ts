@@ -1,6 +1,5 @@
-/** @file Exact Ed25519 public keys, opaque private signing authority, and the single-signature General JWS that AgentCard and SignedMessage carry. */
+/** @file Ed25519 keys, private signing authority and shared General JWS representation. */
 
-import type { LazyArg } from "effect/Function";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import {
   Data,
@@ -19,7 +18,7 @@ import {
   importPKCS8,
   type JWK,
 } from "jose";
-import { exactStruct } from "../encoding/exact.js";
+import { exactStruct } from "../encoding/canonical-json.js";
 import { decodeCanonicalBase64Url } from "../encoding/identifier.js";
 import { type BoundedCache, makeBoundedCache } from "./bounded-cache.js";
 
@@ -115,16 +114,8 @@ const decodeAcceptedPublicKey = (value: string): Uint8Array | undefined => {
 };
 
 /**
- * Checks the closed Ed25519 signature representation before cryptographic
- * verification.
- *
- * The standards verifier supplies the strict verification equation. This
- * boundary additionally rejects alternate point and scalar encodings that
- * permissive platform verifiers may otherwise accept. The public-key Schema
- * separately rejects small-order verification keys.
- *
- * @param signature Candidate 64-byte Ed25519 signature.
- * @returns Whether its point and scalar use the single accepted encoding.
+ * Rejects alternate Ed25519 point and scalar encodings before cryptographic
+ * verification. The public-key schema separately rejects small-order keys.
  */
 export const hasCanonicalEd25519SignatureEncoding = (
   signature: Uint8Array,
@@ -218,7 +209,7 @@ const publicKeyRepresentation = Schema.Struct({
 
 /** Exact immutable Ed25519 public JWK. */
 // eslint-disable-next-line @typescript-eslint/naming-convention -- Effect Schemas use the public model's type name so callers import one vocabulary term.
-export const Ed25519PublicKey = Schema.transform(
+export const AgentPublicKey = Schema.transform(
   publicKeyRepresentation,
   publicKeyValueSchema,
   {
@@ -236,9 +227,9 @@ export const Ed25519PublicKey = Schema.transform(
     }),
   },
 ).pipe(
-  Schema.brand("Ed25519PublicKey"),
+  Schema.brand("AgentPublicKey"),
   Schema.annotations({
-    identifier: "Ed25519PublicKey",
+    identifier: "AgentPublicKey",
     description: "Exact immutable Ed25519 public JWK",
     parseOptions: {
       exact: true,
@@ -249,7 +240,7 @@ export const Ed25519PublicKey = Schema.transform(
 
 /** Validated immutable Ed25519 public JWK. */
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- Effect's same-named Schema and inferred type form one public boundary model.
-export type Ed25519PublicKey = typeof Ed25519PublicKey.Type;
+export type AgentPublicKey = typeof AgentPublicKey.Type;
 
 /**
  * Reports failure to read a key, to derive its standard thumbprint URI or
@@ -263,63 +254,35 @@ const publicKeyOperationFailure = (): Ed25519PublicKeyOperationError =>
   new Ed25519PublicKeyOperationError();
 
 /**
- * Calls each thunk and reads its key's `x` under one try, so a key, or a card,
- * request or authority holding one, that throws on read fails with
- * `Ed25519PublicKeyOperationError` instead of a defect. `crv` and `kty` are
- * fixed and `x` has one accepted spelling, so equal `x` means the same key.
- */
-export const sameEd25519PublicKey = (
-  left: LazyArg<Ed25519PublicKey>,
-  right: LazyArg<Ed25519PublicKey>,
-): Effect.Effect<boolean, Ed25519PublicKeyOperationError> =>
-  Effect.try({
-    try: () => left().x === right().x,
-    catch: publicKeyOperationFailure,
-  });
-
-/**
  * Most keys that each per-key cache below keeps: eight times
- * `signed-message.ts → MAXIMUM_RECIPIENTS`, so the keys of eight full
+ * `envelope.ts → MAXIMUM_RECIPIENTS`, so the keys of eight full
  * conversations stay cached. Each entry is one short string or one imported
  * public `CryptoKey`.
  */
 const PUBLIC_KEY_CACHE_ENTRIES = 1_024;
 
 /**
- * Derives a value from a public key once while the key stays among the
- * `PUBLIC_KEY_CACHE_ENTRIES` most recently used. Entries are keyed by `x`:
- * `crv` and `kty` are fixed and `x` has one accepted spelling, so `x`
- * determines the RFC 7638 canonical JWK the thumbprint hashes, and two keys
- * share an entry only when they are the same key. Keying by value keeps a hit
- * for every AgentCard decode, each of which makes a new key object. The entry
- * and its derivation share one read of `x`, so an entry holds its own key's
- * value even for an object whose members change between reads. A key whose
- * `x` cannot be read fails with `Ed25519PublicKeyOperationError`. A failed
- * derivation is not kept, and the caches hold key material, never a
- * verification outcome.
+ * Immutable keys share imported material by their canonical coordinate even
+ * when separate card decodes produce separate objects. Failed derivations and
+ * verification outcomes stay out of these bounded caches.
  */
 const cachedPerPublicKey = <A>(
   entries: BoundedCache<string, A>,
-  publicKey: Ed25519PublicKey,
+  publicKey: AgentPublicKey,
   derive: (
     jwk: PublicKeyValue,
   ) => Effect.Effect<A, Ed25519PublicKeyOperationError>,
 ): Effect.Effect<A, Ed25519PublicKeyOperationError> =>
-  Effect.try({
-    try: (): PublicKeyValue =>
-      Object.freeze({ crv: "Ed25519", kty: "OKP", x: publicKey.x }),
-    catch: publicKeyOperationFailure,
-  }).pipe(
-    Effect.flatMap((jwk) =>
-      Option.match(entries.get(jwk.x), {
-        onNone: () =>
-          Effect.tap(derive(jwk), (derived) => {
-            entries.set(jwk.x, derived);
-          }),
-        onSome: (cached) => Effect.succeed(cached),
-      }),
-    ),
-  );
+  Effect.suspend(() => {
+    const coordinate = publicKey.x;
+    return Option.match(entries.get(coordinate), {
+      onNone: () =>
+        Effect.tap(derive(publicKey), (derived) => {
+          entries.set(coordinate, derived);
+        }),
+      onSome: (cached) => Effect.succeed(cached),
+    });
+  });
 
 const thumbprintUris = makeBoundedCache<string, string>(
   PUBLIC_KEY_CACHE_ENTRIES,
@@ -330,11 +293,10 @@ const thumbprintUris = makeBoundedCache<string, string>(
  *
  * @param publicKey Validated public key.
  * @returns The standard SHA-256 JWK thumbprint URI.
- * @failure Ed25519PublicKeyOperationError when the key's `x` cannot be read
- * or the JOSE implementation cannot derive the URI.
+ * @failure Ed25519PublicKeyOperationError when JOSE cannot derive the URI.
  */
 export const ed25519PublicKeyThumbprintUri = (
-  publicKey: Ed25519PublicKey,
+  publicKey: AgentPublicKey,
 ): Effect.Effect<string, Ed25519PublicKeyOperationError> =>
   cachedPerPublicKey(thumbprintUris, publicKey, (jwk) =>
     Effect.tryPromise({
@@ -358,13 +320,13 @@ const verificationKeys = makeBoundedCache<string, CryptoKey>(
 
 /** Imports a validated Ed25519 public key to verify signatures under it. */
 export const ed25519VerificationKey = (
-  publicKey: Ed25519PublicKey,
+  publicKey: AgentPublicKey,
 ): Effect.Effect<CryptoKey, Ed25519PublicKeyOperationError> =>
   cachedPerPublicKey(verificationKeys, publicKey, (jwk) =>
     importPublicJwk(jwk, "Ed25519"),
   );
 
-/** JWE key management of sealed bodies; the opening key is imported for it. */
+/** Selects key management for sealed bodies and import of the opening key. */
 export const SEALED_BODY_KEY_MANAGEMENT_ALGORITHM = "ECDH-ES+A256KW";
 
 /** X25519 public JWK of one agent: the key a sealed body is encrypted to. */
@@ -375,15 +337,8 @@ interface X25519PublicJwk {
 }
 
 /**
- * Maps a validated Ed25519 public key to the same agent's X25519 public key
- * through the RFC 7748 birational map `u = (1 + y) / (1 - y)`. The opening key
- * that `fromPkcs8` derives is the private half of this key.
- *
- * The Ed25519 public-key Schema admits canonical encodings that are not curve
- * points, and the map fails for those.
- *
- * @param publicKey Validated Ed25519 public key, such as an AgentCard key.
- * @returns The X25519 public JWK.
+ * Maps an Ed25519 public key to X25519 with RFC 7748. Fails for canonical
+ * encodings that are not curve points. `fromPkcs8` derives its private half.
  */
 export const x25519PublicJwk = (
   publicKey: PublicKeyValue,
@@ -407,7 +362,7 @@ const sealingKeys = makeBoundedCache<string, CryptoKey>(
 
 /** Imports the `x25519PublicJwk` image of a validated key to seal bodies to. */
 export const x25519SealingKey = (
-  publicKey: Ed25519PublicKey,
+  publicKey: AgentPublicKey,
 ): Effect.Effect<CryptoKey, Ed25519PublicKeyOperationError> =>
   cachedPerPublicKey(sealingKeys, publicKey, (jwk) =>
     Effect.flatMap(x25519PublicJwk(jwk), (agreementKey) =>
@@ -437,7 +392,7 @@ export class InvalidAgentPrivateKeyError extends Data.TaggedError(
 type AuthorityState = Readonly<{
   privateKey: CryptoKey;
   openingKey: CryptoKey;
-  publicKey: Ed25519PublicKey;
+  publicKey: AgentPublicKey;
 }>;
 
 const authorityState = new WeakMap<AgentSigningAuthority, AuthorityState>();
@@ -457,17 +412,9 @@ const invalidPrivateKey = (): InvalidAgentPrivateKeyError =>
 const EXPANDED_SECRET_BYTES = 64;
 
 /**
- * Selects the bytes to erase for `bytes`: its whole buffer when the view
- * starts that buffer and the buffer is no larger than the SHA-512 expansion,
- * and only the view otherwise.
- *
- * The decoded seed and the expansion behind the X25519 secret each sit alone
- * in such a buffer, so erasing it also removes the expansion's RFC 8032 nonce
- * prefix. A view into a larger shared buffer, such as Node's pooled Buffer
- * slab, is erased alone so that unrelated data survives.
- *
- * @param bytes Key bytes.
- * @returns The bytes to overwrite.
+ * Erases standalone seed/expansion buffers, including the RFC 8032 nonce
+ * prefix. Erases only the view in larger shared buffers to preserve unrelated
+ * data, such as other values in a Node Buffer pool.
  */
 const erasableBytes = (bytes: Uint8Array): Uint8Array =>
   bytes.byteOffset === 0 && bytes.buffer.byteLength <= EXPANDED_SECRET_BYTES
@@ -475,13 +422,8 @@ const erasableBytes = (bytes: Uint8Array): Uint8Array =>
     : bytes;
 
 /**
- * Overwrites the key bytes behind `bytes` once `effect` settles. The
- * base64url strings that JOSE requires cannot be zeroed and remain until
- * garbage collection.
- *
- * @param bytes Key bytes to erase.
- * @param effect Work that reads them.
- * @returns `effect`, with the erasure attached.
+ * Erases key bytes when the effect settles. JOSE requires base64url strings
+ * that cannot be erased and remain until garbage collection.
  */
 const zeroAfter = <A, E>(
   bytes: Uint8Array,
@@ -496,20 +438,12 @@ const zeroAfter = <A, E>(
   );
 
 /**
- * Derives the non-extractable X25519 opening key from the Ed25519 seed.
- *
- * The secret is the clamped first half of SHA-512 over the seed, which is the
- * RFC 8032 signing scalar. The JWK pairs it with `x25519PublicJwk` of the
- * Ed25519 public key, and the import refuses a pair whose halves disagree, so
- * the opener and every sealer use the same key.
- *
- * @param seed Ed25519 seed decoded from the exported private JWK.
- * @param publicKey Ed25519 public key of the same seed.
- * @returns The opening key, usable only for X25519 `deriveBits`.
+ * Derives the X25519 private key from the clamped first half of SHA-512 over
+ * the Ed25519 seed. Import rejects a key pair whose halves disagree.
  */
 const importFromSeed = (
   seed: Uint8Array,
-  publicKey: Ed25519PublicKey,
+  publicKey: AgentPublicKey,
 ): Effect.Effect<CryptoKey, InvalidAgentPrivateKeyError> =>
   Effect.gen(function* () {
     const agreementPublicKey = yield* Either.mapLeft(
@@ -541,7 +475,7 @@ const importFromSeed = (
  */
 const importOpeningKey = (
   exportedKey: JWK,
-  publicKey: Ed25519PublicKey,
+  publicKey: AgentPublicKey,
 ): Effect.Effect<CryptoKey, InvalidAgentPrivateKeyError> =>
   Effect.gen(function* () {
     if (exportedKey.d === undefined) {
@@ -555,14 +489,8 @@ const importOpeningKey = (
   });
 
 /**
- * Imports one Ed25519 PKCS#8 key as an opaque authority.
- *
- * JOSE needs an extractable import to derive the public JWK and the seed of
- * the opening key, while the authority retains a separate non-extractable
- * import for signing.
- *
- * @param pkcs8 Redacted unencrypted Ed25519 PKCS#8 text.
- * @returns The authority.
+ * Uses an extractable import to derive the public JWK and opening seed, and
+ * retains a separate non-extractable signing key.
  */
 const fromPkcs8 = (
   pkcs8: Redacted.Redacted,
@@ -579,7 +507,7 @@ const fromPkcs8 = (
       try: () => exportJWK(extractableKey),
       catch: invalidPrivateKey,
     });
-    const publicKey = yield* Schema.decodeUnknown(Ed25519PublicKey)(
+    const publicKey = yield* Schema.decodeUnknown(AgentPublicKey)(
       {
         crv: exportedKey.crv,
         kty: exportedKey.kty,
@@ -605,7 +533,7 @@ const fromPkcs8 = (
     return authority;
   });
 
-const publicKey = (authority: AgentSigningAuthority): Ed25519PublicKey =>
+const publicKey = (authority: AgentSigningAuthority): AgentPublicKey =>
   getAuthorityState(authority).publicKey;
 
 /**
@@ -630,14 +558,10 @@ export const agentOpeningPrivateKey = (
 ): CryptoKey => getAuthorityState(authority).openingKey;
 
 /**
- * Loads and identifies one Ed25519 signing authority without exposing its
- * private keys or a generic signing or decryption operation.
- *
- * `fromPkcs8` requires redacted, unencrypted Ed25519 PKCS#8 text. It retains
- * non-extractable signing and X25519 opening keys derived from that seed.
- * Invalid material fails with `InvalidAgentPrivateKeyError`. `publicKey`
- * returns the immutable Ed25519 public key that registration and signing
- * bind to the agent's card.
+ * Imports redacted, unencrypted Ed25519 PKCS#8 text and retains non-extractable
+ * signing and X25519 opening keys. Invalid material fails with
+ * `InvalidAgentPrivateKeyError`. `publicKey` returns the immutable key used in
+ * registration and signing. Private keys stay inaccessible.
  */
 // eslint-disable-next-line @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- The approved Effect-style API uses one name for its opaque type and capability value.
 export const AgentSigningAuthority = Object.freeze({

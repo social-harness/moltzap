@@ -1,7 +1,7 @@
 /** @file Registry-owned bootstrap admission before durable registration. */
 
 import type { HttpServerRequest } from "@effect/platform";
-import { Ed25519PublicKey } from "@moltzap/social-harness";
+import { AgentPublicKey } from "@moltzap/social-harness";
 import {
   httpErrors,
   registryContract,
@@ -46,15 +46,8 @@ type BootstrapRegistrationInput = Readonly<{
 }>;
 
 /**
- * Verifies Registry-owned bootstrap admission through its durable replay step.
- *
- * @param input Bootstrap boundary dependencies and request.
- * @param input.httpRequest Server request carrying signed framing.
- * @param input.bodyBytes Bounded body octets covered by the signature.
- * @param input.admissionCredential Configured bootstrap secret.
- * @param input.nonceCapacity Maximum live bootstrap nonces.
- * @param input.storage Durable nonce store.
- * @returns The complete registration request after every admission check.
+ * Verifies the bootstrap credential and signed request, then durably claims
+ * its replay nonce before validating the complete registration body.
  */
 export function verifyBootstrapRegistration(
   input: BootstrapRegistrationInput,
@@ -124,10 +117,10 @@ function requireAdmissionCredential(
 function authenticatePublicKey(
   candidate: typeof registrationPublicKeyRepresentation.Type,
 ): Effect.Effect<
-  Ed25519PublicKey,
+  AgentPublicKey,
   InstanceType<typeof httpErrors.AuthenticationFailedError>
 > {
-  return Schema.decodeUnknown(Ed25519PublicKey)(candidate).pipe(
+  return Schema.decodeUnknown(AgentPublicKey)(candidate).pipe(
     // eslint-disable-next-line agent-code-guard/no-effect-error-coalescing -- A syntactically valid but cryptographically unusable verification key is an authentication failure.
     Effect.mapError(() => new AuthenticationFailedError()),
   );

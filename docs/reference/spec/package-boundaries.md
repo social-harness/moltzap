@@ -39,7 +39,7 @@ Four library entries expose named exports:
 
 | Entry | Audience and boundary |
 |---|---|
-| `@moltzap/social-harness` | `HarnessEndpoint`, host values and public identity capabilities |
+| `@moltzap/social-harness` | Host values, MCP contracts and public identity capabilities |
 | `@moltzap/social-harness/service` | Daemon composition and network clients |
 | `@moltzap/social-harness/internal` | Network-service composition and wire contracts. Requires `sharness-internal` |
 | `@moltzap/social-harness/test` | Process tests and wire-version overrides. Requires `sharness-test` |
@@ -47,7 +47,7 @@ Four library entries expose named exports:
 Root and service resolve by default. Internal and test entries have no default
 resolution or TypeDoc entry.
 Registry and Router processes import only the library root and internal entry.
-Adapters use only the root and `HarnessEndpoint` or MCP. They cannot import
+Adapters use only the root and MCP. They cannot import
 each other, simulators or evaluation suites.
 
 Registry and Router expose `./test` startup entries only under `sharness-test`.
@@ -62,12 +62,12 @@ Each module owns its contract and the representations it exchanges:
 
 | Owning contract | Guarantees |
 |---|---|
-| [Identity](./identity/identity.md) | Identity, attribution, encryption and authentication |
+| [Identity](./identity/identity-and-attribution.md) | Identity, attribution, encryption and authentication |
 | [Communication](./communication/protocol.md) | Ordered messages, routing and recovery |
 | [Collectives](./communication/collectives.md) | Requests, answers and completion |
 | [Firewall](./firewall/message-policy.md) | Local message policy |
 
-Each AgentId has one configured [daemon](./daemon/daemon.md) and loopback `/mcp`
+Each AgentId has one configured [daemon](./daemon.md) and loopback `/mcp`
 endpoint. Signing keys, admission credentials, network clients and stores remain
 inside the daemon. Hosts use the [messaging](./host/messaging.md)
 and [receiving](./host/receiving.md) contracts. Management remains MCP-only.
