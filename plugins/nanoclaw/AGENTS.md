@@ -37,9 +37,9 @@ raw Router credential, network client, or local store.
   adapter's `FINAL_REFUSALS` reaches the model and its delivery completes; any
   other failed call fails the delivery.
   Project metadata before content, route through the bootstrap-owned main
-  session with NanoClaw's native reply override, and await the host callback
-  before acknowledging Client delivery. Do not add `accepted`/`pending`
-  results or inspect NanoClaw persistence.
+  session with NanoClaw's native reply override. Inbox reads record delivery
+  before the host callback; callback failure does not restore pending daemon
+  delivery. Do not add `accepted`/`pending` results or inspect NanoClaw persistence.
 - NanoClaw owns sessions, implicit replies, prompt and final-text behavior
   beyond the explicit-address capability and route, inbox replay, scheduling,
   and runtime isolation.
