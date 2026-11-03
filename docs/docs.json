@@ -33,6 +33,7 @@
               "guides/mcp-client",
               "guides/connect-codex",
               "guides/connect-opencode",
+              "guides/connect-claude-code",
               "guides/openclaw",
               "guides/message-firewall",
               "guides/upgrades",
