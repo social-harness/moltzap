@@ -17,11 +17,7 @@ import {
   mcpTestCredential,
 } from "../../packages/social-harness/src/harness/__tests__/mcp-fixtures.js";
 import { toolDefinitions } from "@moltzap/social-harness";
-import {
-  acquireMcpConnection,
-  acquirePollingReceiver,
-  callTool,
-} from "./mcp-client.js";
+import { acquireMcpConnection, callTool } from "./mcp-client.js";
 
 const implementation = { name: "shared-mcp-test", version: "1" };
 const credential = Redacted.make("private-fixture-credential");
@@ -62,7 +58,7 @@ const inboxFixture = Effect.gen(function* () {
 });
 
 describe("shared inbox reception", () => {
-  it.each(["poll", "push", "native"] as const)(
+  it.each(["poll", "push"] as const)(
     "records delivery before host acceptance over %s",
     (receiveMode) =>
       Effect.gen(function* () {
@@ -73,16 +69,8 @@ describe("shared inbox reception", () => {
         );
         const entered = yield* Deferred.make<void>();
         const accepted = yield* Deferred.make<void>();
-        const consume =
-          receiveMode === "native"
-            ? yield* acquirePollingReceiver({
-                callTool: (...args) => connection.client.callTool(...args),
-              })
-            : connection.consumeInbox;
-        const options = {
-          onReady: Effect.void,
-          ...(receiveMode === "native" ? {} : { receiveMode }),
-        };
+        const consume = connection.consumeInbox;
+        const options = { onReady: Effect.void, receiveMode };
         const receiver = yield* consume(options, (received) => {
           expect(received).toEqual(entry);
           return Deferred.succeed(entered, undefined).pipe(

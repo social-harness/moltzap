@@ -112,32 +112,6 @@ export interface McpConnection {
   ) => Effect.Effect<void, E | McpReceiveError, R>;
 }
 
-/** A native host may own the authorized MCP client; the receiver borrows only its standard tool call. */
-export function acquirePollingReceiver(
-  client: Pick<Client, "callTool">,
-): Effect.Effect<
-  <E, R>(
-    options: Pick<InboxOptions, "onReady">,
-    accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
-  ) => Effect.Effect<void, E | McpReceiveError, R>,
-  never,
-  Scope.Scope
-> {
-  return Effect.gen(function* () {
-    const receiving = yield* Ref.make(false);
-    const scope = yield* Scope.Scope;
-    return <E, R>(
-      options: Pick<InboxOptions, "onReady">,
-      accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
-    ) =>
-      runReception(
-        { client, receiving, scope },
-        pollingWakeups(options),
-        accept,
-      );
-  }).pipe(Effect.withSpan("Mcp.acquirePollingReceiver"));
-}
-
 /** TLS and literal loopback can carry the private bearer without redirects. */
 export function safeCredentialEndpoint(endpoint: URL): boolean {
   const privateAuthority =
