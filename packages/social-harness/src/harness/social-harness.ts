@@ -6,10 +6,12 @@ import {
   Clock,
   Context,
   Deferred,
+  type Duration,
   Effect,
   Fiber,
   FiberSet,
   Layer,
+  Option,
   PubSub,
   Queue,
   Schema,
@@ -141,9 +143,13 @@ interface SocialHarnessService {
   readonly send: (
     request: SendRequest,
   ) => Effect.Effect<SendResult, SendError | RequestError | FirewallRefusal>;
-  /** Reads pending content without acknowledging it. */
+  /**
+   * Reads pending content without acknowledging it. With `wait`, a read that
+   * finds nothing waits up to that long, and returns as soon as an item is
+   * pending or empty when the wait ends.
+   */
   readonly listInbox: (
-    request?: PaginatedRequest,
+    request?: PaginatedRequest & { readonly wait?: Duration.Duration },
   ) => Effect.Effect<InboxPage, InboxError>;
   /** Saved content remains readable after acknowledgment and restart. */
   readonly getInboxEvent: (
@@ -490,9 +496,13 @@ function makeHarness<R>(
             ),
           );
         }),
-      listInbox: (request) =>
+      listInbox: ({ wait, ...page } = {}) =>
         requireRegistered(new InboxError({ reason: "not-registered" })).pipe(
-          Effect.zipRight(inbox.listInbox(request)),
+          Effect.zipRight(
+            wait === undefined
+              ? inbox.listInbox(page)
+              : waitForInbox(inbox, changes, page, wait),
+          ),
         ),
       getInboxEvent: (token) =>
         requireRegistered(new InboxError({ reason: "not-registered" })).pipe(
@@ -812,6 +822,33 @@ function replyTo(value: Incoming, decision: IncomingDecision, self: AgentCard) {
     ),
     Effect.orElseSucceed(() => undefined),
   );
+}
+
+/**
+ * Reads the inbox and, while it holds nothing, rereads after each change until
+ * `wait` ends. Subscribing before the first read keeps an item that arrives
+ * between that read and the wait from being missed.
+ */
+function waitForInbox(
+  inbox: Inbox,
+  changes: PubSub.PubSub<undefined>,
+  request: PaginatedRequest,
+  wait: Duration.Duration,
+) {
+  return Effect.gen(function* () {
+    const arrivals = yield* PubSub.subscribe(changes);
+    const read = inbox.listInbox(request);
+    const first = yield* read;
+    if (first.items.length > 0) {
+      return first;
+    }
+    const arrived = yield* Queue.take(arrivals).pipe(
+      Effect.zipRight(read),
+      Effect.repeat({ until: (page) => page.items.length > 0 }),
+      Effect.timeoutOption(wait),
+    );
+    return Option.isSome(arrived) ? arrived.value : yield* read;
+  }).pipe(Effect.scoped);
 }
 
 function evidenceFor(
