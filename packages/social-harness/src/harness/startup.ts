@@ -23,6 +23,7 @@ import { databaseAccess, databaseConnection } from "../database/sql.js";
 import { Firewall } from "../firewall/service.js";
 import { Registry } from "../identity/registry.js";
 import { Identity, IdentityError } from "../identity/service.js";
+import { HeldNorms, heldNorms } from "../norms/configuration.js";
 import { packageVersion, WIRE_VERSION } from "../version.js";
 import {
   type DaemonSettings,
@@ -134,6 +135,10 @@ function makeAgentApp(
           : Effect.succeed(settings.admissionCredential),
     });
     const policy = settings.messagePolicy?.policy;
+    const held =
+      settings.norms === undefined
+        ? undefined
+        : yield* heldNorms(settings.norms);
     const services = yield* Layer.build(
       SocialHarness.layer(
         {
@@ -154,9 +159,14 @@ function makeAgentApp(
         workers,
       ).pipe(
         Layer.provideMerge(
-          Firewall.layer(agentKey, settings.messagePolicy).pipe(
+          Firewall.layer(agentKey, settings.messagePolicy, held?.chain).pipe(
             Layer.provideMerge(identity),
           ),
+        ),
+        Layer.merge(
+          held === undefined
+            ? Layer.empty
+            : Layer.succeed(HeldNorms, held.norms),
         ),
       ),
     );

@@ -1,4 +1,4 @@
-/** @file Loads runtime daemon settings and resolves their policy references from one file. */
+/** @file Loads runtime daemon settings and resolves their policy and norms references from one file. */
 import * as NodeSdk from "@effect/opentelemetry/NodeSdk";
 import { FileSystem } from "@effect/platform";
 import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
@@ -28,6 +28,13 @@ import {
   PrincipalId,
 } from "../identity/agent-cards.js";
 import { RegistrationId } from "../identity/registry.js";
+import {
+  heldNorms,
+  type InstalledNorms,
+  installedNorms,
+  loadNorms,
+  normTextRules,
+} from "../norms/configuration.js";
 import { packageVersion } from "../version.js";
 
 const configurationDocs =
@@ -37,7 +44,7 @@ const configurationDocs =
 export class DaemonConfigurationError extends Data.TaggedError(
   "DaemonConfigurationError",
 )<{
-  readonly reason: "environment" | "document" | "policy";
+  readonly reason: "environment" | "document" | "policy" | "norms";
   readonly message: string;
 }> {}
 
@@ -150,6 +157,7 @@ const commonFields = {
 const settings = exactStruct({
   ...commonFields,
   messagePolicy: Schema.optional(installedMessagePolicy),
+  norms: Schema.optional(installedNorms),
 }).pipe(
   Schema.filter(
     (value) =>
@@ -171,6 +179,7 @@ const setup = exactStruct({
   agent: Schema.optional(seed),
   messagePolicyFile: Schema.optional(Schema.NonEmptyString),
   decisionProviderKeyFile: Schema.optional(Schema.NonEmptyString),
+  normsDirectory: Schema.optional(Schema.NonEmptyString),
 }).pipe(
   Schema.filter(
     (value) =>
@@ -191,7 +200,7 @@ export const processHelp = [
   `Docs: ${configurationDocs}`,
 ].join("\n");
 
-/** Policy references resolve against the runtime document, independent of the process directory. */
+/** Policy and norms references resolve against the runtime document, independent of the process directory. */
 export const loadDaemonSettings = Effect.fn("loadDaemonSettings")(function* (
   filename?: string,
 ) {
@@ -220,6 +229,17 @@ export const loadDaemonSettings = Effect.fn("loadDaemonSettings")(function* (
     ),
   );
   const root = dirname(resolve(selected));
+  const norms =
+    document.normsDirectory === undefined
+      ? undefined
+      : yield* configuredNorms(resolve(root, document.normsDirectory));
+  const normRules = norms === undefined ? [] : yield* configuredRules(norms);
+  if (normRules.length !== 0 && document.messagePolicyFile === undefined) {
+    return yield* refused(
+      "norms",
+      "The configured norms have English rules, which need a messagePolicyFile with a decisionProvider to check them",
+    );
+  }
   const messagePolicy = yield* loadMessagePolicy(
     {
       messagePolicyFile:
@@ -230,6 +250,7 @@ export const loadDaemonSettings = Effect.fn("loadDaemonSettings")(function* (
         document.decisionProviderKeyFile === undefined
           ? undefined
           : Redacted.make(resolve(root, document.decisionProviderKeyFile)),
+      fixedRules: normRules,
     },
     readPolicyCredential,
   ).pipe(
@@ -245,10 +266,12 @@ export const loadDaemonSettings = Effect.fn("loadDaemonSettings")(function* (
     "agent",
     "messagePolicyFile",
     "decisionProviderKeyFile",
+    "normsDirectory",
   );
   const captured = yield* Schema.validate(settings)({
     ...values,
     messagePolicy: Option.getOrUndefined(messagePolicy),
+    ...(norms === undefined ? {} : { norms }),
   }).pipe(
     Effect.mapError(() =>
       refused(
@@ -262,6 +285,32 @@ export const loadDaemonSettings = Effect.fn("loadDaemonSettings")(function* (
     ...(document.agent === undefined ? {} : { agent: document.agent }),
   };
 }, Effect.withSpan("loadDaemonSettings"));
+
+/** The settings document's norms directory, read and checked. */
+function configuredNorms(directory: string) {
+  return loadNorms(directory).pipe(
+    Effect.mapError((error) =>
+      refused(
+        "norms",
+        `The configured norms directory is invalid: ${error.reason}`,
+      ),
+    ),
+  );
+}
+
+/** The configured norms' English rules, as fixed rules of the message policy. */
+function configuredRules(installed: InstalledNorms) {
+  return Either.match(heldNorms(installed), {
+    onLeft: (error) =>
+      Effect.fail(
+        refused(
+          "norms",
+          `The configured norms directory is invalid: ${error.reason}`,
+        ),
+      ),
+    onRight: ({ norms }) => Effect.succeed(normTextRules(norms)),
+  });
+}
 
 const otelVariable = (name: string) =>
   Config.option(Config.string(name)).pipe(

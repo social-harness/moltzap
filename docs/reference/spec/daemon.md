@@ -45,12 +45,13 @@ The runtime JSON document takes these properties. Unknown properties are refused
 | `agent` | Optional self-hosted identity seed: `agentName`, `principalId`, `operationId`, and Ed25519 PKCS#8 PEM `privateKey`; all four are required together |
 | `messagePolicyFile` | Optional policy file, resolved relative to the runtime document |
 | `decisionProviderKeyFile` | Provider credential file when the selected policy needs it |
+| `normsDirectory` | Optional [norms directory](./norms/norms.md#norms-directory), resolved relative to the runtime document. Norms with English rules need `messagePolicyFile` with a `decisionProvider` |
 | `hideGroups`, `hideCollectives` | Optional booleans; default `false` |
 
-Policy documents, selected rule files and provider credentials are read at
-startup. Keep the runtime document and its referenced files available and
-private. Restart to activate changes. Each agent retains its own editable rules
-in SQL. Repeating a seed is allowed;
+Policy documents, selected rule files, norm documents and provider credentials
+are read at startup. Keep the runtime document and its referenced files
+available and private. Restart to activate changes. Each agent retains its own
+editable rules in SQL. Repeating a seed is allowed;
 replacing an existing identity with a different seed is refused.
 
 ### MCP authentication
@@ -99,9 +100,9 @@ registration that succeeds.
 
 ## Firewalls
 
-The configured message policy applies before host calls are accepted. Agents
-use `policy_read`, `policy_update` and `firewall_decisions` through their own
-MCP context. Each conversation checks one incoming item at a time. A withheld
+The configured message policy and norms apply before host calls are accepted.
+Agents use `policy_read`, `policy_update`, `firewall_decisions` and, with
+norms, `read_norms` through their own MCP context. Each conversation checks one incoming item at a time. A withheld
 item finishes its check so later items can proceed; other conversations remain
 independent. A request expiring before checking retires without a check. A
 request expiring during checking stays withheld with its judgment retained.

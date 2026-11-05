@@ -93,8 +93,10 @@ export function readText(text: string): Reading {
  * the parser decodes that sequence as a Unicode escape.
  */
 export function formatAct(act: Act): string {
+  const ontology = parameterName.test(act.ontology)
+    ? act.ontology
+    : formatValue(act.ontology);
   const parameters: Array<readonly [string, ActValue]> = [
-    ["ontology", act.ontology],
     ...(act.inReplyTo === undefined
       ? []
       : [["in-reply-to", act.inReplyTo] as const]),
@@ -105,7 +107,7 @@ export function formatAct(act: Act): string {
     `:${name}`,
     formatValue(value),
   ]);
-  return `(${[act.performative, ...written].join(" ")})`;
+  return `(${[act.performative, ":ontology", ontology, ...written].join(" ")})`;
 }
 
 function readAct(text: string): Either.Either<Act, string> {
