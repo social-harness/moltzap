@@ -1,5 +1,5 @@
 /** @file MCP tests substitute service behavior while exercising the real protocol and HTTP boundary. */
-import { HttpApp } from "@effect/platform";
+import { HttpApp, HttpClient } from "@effect/platform";
 import { NodeHttpServer } from "@effect/platform-node";
 import { SqlClient } from "@effect/sql";
 import {
@@ -8,23 +8,28 @@ import {
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
 import {
-  type Context,
+  Context,
+  Deferred,
   Effect,
+  Layer,
   Redacted,
   Ref,
   type Scope,
   Stream,
 } from "effect";
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer accepts the native server constructor.
 import { createServer } from "node:http";
+import type { McpAuthentication } from "../mcp/authentication.js";
 import { issueTestCard, makeTestAuthority } from "../../__tests__/agents.js";
 import { openTestDatabase } from "../../communication/__tests__/store-fixtures.js";
 import { FirewallPolicyError } from "../../firewall/rules.js";
 import { Firewall } from "../../firewall/service.js";
 import { Identity } from "../../identity/service.js";
 import { InboxError } from "../inbox.js";
-import { makeMcpHttpApp } from "../mcp/server.js";
+import { makeAgentMcpApp, makeMcpHttpApp } from "../mcp/server.js";
+import { webhookHttpClientLayer } from "../mcp/webhook-client.js";
+import { makeWebhookEvents } from "../mcp/webhook.js";
 import { SocialHarness } from "../social-harness.js";
 
 /** The credential has no authority beyond this process. */
@@ -41,6 +46,7 @@ const mcpTestHeaders = {
 export const mcpFixture = Effect.fn("mcpFixture")(function* (
   options: {
     readonly registered?: boolean;
+    readonly authentication?: McpAuthentication;
     readonly harness?: Partial<Context.Tag.Service<typeof SocialHarness>>;
   } = {},
 ) {
@@ -87,17 +93,42 @@ export const mcpFixture = Effect.fn("mcpFixture")(function* (
     updatePolicy: unused,
     readDecisions: unused,
   });
-  const app = yield* makeMcpHttpApp({
-    credential: mcpTestCredential,
+  const callbackClient = yield* Layer.build(webhookHttpClientLayer);
+  const webhook = yield* makeWebhookEvents(
+    database.directory,
+    Redacted.make(randomBytes(32)),
+  ).pipe(
+    Effect.provideService(
+      HttpClient.HttpClient,
+      Context.get(callbackClient, HttpClient.HttpClient),
+    ),
+    Effect.provideService(SocialHarness, harness),
+    Effect.provideService(SqlClient.SqlClient, database.sql),
+  );
+  const stopped = yield* Deferred.make<undefined>();
+  const agentApp = yield* makeAgentMcpApp({
+    webhook,
+    stopped,
     implementation: { name: "mcp-contract-test", version: "1" },
   }).pipe(
     Effect.provideService(SocialHarness, harness),
     Effect.provideService(Identity, identity),
     Effect.provideService(Firewall, firewall),
-    Effect.provideService(SqlClient.SqlClient, database.sql),
+  );
+  const owners = yield* Ref.make<
+    ReadonlyArray<{ readonly issuer: string; readonly subject: string }>
+  >([]);
+  const app = yield* makeMcpHttpApp(
+    options.authentication ?? { kind: "local", credential: mcpTestCredential },
+    (owner) =>
+      Ref.update(owners, (values) => [...values, owner]).pipe(
+        Effect.as(agentApp),
+      ),
   );
   return {
     app,
+    stopped,
+    owners,
     fetch: HttpApp.toWebHandler(app),
     harness,
     identity,

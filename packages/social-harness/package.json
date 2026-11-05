@@ -50,8 +50,7 @@
     }
   },
   "bin": {
-    "sharnessd": "./bin/sharnessd",
-    "sharnessd-launcher": "./bin/sharnessd-launcher"
+    "sharnessd": "./bin/sharnessd"
   },
   "scripts": {
     "test": "vitest run",
@@ -111,10 +110,8 @@
     "@opentelemetry/sdk-trace-base": "catalog:",
     "@opentelemetry/sdk-trace-node": "catalog:",
     "@opentelemetry/semantic-conventions": "catalog:",
-    "@sigstore/bundle": "catalog:",
     "canonicalize": "catalog:",
     "effect": "catalog:",
-    "sigstore": "catalog:",
     "@noble/curves": "catalog:",
     "http-message-signatures": "catalog:",
     "jose": "catalog:",
@@ -122,7 +119,9 @@
     "yaml": "catalog:",
     "@effect/sql": "catalog:",
     "@effect/sql-sqlite-node": "catalog:",
-    "@effect/rpc": "catalog:"
+    "@effect/rpc": "catalog:",
+    "kysely": "catalog:",
+    "@effect/sql-pg": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
@@ -130,7 +129,8 @@
     "eslint": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",
-    "fast-check": "catalog:"
+    "fast-check": "catalog:",
+    "ajv": "catalog:"
   },
   "sharnessContentHash": "sha256:2bce595a02f293a4613a4f8155e41cffa05f2f19ad711ae4634f588bc70be0d1",
   "sharnessWireVersion": "2026.1026.5"

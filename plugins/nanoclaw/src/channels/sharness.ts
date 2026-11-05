@@ -81,6 +81,9 @@ const channelEnv = Config.all({
   mcpEndpoint: Config.option(Config.string("SHARNESS_MCP_URL")).pipe(
     Config.map(Option.getOrNull),
   ),
+  allowHttp: Config.boolean("SHARNESS_MCP_ALLOW_HTTP").pipe(
+    Config.withDefault(false),
+  ),
 });
 
 interface Activation {
@@ -245,9 +248,9 @@ function endpointInbound(input: ProjectedItem): InboundMessage {
 }
 
 /**
- * One endpoint scope lives from setup until the receive stream ends or
- * teardown completes. Successful host callbacks permit acknowledgment of
- * handoff. NanoClaw owns subsequent processing and retry policy.
+ * One MCP connection lives from setup until reception ends or teardown completes.
+ * Inbox reads record delivery before native callbacks. NanoClaw owns subsequent
+ * processing and retry policy.
  */
 class HarnessChannelAdapter {
   readonly name = CHANNEL_ID;
@@ -256,11 +259,13 @@ class HarnessChannelAdapter {
 
   private readonly lifecycleGate = Effect.runSync(Effect.makeSemaphore(1));
   private readonly mcpEndpoint: string;
+  private readonly allowHttp: boolean;
   private activation: Activation | null = null;
   private setupConfig: ChannelSetup | null = null;
 
-  constructor(mcpEndpoint: string) {
+  constructor(mcpEndpoint: string, allowHttp: boolean) {
     this.mcpEndpoint = mcpEndpoint;
+    this.allowHttp = allowHttp;
   }
 
   setup(config: ChannelSetup): Promise<void> {
@@ -367,6 +372,7 @@ class HarnessChannelAdapter {
   private acquireEndpoint(
     scope: Scope.CloseableScope,
   ): Effect.Effect<McpConnection, McpConnectError | ChannelError> {
+    const allowHttp = this.allowHttp;
     return Effect.try({
       try: () => new URL(this.mcpEndpoint),
       catch: () =>
@@ -397,7 +403,7 @@ class HarnessChannelAdapter {
               }),
           });
           return yield* acquireMcpConnection(
-            { endpoint, credential: Redacted.make(credential) },
+            { endpoint, credential: Redacted.make(credential), allowHttp },
             { name: "sharness-nanoclaw", version: packageVersion },
           );
         }),
@@ -623,10 +629,12 @@ function projectItem(
 }
 
 function makeHarnessChannelAdapter(): HarnessChannelAdapter | null {
-  const { mcpEndpoint } = Effect.runSync(
+  const { mcpEndpoint, allowHttp } = Effect.runSync(
     channelEnv.pipe(Effect.withConfigProvider(ConfigProvider.fromEnv())),
   );
-  return mcpEndpoint === null ? null : new HarnessChannelAdapter(mcpEndpoint);
+  return mcpEndpoint === null
+    ? null
+    : new HarnessChannelAdapter(mcpEndpoint, allowHttp);
 }
 
 registerChannelAdapter(CHANNEL_ID, {

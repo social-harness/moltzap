@@ -72,7 +72,6 @@ function connection() {
     structuredContent: { id: msgId, address } satisfies SendResult,
   });
   const inbox = Effect.runSync(Queue.unbounded<InboxEntry>());
-  const completed = vi.fn();
   const released = vi.fn();
   boundary.acquire.mockReturnValue(
     Effect.gen(function* () {
@@ -84,9 +83,7 @@ function connection() {
           // eslint-disable-next-line agent-code-guard/acquire-release-requires-scope -- The adapter opens and closes this fixture in its activation scope.
           Effect.acquireUseRelease(
             Stream.fromQueue(inbox).pipe(
-              Stream.runForEach((entry) =>
-                accept(entry).pipe(Effect.zipLeft(Effect.sync(completed))),
-              ),
+              Stream.runForEach((entry) => accept(entry)),
               Effect.zipLeft(options.onReady ?? Effect.void),
               Effect.interruptible,
               Effect.forkIn(scope),
@@ -97,7 +94,7 @@ function connection() {
       } satisfies McpConnection;
     }),
   );
-  return { call, inbox, completed, released };
+  return { call, inbox, released };
 }
 async function channel() {
   const created = await registration.factory();
@@ -114,6 +111,7 @@ beforeEach(async () => {
   boundary.acquire.mockReset();
   vi.stubEnv("SHARNESS_MCP_URL", "http://127.0.0.1:8321/mcp");
   vi.stubEnv("SHARNESS_MCP_CREDENTIAL_FILE", credentialFile);
+  vi.stubEnv("SHARNESS_MCP_ALLOW_HTTP", undefined);
   await import("./sharness.js");
   const entry = boundary.register.mock.calls[0];
   if (entry === undefined) {
@@ -129,6 +127,23 @@ afterEach(async () => {
 });
 
 describe("NanoClaw lifecycle", () => {
+  it.each([
+    { value: undefined, expected: false },
+    { value: "false", expected: false },
+    { value: "true", expected: true },
+  ])(
+    "passes the host HTTP permission $value to MCP",
+    async ({ value, expected }) => {
+      vi.stubEnv("SHARNESS_MCP_ALLOW_HTTP", value);
+      connection();
+      const current = await channel();
+      await current.setup(host());
+      expect(boundary.acquire).toHaveBeenCalledWith(
+        expect.objectContaining({ allowHttp: expected }),
+        expect.anything(),
+      );
+    },
+  );
   it("stays disabled without a configured daemon", async () => {
     vi.stubEnv("SHARNESS_MCP_URL", undefined);
     expect(await registration.factory()).toBeNull();
@@ -151,19 +166,10 @@ describe("NanoClaw lifecycle", () => {
 
 // @agent-code-guard/regression-only: Native callback completion and fixed send-failure classes define distinct lifecycle cases.
 describe("NanoClaw messages", () => {
-  it("waits for host acceptance before completing delivery", async () => {
+  it("renders incoming content with its native reply route", async () => {
     const fake = connection();
     const current = await channel();
     const callbacks = host();
-    let accept: (() => void) | undefined;
-    callbacks.onInboundEvent.mockImplementation(
-      () =>
-        new Promise<undefined>((resolve) => {
-          accept = () => {
-            resolve(undefined);
-          };
-        }),
-    );
     await current.setup(callbacks);
     Effect.runSync(
       Queue.offer(fake.inbox, {
@@ -176,16 +182,11 @@ describe("NanoClaw messages", () => {
       expect(callbacks.onInboundEvent).toHaveBeenCalledTimes(1);
     });
     expect(callbacks.onMetadata).toHaveBeenCalledWith(address, address, false);
-    expect(fake.completed).not.toHaveBeenCalled();
-    accept?.();
-    await vi.waitFor(() => {
-      expect(fake.completed).toHaveBeenCalledTimes(1);
-    });
     const event = callbacks.onInboundEvent.mock.calls[0]?.[0];
     expect(event?.replyTo?.platformId).toBe(address);
     expect(event?.message.content).toContain(messageText);
   });
-  it("disconnects and leaves a failed host handoff incomplete", async () => {
+  it("disconnects when the native inbound callback fails", async () => {
     const fake = connection();
     const current = await channel();
     const callbacks = host();
@@ -201,7 +202,6 @@ describe("NanoClaw messages", () => {
     await vi.waitFor(() => {
       expect(current.isConnected()).toBe(false);
     });
-    expect(fake.completed).not.toHaveBeenCalled();
   });
   it("sends the explicitly addressed text through send_message once", async () => {
     const fake = connection();

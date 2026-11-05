@@ -79,10 +79,6 @@
       "reason": "Saved inbox item grammar"
     },
     {
-      "file": "harness/traffic-export.ts",
-      "reason": "Optional message export values"
-    },
-    {
       "file": "harness/mcp/contracts.ts",
       "reason": "Canonical MCP tool contracts"
     },
@@ -187,7 +183,6 @@
         "src/harness/startup.ts",
         "src/harness/social-harness.ts",
         "src/harness/inbox.ts",
-        "src/harness/traffic-export.ts",
         "src/harness/message-format.ts",
         "src/harness/mcp/contracts.ts"
       ],
@@ -214,14 +209,17 @@
       "reason": "Package identity and shared protocol compatibility"
     },
     {
-      "name": "launcher",
+      "name": "database",
       "roots": [
-        "src/launcher"
+        "src/database"
       ],
       "entrypoints": [
-        "src/launcher/index.ts"
+        "src/database/sql.ts",
+        "src/database/transactions.ts",
+        "src/database/secrets.ts",
+        "src/database/migrations.ts"
       ],
-      "reason": "Release installation and daemon startup"
+      "reason": "SQL connections, typed query compilation, transaction context and credential persistence shared by daemon domains"
     }
   ],
   "layers": [
@@ -260,12 +258,19 @@
         "encoding"
       ],
       "reason": "Shared serialization primitives"
+    },
+    {
+      "name": "database",
+      "folders": [
+        "database"
+      ],
+      "reason": "Database support depends on runtime libraries without importing identity, communication, firewall or harness services"
     }
   ],
   "publicTypePackages": [
     {
       "package": "@effect/sql",
-      "reason": "The firewall acquires the daemon’s shared SqlClient through its Effect environment"
+      "reason": "The firewall acquires the daemon\u2019s shared SqlClient through its Effect environment"
     },
     {
       "package": "effect",

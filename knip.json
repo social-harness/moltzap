@@ -27,7 +27,6 @@
       "entry": [
         "src/**/*.spec.ts",
         "src/**/*.types-check.ts",
-        "src/launcher/index.ts",
         "vitest*.config.ts"
       ],
       "project": [
@@ -73,6 +72,7 @@
       ]
     },
     "packages/registry": {
+      "ignoreDependencies": ["@electric-sql/pglite-socket"],
       "entry": [
         "src/**/*.spec.ts",
         "src/**/*.types-check.ts",
@@ -87,7 +87,6 @@
       "entry": [
         "**/*.spec.ts",
         "firewall/firewall-daemon.ts",
-        "daemon/launcher-provenance.ts",
         "**/*vitest*.config.ts",
         "images/nanoclaw-probe.ts"
       ],
@@ -108,6 +107,7 @@
         "*.ts"
       ],
       "ignoreDependencies": [
+        "@moltzap/openclaw-channel",
         "openclaw"
       ]
     },
@@ -126,52 +126,8 @@
     "images/daemon": {
       "ignoreDependencies": [
         "@moltzap/social-harness",
-        "@moltzap/openclaw-channel"
-      ]
-    },
-    "plugins/instinct": {
-      "entry": [
-        "src/main.ts",
-        "src/**/*.spec.ts",
-        "*.config.ts"
-      ],
-      "project": [
-        "src/**/*.ts",
-        "*.ts"
-      ],
-      "ignoreDependencies": [
-        "@moltzap/plugin-mcp",
-        "@modelcontextprotocol/client"
-      ]
-    },
-    "plugins/muse": {
-      "entry": [
-        "src/main.ts",
-        "src/**/*.spec.ts",
-        "*.config.ts"
-      ],
-      "project": [
-        "src/**/*.ts",
-        "*.ts"
-      ],
-      "ignoreDependencies": [
-        "@moltzap/plugin-mcp",
-        "@modelcontextprotocol/client"
-      ]
-    },
-    "plugins/grokbot": {
-      "entry": [
-        "src/main.ts",
-        "src/**/*.spec.ts",
-        "*.config.ts"
-      ],
-      "project": [
-        "src/**/*.ts",
-        "*.ts"
-      ],
-      "ignoreDependencies": [
-        "@moltzap/plugin-mcp",
-        "@modelcontextprotocol/client"
+        "@effect/platform-node",
+        "effect"
       ]
     },
     "plugins/shared": {

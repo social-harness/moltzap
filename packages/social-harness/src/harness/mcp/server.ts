@@ -1,7 +1,8 @@
-/** @file Exposes an agent's MCP tools over authenticated loopback HTTP. */
+/** @file MCP binds the harness services and owns its HTTP listener. */
 
 import {
   type HttpApp,
+  HttpBody,
   HttpServerRequest,
   HttpServerResponse,
 } from "@effect/platform";
@@ -9,37 +10,56 @@ import { NodeHttpServer } from "@effect/platform-node";
 import {
   Cause,
   type Context,
+  Deferred,
   Effect,
   JSONSchema,
+  Match,
   Option,
-  Redacted,
   Schema,
   type Scope,
+  Stream,
 } from "effect";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer accepts the native server constructor.
 import { createServer } from "node:http";
+import type { OwnerAccount } from "../ownership.js";
 import { Firewall } from "../../firewall/service.js";
 import { AgentIdentityCard } from "../../identity/agent-cards.js";
 import { Identity } from "../../identity/service.js";
 import {
   CallToolResult,
+  McpServerClient,
   ProtocolError,
   Tool,
   ToolAnnotations,
 } from "../../vendor/effect-mcp/McpSchema.js";
 import { makeHttpApp, McpServer } from "../../vendor/effect-mcp/McpServer.js";
+import { InboxError } from "../inbox.js";
 import { validationIssues } from "../message-format.js";
 import { SocialHarness } from "../social-harness.js";
 import {
+  authenticationChallenge,
+  makeRequestAdmission,
+  type McpAuthentication,
+  protectedResourcePath,
+  protectedResourceResponse,
+} from "./authentication.js";
+import {
+  eventListInput,
+  eventStreamInput,
+  eventSubscribeInput,
+  eventUnsubscribeInput,
   type HarnessWebhookEvents,
+  INBOX_ITEM_EVENT,
+  INBOX_PENDING_EVENT,
+  itemEventDataJsonSchema,
   sendErrorData,
   toolDefinitions,
 } from "./contracts.js";
-import { installEvents, webhookHttpClientLayer } from "./events.js";
 
-interface ServerSettings {
-  readonly credential: Redacted.Redacted;
+interface AgentServerSettings {
+  readonly webhook: HarnessWebhookEvents;
+  readonly stopped: Deferred.Deferred<undefined>;
   readonly implementation: { readonly name: string; readonly version: string };
 }
 
@@ -51,13 +71,193 @@ const reasonError = (error: { readonly reason: string }) =>
       : "Operation failed",
     { reason: error.reason },
   );
-const digest = (value: string) => createHash("sha256").update(value).digest();
 const loopback = (host: string) =>
   ["127.0.0.1", "[::1]", "localhost"].includes(host);
 
-/** Serves the agent's MCP catalog using the supplied bearer credential. */
-export const makeMcpHttpApp = Effect.fn("makeMcpHttpApp")(function* (
-  settings: ServerSettings,
+const decodeEventArguments = <A, I>(
+  schema: Schema.Schema<A, I>,
+  input: unknown,
+) =>
+  Schema.decodeUnknown(schema)(input).pipe(
+    Effect.catchTag("ParseError", () =>
+      Effect.fail(new ProtocolError(-32602, "Invalid event arguments")),
+    ),
+  );
+const requireEvent = (
+  name: string,
+  expected: string,
+  cursor?: string | null,
+) => {
+  if (name !== expected) {
+    return Effect.fail(
+      new ProtocolError(-32011, "Event not found", { kind: "event" }),
+    );
+  }
+  return cursor == null
+    ? Effect.void
+    : Effect.fail(
+        new ProtocolError(
+          -32014,
+          "Event replay is unavailable; read the inbox",
+          { feature: "cursor" },
+        ),
+      );
+};
+
+/** Registers the retained agent's Events handlers without acquiring delivery workers. */
+const installEvents = Effect.fn("installEvents")(function* (
+  webhook: HarnessWebhookEvents,
+) {
+  const harness = yield* SocialHarness;
+  const identity = yield* Identity;
+  const server = yield* McpServer;
+  const registered = identity
+    .me()
+    .pipe(
+      Effect.flatMap((status) =>
+        status.kind === "registered"
+          ? Effect.void
+          : Effect.fail(
+              new ProtocolError(-32012, "Endpoint is not registered"),
+            ),
+      ),
+    );
+  server.events.current = {
+    list: (raw) =>
+      decodeEventArguments(eventListInput, raw).pipe(
+        Effect.flatMap((input) =>
+          input.cursor === undefined
+            ? Effect.succeed({
+                events: [
+                  {
+                    name: INBOX_PENDING_EVENT,
+                    description: "A wakeup to read the pending inbox.",
+                    delivery: ["push"],
+                    inputSchema: {
+                      type: "object",
+                      properties: {},
+                      additionalProperties: false,
+                    },
+                    payloadSchema: {
+                      type: "object",
+                      properties: {
+                        pendingCount: { type: "integer", minimum: 0 },
+                      },
+                      required: ["pendingCount"],
+                    },
+                  },
+                  {
+                    name: INBOX_ITEM_EVENT,
+                    description:
+                      "A saved inbox item or a reference retrieved through read_event.",
+                    delivery: ["webhook"],
+                    inputSchema: {
+                      type: "object",
+                      properties: {},
+                      additionalProperties: false,
+                    },
+                    payloadSchema: itemEventDataJsonSchema,
+                  },
+                ],
+              })
+            : Effect.fail(
+                new ProtocolError(-32602, "Invalid event catalog cursor"),
+              ),
+        ),
+      ),
+    stream: (raw) => streamPending(harness, registered, raw),
+    subscribe: (raw) =>
+      Effect.gen(function* () {
+        const input = yield* decodeEventArguments(eventSubscribeInput, raw);
+        yield* registered;
+        yield* requireEvent(input.name, INBOX_ITEM_EVENT, input.cursor);
+        if (input.delivery.mode !== "webhook") {
+          return yield* Effect.fail(
+            new ProtocolError(-32602, "Unsupported delivery mode"),
+          );
+        }
+        return yield* webhook.subscribe(input, registered);
+      }),
+    unsubscribe: (raw) =>
+      Effect.gen(function* () {
+        const input = yield* decodeEventArguments(eventUnsubscribeInput, raw);
+        yield* requireEvent(input.name, INBOX_ITEM_EVENT);
+        yield* webhook.unsubscribe(input);
+        return {};
+      }),
+  };
+}, Effect.withSpan("installEvents"));
+
+function pendingInbox(harness: Context.Tag.Service<typeof SocialHarness>) {
+  return Effect.gen(function* () {
+    let total = 0;
+    let cursor: string | undefined;
+    do {
+      const page = yield* harness.listInbox(
+        cursor === undefined ? {} : { cursor },
+      );
+      total += page.items.length;
+      cursor = page.nextCursor;
+    } while (cursor !== undefined);
+    return total;
+  }).pipe(
+    Effect.catchTag("InboxError", () =>
+      Effect.fail(new ProtocolError(-32603, "Inbox unavailable")),
+    ),
+  );
+}
+
+function streamPending(
+  harness: Context.Tag.Service<typeof SocialHarness>,
+  registered: Effect.Effect<void, ProtocolError>,
+  raw: unknown,
+) {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const input = yield* decodeEventArguments(eventStreamInput, raw);
+      yield* registered;
+      yield* requireEvent(input.name, INBOX_PENDING_EVENT, input.cursor);
+      const context = yield* McpServerClient;
+      const notify = context.notify;
+      if (notify === undefined) {
+        return yield* Effect.fail(
+          new ProtocolError(-32603, "Event stream unavailable"),
+        );
+      }
+      yield* notify("notifications/events/active", {
+        cursor: null,
+        truncated: false,
+      });
+      yield* Effect.sleep("20 seconds").pipe(
+        Effect.zipRight(
+          notify("notifications/events/heartbeat", { cursor: null }),
+        ),
+        Effect.forever,
+        Effect.forkScoped,
+      );
+      yield* Stream.concat(Stream.make(undefined), harness.inboxChanged).pipe(
+        Stream.runForEach(() =>
+          pendingInbox(harness).pipe(
+            Effect.flatMap((count) =>
+              notify("notifications/events/event", {
+                eventId: `wake_${randomUUID()}`,
+                name: INBOX_PENDING_EVENT,
+                timestamp: new Date().toISOString(),
+                data: { pendingCount: count },
+                cursor: null,
+              }),
+            ),
+          ),
+        ),
+      );
+      return {};
+    }),
+  );
+}
+
+/** One retained agent context owns its tools, inbox and notification subscribers. */
+export const makeAgentMcpApp = Effect.fn("makeAgentMcpApp")(function* (
+  settings: AgentServerSettings,
 ) {
   const harness = yield* SocialHarness;
   const identity = yield* Identity;
@@ -66,9 +266,8 @@ export const makeMcpHttpApp = Effect.fn("makeMcpHttpApp")(function* (
   const registered = identity
     .me()
     .pipe(Effect.map((state) => state.kind === "registered"));
-  const callback = yield* installEvents().pipe(
+  yield* installEvents(settings.webhook).pipe(
     Effect.provideService(McpServer, server),
-    Effect.provide(webhookHttpClientLayer),
   );
   const policyConfigured = firewall
     .readPolicy()
@@ -77,12 +276,53 @@ export const makeMcpHttpApp = Effect.fn("makeMcpHttpApp")(function* (
   yield* installMessageTools(server, harness, registered);
   yield* installIdentityTools(server, harness, identity);
   yield* installPolicyTools(server, firewall, registered, policyConfigured);
-  yield* installWebhookTools(server, callback, registered);
+  yield* installWebhookTools(server, settings.webhook, registered);
 
   const app = yield* makeHttpApp(settings.implementation).pipe(
     Effect.provideService(McpServer, server),
   );
-  return guardMcp(app, settings.credential);
+  const unavailable = Deferred.await(settings.stopped).pipe(
+    Effect.interruptible,
+    Effect.as(HttpServerResponse.text("Agent unavailable", { status: 503 })),
+  );
+  return Deferred.isDone(settings.stopped).pipe(
+    Effect.flatMap((stopped) =>
+      stopped ? unavailable : app.pipe(Effect.raceFirst(unavailable)),
+    ),
+    Effect.flatMap((response) =>
+      responseWhileRunning(response, settings.stopped),
+    ),
+  );
+});
+
+/** Streams retain the agent-stop signal after their HTTP response is created. */
+function responseWhileRunning(
+  response: HttpServerResponse.HttpServerResponse,
+  stopped: Deferred.Deferred<undefined>,
+) {
+  return Match.value(response.body).pipe(
+    Match.tag("Stream", (body) =>
+      HttpServerResponse.setBody(
+        response,
+        HttpBody.stream(
+          body.stream.pipe(Stream.interruptWhen(Deferred.await(stopped))),
+          body.contentType,
+        ),
+      ),
+    ),
+    Match.orElse(() => response),
+  );
+}
+
+/** Authentication selects the account before any agent context or tool is acquired. */
+export const makeMcpHttpApp = Effect.fn("makeMcpHttpApp")(function* (
+  authentication: McpAuthentication,
+  selectApp: (
+    owner: OwnerAccount,
+  ) => Effect.Effect<HttpApp.Default<never, Scope.Scope>, unknown, Scope.Scope>,
+) {
+  const admit = yield* makeRequestAdmission(authentication);
+  return guardMcp(selectApp, authentication, admit);
 });
 
 function safeLocalUrl(value: string): boolean {
@@ -117,7 +357,19 @@ function installMessageTools(
     yield* bind(server, {
       name: "read_inbox",
       definition: toolDefinitions.read_inbox,
-      execute: harness.listInbox,
+      execute: Effect.fn(function* (request) {
+        const page = yield* harness.listInbox(request);
+        for (const item of page.items) {
+          yield* harness
+            .acknowledgeDelivery(item.deliveryToken)
+            .pipe(
+              Effect.catchTag("DeliveryAcknowledgeError", () =>
+                Effect.fail(new InboxError({ reason: "persistence-failed" })),
+              ),
+            );
+        }
+        return page;
+      }),
       failure: reasonError,
       visible: registered,
     });
@@ -125,14 +377,6 @@ function installMessageTools(
       name: "read_event",
       definition: toolDefinitions.read_event,
       execute: ({ eventId }) => harness.getInboxEvent(eventId),
-      failure: reasonError,
-      visible: registered,
-    });
-    yield* bind(server, {
-      name: "acknowledge_delivery",
-      definition: toolDefinitions.acknowledge_delivery,
-      execute: ({ deliveryToken }) =>
-        harness.acknowledgeDelivery(deliveryToken).pipe(Effect.as({})),
       failure: reasonError,
       visible: registered,
     });
@@ -351,21 +595,39 @@ function bind<A, I, B, J, E>(
 }
 
 function guardMcp(
-  app: HttpApp.Default<never, Scope.Scope>,
-  credential: Redacted.Redacted,
+  selectApp: (
+    owner: OwnerAccount,
+  ) => Effect.Effect<HttpApp.Default<never, Scope.Scope>, unknown, Scope.Scope>,
+  authentication: McpAuthentication,
+  admit: Effect.Effect.Success<ReturnType<typeof makeRequestAdmission>>,
 ) {
   return Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const host = request.headers.host;
     const origin = request.headers.origin;
-    if (
-      host === undefined ||
-      !safeLocalUrl(`http://${host}`) ||
-      (origin !== undefined && !safeLocalUrl(origin))
-    ) {
+    const oauth = authentication.kind === "oauth" ? authentication : undefined;
+    const allowedHost =
+      host !== undefined &&
+      (oauth === undefined
+        ? safeLocalUrl(`http://${host}`)
+        : host.toLowerCase() === oauth.resource.host.toLowerCase());
+    const allowedOrigin =
+      origin === undefined ||
+      (oauth === undefined
+        ? safeLocalUrl(origin)
+        : oauth.allowedOrigins.includes(origin));
+    if (!allowedHost || !allowedOrigin) {
       return HttpServerResponse.text("Forbidden", { status: 403 });
     }
-    if (new URL(request.url, "http://localhost").pathname !== "/mcp") {
+    const path = new URL(request.url, "http://localhost").pathname;
+    if (
+      oauth !== undefined &&
+      path === protectedResourcePath(oauth) &&
+      request.method === "GET"
+    ) {
+      return HttpServerResponse.fromWeb(protectedResourceResponse(oauth));
+    }
+    if (path !== "/mcp") {
       return HttpServerResponse.empty({ status: 404 });
     }
     if (request.method !== "POST") {
@@ -374,21 +636,53 @@ function guardMcp(
         headers: { allow: "POST" },
       });
     }
-    const authorization = request.headers.authorization;
-    if (
-      !authorization?.startsWith("Bearer ") ||
-      !timingSafeEqual(
-        digest(authorization.slice(7)),
-        digest(Redacted.value(credential)),
-      )
-    ) {
-      return HttpServerResponse.text("Unauthorized", {
-        status: 401,
-        headers: { "www-authenticate": "Bearer" },
-      });
-    }
-    return yield* app;
+    const authorityRequest = new Request(
+      oauth?.resource ?? "http://127.0.0.1/mcp",
+      { headers: request.headers },
+    );
+    return yield* admit(authorityRequest).pipe(
+      Effect.matchEffect({
+        onFailure: () =>
+          Effect.succeed(
+            HttpServerResponse.fromWeb(authenticationChallenge(authentication)),
+          ),
+        onSuccess: ({ owner, expiresAt }) =>
+          selectApp(owner).pipe(
+            Effect.flatMap((app) => app),
+            Effect.flatMap((response) => expireResponse(response, expiresAt)),
+            Effect.catchAll(() =>
+              Effect.succeed(
+                HttpServerResponse.text("Agent unavailable", { status: 503 }),
+              ),
+            ),
+          ),
+      }),
+    );
   });
+}
+
+/** A request cannot outlive the authority that admitted its streaming body. */
+function expireResponse(
+  response: HttpServerResponse.HttpServerResponse,
+  expiresAt?: number,
+) {
+  if (expiresAt === undefined) {
+    return response;
+  }
+  return Match.value(response.body).pipe(
+    Match.tag("Stream", (body) =>
+      HttpServerResponse.setBody(
+        response,
+        HttpBody.stream(
+          body.stream.pipe(
+            Stream.interruptAfter(Math.max(0, expiresAt - Date.now())),
+          ),
+          body.contentType,
+        ),
+      ),
+    ),
+    Match.orElse(() => response),
+  );
 }
 
 function jsonSchema<A, I>(schema: Schema.Schema<A, I>) {
@@ -404,6 +698,7 @@ function jsonSchema<A, I>(schema: Schema.Schema<A, I>) {
   };
 }
 
+/** Equivalent single-item tuple notation also supports native clients using draft-07 validators. */
 function openObjects(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(openObjects);
@@ -411,26 +706,43 @@ function openObjects(value: unknown): unknown {
   if (value === null || typeof value !== "object") {
     return value;
   }
-  return Object.fromEntries(
-    Object.entries(value).flatMap(([key, nested]) =>
-      key === "additionalProperties" && nested === false
-        ? []
-        : [[key, openObjects(nested)]],
-    ),
-  );
+  const entries = Object.entries(value);
+  const prefixItems: unknown = entries.find(
+    ([key]) => key === "prefixItems",
+  )?.[1];
+  const singleTuple =
+    Array.isArray(prefixItems) &&
+    prefixItems.length === 1 &&
+    entries.some(([key, nested]) => key === "items" && nested === false);
+  return Object.fromEntries([
+    ...entries.flatMap(([key, nested]) => {
+      if (key === "additionalProperties" && nested === false) {
+        return [];
+      }
+      if (singleTuple && (key === "items" || key === "maxItems")) {
+        return [];
+      }
+      if (singleTuple && key === "prefixItems") {
+        return [["items", openObjects(prefixItems[0])]];
+      }
+      return [[key, openObjects(nested)]];
+    }),
+    ...(singleTuple ? [["maxItems", 1]] : []),
+  ]);
 }
 
-/** The listener and advertised MCP URL use the same literal loopback address. */
-export const LOOPBACK_HOST = "127.0.0.1";
+/** Local bearer mode uses the same default address for binding and advertisement. */
+const LOOPBACK_HOST = "127.0.0.1";
 
 /** Returns after listening. Scope closure disconnects streaming requests before the listener closes. */
 export const serveMcp = Effect.fn("Mcp.serve")(function* (
   port: number,
   app: HttpApp.Default<never, Scope.Scope>,
+  host: string = LOOPBACK_HOST,
 ) {
   const listener = yield* Effect.sync(createServer);
   const server = yield* NodeHttpServer.make(() => listener, {
-    host: LOOPBACK_HOST,
+    host,
     port,
   });
   yield* Effect.addFinalizer(() =>

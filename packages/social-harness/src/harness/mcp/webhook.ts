@@ -2,8 +2,11 @@
 
 import { HttpClient } from "@effect/platform";
 import { SqlClient } from "@effect/sql";
-import { type Clock, Effect, Schema } from "effect";
+import { type Clock, Effect, Redacted, Schema, Stream } from "effect";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { openCredential, sealCredential } from "../../database/secrets.js";
+import { executeQuery, makeQueries } from "../../database/sql.js";
+import { withAgentTransaction } from "../../database/transactions.js";
 import { retryPending, retrySettled } from "../../tracing.js";
 import { ProtocolError } from "../../vendor/effect-mcp/McpSchema.js";
 import { DeliveryToken, type InboxEntry } from "../inbox.js";
@@ -62,7 +65,14 @@ const subscriptionId = (url: string) =>
     .update(JSON.stringify([url, INBOX_ITEM_EVENT, {}]))
     .digest("hex")}`;
 
+type WebhookTables = Record<
+  "mcp_webhook_state",
+  Record<"agent_key" | "state", string>
+>;
+
 interface WebhookRuntime {
+  readonly agentKey: string;
+  readonly unlockKey: Redacted.Redacted<Uint8Array>;
   readonly sql: SqlClient.SqlClient;
   readonly harness: SocialHarness["Type"];
   readonly client: HttpClient.HttpClient;
@@ -573,52 +583,98 @@ const webhookOperations = (runtime: WebhookRuntime): HarnessWebhookEvents => ({
     subscribe(runtime, input, authorize ?? Effect.void),
   unsubscribe: (input) =>
     runtime.gate.withPermits(1)(unsubscribe(runtime, input.delivery.url)),
-  observe: () => observe(runtime),
   status: runtime.gate.withPermits(1)(Effect.sync(() => status(runtime))),
   revoke: runtime.gate.withPermits(1)(retire(runtime)),
   resume: runtime.gate.withPermits(1)(resume(runtime)),
 });
 
-function writeState(runtime: Pick<WebhookRuntime, "sql">, state: State) {
-  return Schema.encode(Schema.parseJson(stateSchema))(state).pipe(
-    Effect.flatMap(
-      (bytes) =>
-        runtime.sql`INSERT INTO mcp_webhook_state (singleton, state) VALUES (1, ${bytes}) ON CONFLICT(singleton) DO UPDATE SET state = excluded.state`,
-    ),
-    Effect.asVoid,
-  );
+function writeState(
+  runtime: Pick<WebhookRuntime, "sql" | "agentKey" | "unlockKey">,
+  state: State,
+) {
+  return Effect.gen(function* () {
+    const bytes = yield* Schema.encode(Schema.parseJson(stateSchema))(state);
+    const sealed = yield* sealCredential(
+      Redacted.make(bytes),
+      `webhook/${runtime.agentKey}`,
+      runtime.unlockKey,
+    );
+    const queries = yield* makeQueries<WebhookTables>();
+    yield* withAgentTransaction(
+      runtime.agentKey,
+      executeQuery(
+        queries
+          .insertInto("mcp_webhook_state")
+          .values({ agent_key: runtime.agentKey, state: sealed })
+          .onConflict((conflict) =>
+            conflict.column("agent_key").doUpdateSet({ state: sealed }),
+          ),
+      ),
+    );
+  }).pipe(Effect.provideService(SqlClient.SqlClient, runtime.sql));
 }
 
 /** Preserves exact callback bytes and joins successful receipts to the inbox acknowledgment. */
-export const makeWebhookEvents = (gate: Effect.Semaphore) =>
+export const makeWebhookEvents = (
+  agentKey: string,
+  unlockKey: Redacted.Redacted<Uint8Array>,
+) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const harness = yield* SocialHarness;
     const client = (yield* HttpClient.HttpClient).pipe(
       HttpClient.withTracerDisabledWhen(() => true),
     );
-    yield* sql`CREATE TABLE IF NOT EXISTS mcp_webhook_state (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), state TEXT NOT NULL)`;
-    const rows =
-      yield* sql`SELECT state FROM mcp_webhook_state WHERE singleton = 1`;
+    const queries = yield* makeQueries<WebhookTables>();
+    const rows = yield* withAgentTransaction(
+      agentKey,
+      executeQuery(
+        queries
+          .selectFrom("mcp_webhook_state")
+          .select("state")
+          .where("agent_key", "=", agentKey),
+      ),
+    );
     const row = rows[0];
     const state =
       row === undefined
         ? { registration: null }
-        : yield* Schema.decodeUnknown(
-            Schema.Struct({ state: Schema.parseJson(stateSchema) }),
-          )(row).pipe(Effect.map((value) => value.state));
+        : yield* openCredential(
+            row.state,
+            `webhook/${agentKey}`,
+            unlockKey,
+          ).pipe(
+            Effect.flatMap((value) =>
+              Schema.decodeUnknown(Schema.parseJson(stateSchema))(
+                Redacted.value(value),
+              ),
+            ),
+          );
     const runtime: WebhookRuntime = {
+      agentKey,
+      unlockKey,
       sql,
       harness,
       client,
       clock: yield* Effect.clock,
       state,
-      gate,
+      gate: yield* Effect.makeSemaphore(1),
       deliveryGate: yield* Effect.makeSemaphore(1),
       generation: 0,
     };
     yield* Effect.addFinalizer(() => settleOnClose(runtime));
     yield* adopt(runtime, state);
+    yield* Stream.merge(
+      Stream.make(undefined).pipe(Stream.concat(harness.inboxChanged)),
+      Stream.tick("1 second"),
+    ).pipe(
+      Stream.runForEach(() =>
+        observe(runtime).pipe(
+          Effect.catchAll(() => Effect.logWarning("Webhook delivery deferred")),
+        ),
+      ),
+      Effect.forkScoped,
+    );
     return webhookOperations(runtime);
   }).pipe(
     Effect.mapError(persistenceFailure),

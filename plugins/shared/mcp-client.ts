@@ -7,10 +7,10 @@ import {
   SdkErrorCode,
   SdkHttpError,
   StreamableHTTPClientTransport,
+  type StreamableHTTPClientTransportOptions,
 } from "@modelcontextprotocol/client";
 import {
   decodeHarnessSendErrorData,
-  DeliveryAcknowledgeError,
   FirewallPolicyError,
   FirewallRefusal,
   HistoryError,
@@ -57,30 +57,29 @@ export type ToolFailure<Name extends ToolName> = Name extends "send_message"
       | McpToolError
       | (Name extends "read_inbox" | "read_event"
           ? InboxError
-          : Name extends "acknowledge_delivery"
-            ? DeliveryAcknowledgeError
-            : Name extends "search_conversations" | "read_conversation"
-              ? HistoryError
-              : Name extends "register"
-                ? RegistrationError
-                : Name extends
-                      | "policy_read"
-                      | "policy_update"
-                      | "firewall_decisions"
-                  ? FirewallPolicyError
-                  : never);
+          : Name extends "search_conversations" | "read_conversation"
+            ? HistoryError
+            : Name extends "register"
+              ? RegistrationError
+              : Name extends
+                    | "policy_read"
+                    | "policy_update"
+                    | "firewall_decisions"
+                ? FirewallPolicyError
+                : never);
 
 type DomainFailure =
   | InboxError
-  | DeliveryAcknowledgeError
   | HistoryError
   | RegistrationError
   | FirewallPolicyError;
 
-/** One server and credential are captured for the connection's whole scope. */
+/** Native channels connect with the daemon credential supplied by their host. */
 export interface McpConnectionSettings {
   readonly endpoint: URL;
   readonly credential: Redacted.Redacted;
+  /** The host explicitly trusts plaintext HTTP on this connection. */
+  readonly allowHttp?: boolean;
 }
 
 /**
@@ -96,9 +95,8 @@ export interface InboxOptions {
 export type InboxEntry = ToolResult<"read_inbox">["items"][number];
 
 /**
- * Allows one inbox consumer at a time. A failed callback stops reception before
- * acknowledgment. Successful callbacks are acknowledged, and an uncertain
- * acknowledgment can cause redelivery.
+ * Allows one inbox consumer at a time. Reading marks items delivered before the
+ * callback runs. Callback failure stops reception; saved history retains the item.
  */
 export interface McpConnection {
   readonly client: Client;
@@ -108,14 +106,18 @@ export interface McpConnection {
   ) => Effect.Effect<void, E | McpReceiveError, R>;
 }
 
-/** TLS and literal loopback can carry the private bearer without redirects. */
-export function safeCredentialEndpoint(endpoint: URL): boolean {
+/** TLS, literal loopback or host-approved HTTP can carry the private bearer. */
+export function safeCredentialEndpoint(
+  endpoint: URL,
+  allowHttp = false,
+): boolean {
   const privateAuthority =
     !endpoint.username && !endpoint.password && !endpoint.hash;
   const local =
     endpoint.hostname === "127.0.0.1" || endpoint.hostname === "[::1]";
   const secure =
-    endpoint.protocol === "https:" || (endpoint.protocol === "http:" && local);
+    endpoint.protocol === "https:" ||
+    (endpoint.protocol === "http:" && (local || allowHttp));
   return privateAuthority && secure;
 }
 
@@ -128,19 +130,16 @@ export function acquireMcpConnection(
   implementation: Implementation,
 ): Effect.Effect<McpConnection, McpConnectError, Scope.Scope> {
   const endpoint = new URL(settings.endpoint.href);
-  return acquireConnection(
-    { endpoint, credential: settings.credential },
-    { ...implementation },
-  );
+  return acquireConnection({ ...settings, endpoint }, { ...implementation });
 }
 
 export function callTool<Name extends ToolName>(
-  client: Client,
+  client: Pick<Client, "callTool">,
   request: ToolRequest & { readonly name: Name },
 ): Effect.Effect<ToolResult<Name>, ToolFailure<Name>>;
 /** Calls the named MCP tool once. An uncertain send never triggers a retry. */
 export function callTool(
-  client: Client,
+  client: Pick<Client, "callTool">,
   request: ToolRequest,
 ): Effect.Effect<unknown, unknown> {
   return Effect.tryPromise({
@@ -175,8 +174,15 @@ function acquireConnection(
 ): Effect.Effect<McpConnection, McpConnectError, Scope.Scope> {
   return Effect.gen(function* () {
     const endpoint = settings.endpoint;
-    const credential = settings.credential;
-    if (!safeCredentialEndpoint(endpoint)) {
+    const transportOptions: StreamableHTTPClientTransportOptions = {
+      requestInit: {
+        headers: {
+          Authorization: `Bearer ${Redacted.value(settings.credential)}`,
+        },
+        redirect: "error",
+      },
+    };
+    if (!safeCredentialEndpoint(endpoint, settings.allowHttp)) {
       return yield* new McpConnectError({ reason: "transport-failed" });
     }
     const client = new Client(implementation, {
@@ -187,14 +193,7 @@ function acquireConnection(
       Effect.tryPromise({
         try: (signal) =>
           client.connect(
-            new StreamableHTTPClientTransport(endpoint, {
-              requestInit: {
-                headers: {
-                  Authorization: `Bearer ${Redacted.value(credential)}`,
-                },
-                redirect: "error",
-              },
-            }),
+            new StreamableHTTPClientTransport(endpoint, transportOptions),
             { signal },
           ),
         catch: (cause) =>
@@ -223,23 +222,11 @@ function acquireConnection(
         const ready = options.onReady ?? Effect.void;
         const wakeups =
           options.receiveMode === "push"
-            ? inboxWakeups(endpoint, credential, ready).pipe(
+            ? inboxWakeups(endpoint, transportOptions, ready).pipe(
                 Stream.as(undefined),
               )
-            : Stream.concat(
-                Stream.fromEffect(ready),
-                Stream.tick(Duration.millis(250)),
-              ).pipe(Stream.as(undefined));
-        return Effect.acquireUseRelease(
-          Effect.forkIn(
-            Effect.interruptible(
-              receiveInbox(client, receiving, wakeups, accept),
-            ),
-            scope,
-          ),
-          Fiber.join,
-          Fiber.interrupt,
-        );
+            : pollingWakeups(options);
+        return runReception({ client, receiving, scope }, wakeups, accept);
       },
     } satisfies McpConnection;
   }).pipe(Effect.withSpan("Mcp.acquireConnection"));
@@ -268,10 +255,6 @@ function decodeToolResult(
       return Schema.decodeUnknown(toolDefinitions.read_inbox.output)(value);
     case "read_event":
       return Schema.decodeUnknown(toolDefinitions.read_event.output)(value);
-    case "acknowledge_delivery":
-      return Schema.decodeUnknown(toolDefinitions.acknowledge_delivery.output)(
-        value,
-      );
     case "register":
       return Schema.decodeUnknown(toolDefinitions.register.output)(value);
     case "status":
@@ -359,11 +342,6 @@ function managementFailure(
         toolFailureSchemas.read_event,
         (data) => new InboxError(data),
       );
-    case "acknowledge_delivery":
-      return decode(
-        toolFailureSchemas.acknowledge_delivery,
-        (data) => new DeliveryAcknowledgeError(data),
-      );
     case "search_conversations":
       return decode(
         toolFailureSchemas.search_conversations,
@@ -406,7 +384,7 @@ function managementFailure(
 }
 
 function consumePending<E, R>(
-  client: Client,
+  client: Pick<Client, "callTool">,
   accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
 ): Effect.Effect<void, E | McpReceiveError, R> {
   return Effect.gen(function* () {
@@ -425,17 +403,6 @@ function consumePending<E, R>(
       );
       for (const entry of page.items) {
         yield* accept(entry);
-        yield* callTool(client, {
-          name: "acknowledge_delivery",
-          arguments: { deliveryToken: entry.deliveryToken },
-        }).pipe(
-          Effect.catchTags({
-            DeliveryAcknowledgeError: () =>
-              Effect.fail(new McpReceiveError({ reason: "transport-failed" })),
-            McpToolError: () =>
-              Effect.fail(new McpReceiveError({ reason: "transport-failed" })),
-          }),
-        );
       }
       cursor = page.nextCursor;
     } while (cursor !== undefined);
@@ -452,8 +419,29 @@ function connectionRefused(cause: unknown): boolean {
   return "code" in cause.cause && cause.cause.code === "ECONNREFUSED";
 }
 
+function runReception<E, R>(
+  owner: {
+    readonly client: Pick<Client, "callTool">;
+    readonly receiving: Ref.Ref<boolean>;
+    readonly scope: Scope.Scope;
+  },
+  wakeups: Stream.Stream<undefined, McpReceiveError>,
+  accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
+) {
+  return Effect.acquireUseRelease(
+    Effect.forkIn(
+      Effect.interruptible(
+        receiveInbox(owner.client, owner.receiving, wakeups, accept),
+      ),
+      owner.scope,
+    ),
+    Fiber.join,
+    Fiber.interrupt,
+  );
+}
+
 function receiveInbox<E, R>(
-  client: Client,
+  client: Pick<Client, "callTool">,
   receiving: Ref.Ref<boolean>,
   wakeups: Stream.Stream<undefined, McpReceiveError>,
   accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
@@ -474,4 +462,11 @@ function receiveInbox<E, R>(
       );
     }),
   );
+}
+
+function pollingWakeups(options: Pick<InboxOptions, "onReady">) {
+  return Stream.concat(
+    Stream.fromEffect(options.onReady ?? Effect.void),
+    Stream.tick(Duration.millis(250)),
+  ).pipe(Stream.as(undefined));
 }

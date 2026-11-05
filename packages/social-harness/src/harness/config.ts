@@ -1,541 +1,267 @@
-/** @file Loads daemon settings, credentials and optional span export. */
-
+/** @file Loads runtime daemon settings and resolves their policy references from one file. */
 import * as NodeSdk from "@effect/opentelemetry/NodeSdk";
 import { FileSystem } from "@effect/platform";
-import { NodeFileSystem } from "@effect/platform-node";
 import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import {
   Config,
-  type ConfigError,
   Data,
   Effect,
   Either,
   Layer,
-  Match,
   Option,
   Redacted,
   Schema,
+  Struct,
 } from "effect";
-import type { MessagePolicyConfigurationFailure } from "../firewall/rules.js";
-import type { RegistrationRequest } from "../identity/service.js";
-import { AgentName, PrincipalId } from "../identity/agent-cards.js";
-import { AgentPublicKey, AgentSigningAuthority } from "../identity/keys.js";
+import { dirname, resolve } from "node:path";
+import { exactStruct } from "../encoding/canonical-json.js";
+import {
+  installedMessagePolicy,
+  loadMessagePolicy,
+  readPolicyCredential,
+} from "../firewall/rules.js";
+import {
+  AgentName,
+  AgentPublicKey,
+  PrincipalId,
+} from "../identity/agent-cards.js";
 import { RegistrationId } from "../identity/registry.js";
 import { packageVersion } from "../version.js";
 
-/** Identifies the setting that prevents startup without exposing its value. */
-export type DaemonConfigurationFailure =
-  | "environment"
-  | "agent-private-key-file"
-  | "agent-private-key"
-  | "admission-credential-file"
-  | "admission-credential"
-  | "mcp-credential-file"
-  | "mcp-credential"
-  | MessagePolicyConfigurationFailure;
+const configurationDocs =
+  "https://docs.moltzap.xyz/reference/spec/daemon#process-and-configuration";
 
-/** Daemon configuration failure with a safe operator message. */
+/** Messages identify the failed operation without disclosing documents or credentials. */
 export class DaemonConfigurationError extends Data.TaggedError(
   "DaemonConfigurationError",
 )<{
-  readonly reason: DaemonConfigurationFailure;
+  readonly reason: "environment" | "document" | "policy";
   readonly message: string;
 }> {}
 
-/** Exact non-secret values and redacted secret-file locations for one daemon. */
-export interface DaemonProcessConfiguration {
-  readonly registration?: RegistrationRequest;
-  readonly stateDirectory: string;
-  readonly mcpPort: number;
-  readonly registryOrigin: URL;
-  readonly registrySignerPublicKey: AgentPublicKey;
-  readonly routerOrigin: URL;
-  readonly agentPrivateKeyFile: Redacted.Redacted;
-  /**
-   * Required only before registration. Registered daemons never read it.
-   * Empty and unset values both omit the file.
-   */
-  readonly admissionCredentialFile?: Redacted.Redacted;
-  /** Optional JSON-lines file for delivered items and send outcomes. */
-  readonly historyExport?: string;
-  readonly mcpCredentialFile: Redacted.Redacted;
-  /** Omitting the policy file disables the firewall. */
-  readonly messagePolicyFile?: string;
-  readonly decisionProviderKeyFile?: Redacted.Redacted;
-  /** An evaluation hides `group:` addresses from every send. */
-  readonly hideGroups: boolean;
-  /** An evaluation hides gather, all_gather and answers from every send. */
-  readonly hideCollectives: boolean;
-}
-
-/** Loaded private authority required by daemon registration and network calls. */
-export interface DaemonBootstrap {
-  readonly configuration: DaemonProcessConfiguration;
-  readonly signingAuthority: AgentSigningAuthority;
-  /**
-   * Reads and validates the admission credential file on first use, then
-   * replays that outcome. Loading the bootstrap never reads the file.
-   */
-  readonly admissionCredential: Effect.Effect<
-    Redacted.Redacted,
-    DaemonConfigurationError
-  >;
-  readonly mcpCredential: Redacted.Redacted;
-}
-
-/**
- * Distinguishes unreadable UTF-8 from rejected credential text. Paths, bytes
- * and decoder details stay private.
- */
-export class CredentialError extends Data.TaggedError("CredentialError")<{
-  readonly stage: "file" | "value";
-}> {}
-
-/** Accepts admission tokens exactly as stored, without surrounding whitespace. */
-const credentialText = Schema.String.pipe(
-  Schema.minLength(8),
-  Schema.maxLength(512),
-  Schema.pattern(/^[A-Za-z0-9\-._~+/]+=*$/u),
-);
-
-const utf8Decoder = new TextDecoder("utf-8", {
-  fatal: true,
-  ignoreBOM: true,
-});
-
-const fileFailure = (): CredentialError =>
-  new CredentialError({ stage: "file" });
-
-const valueFailure = (): CredentialError =>
-  new CredentialError({ stage: "value" });
-
-const readExactUtf8 = (
-  path: Redacted.Redacted,
-): Effect.Effect<string, CredentialError> =>
-  FileSystem.FileSystem.pipe(
-    Effect.flatMap((filesystem) => filesystem.readFile(Redacted.value(path))),
-    Effect.provide(NodeFileSystem.layer),
-    Effect.mapError(fileFailure),
-    Effect.flatMap((bytes) =>
-      Effect.try({
-        try: () => utf8Decoder.decode(bytes),
-        catch: fileFailure,
-      }),
-    ),
-  );
-
-/** Reads exact UTF-8, validates the whole text with `grammar`, and redacts it. */
-export const readCredential = (
-  path: Redacted.Redacted,
-  grammar: Schema.Schema<string>,
-): Effect.Effect<Redacted.Redacted, CredentialError> =>
-  readExactUtf8(path).pipe(
-    Effect.flatMap((text) =>
-      Schema.decodeUnknown(grammar)(text).pipe(Effect.mapError(valueFailure)),
-    ),
-    Effect.map(Redacted.make),
-  );
-
-/** Reads a PKCS#8 key and returns opaque Ed25519 signing authority. */
-const loadSigningAuthority = (
-  path: Redacted.Redacted,
-): Effect.Effect<AgentSigningAuthority, CredentialError> =>
-  readExactUtf8(path).pipe(
-    Effect.flatMap((privateKey) =>
-      AgentSigningAuthority.fromPkcs8(Redacted.make(privateKey)).pipe(
-        Effect.mapError(valueFailure),
-      ),
-    ),
-  );
-
-const loadAdmissionCredential = (
-  path: Redacted.Redacted,
-): Effect.Effect<Redacted.Redacted, CredentialError> =>
-  readCredential(path, credentialText);
-
-const canonicalUnsignedDecimal = Schema.String.pipe(
-  Schema.pattern(/^(?:0|[1-9]\d*)$/u),
-);
-
-const port = canonicalUnsignedDecimal.pipe(
-  Schema.compose(Schema.NumberFromString),
-  Schema.int(),
-  Schema.between(1, 65_535),
-);
-
-const configuredPath = Schema.String.pipe(
-  Schema.minLength(1),
-  Schema.filter((value) => !value.includes("\u0000")),
-);
-
-const optionalConfiguredPath = Schema.Union(Schema.Literal(""), configuredPath);
-
-const isSerializedOrigin = (value: string): boolean => {
-  if (!URL.canParse(value)) {
-    return false;
-  }
-  const parsed = new URL(value);
-  return (
-    (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-    value === parsed.origin
-  );
-};
+const refused = (reason: DaemonConfigurationError["reason"], message: string) =>
+  new DaemonConfigurationError({
+    reason,
+    message: `${message}. Docs: ${configurationDocs}`,
+  });
 
 const origin = Schema.String.pipe(
-  Schema.filter(isSerializedOrigin),
-  Schema.annotations({
-    identifier: "serialized HTTP(S) origin without a path",
+  Schema.filter((value) => {
+    if (!URL.canParse(value)) {
+      return false;
+    }
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && value === url.origin;
   }),
-  Schema.compose(Schema.URL),
+  Schema.transform(Schema.URLFromSelf, {
+    strict: true,
+    decode: (value) => new URL(value),
+    encode: (value) => value.origin,
+  }),
 );
 
-const publicKeyJson = Schema.parseJson(AgentPublicKey);
+const httpsUrl = Schema.String.pipe(
+  Schema.filter((value) => {
+    if (!URL.canParse(value)) {
+      return false;
+    }
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      [url.username, url.password, url.search, url.hash].every(
+        (part) => part === "",
+      )
+    );
+  }),
+);
 
-const experimentSwitch = Schema.String.pipe(
-  Schema.compose(
-    Schema.transformLiterals(
-      ["true", true],
-      ["yes", true],
-      ["on", true],
-      ["1", true],
-      ["false", false],
-      ["no", false],
-      ["off", false],
-      ["0", false],
+/** Plaintext discovery is limited to local issuer fixtures; hosted providers require HTTPS. */
+const oauthIssuer = Schema.Union(
+  httpsUrl,
+  Schema.String.pipe(
+    Schema.filter((value) => {
+      if (!URL.canParse(value)) {
+        return false;
+      }
+      const url = new URL(value);
+      return (
+        url.protocol === "http:" &&
+        url.hostname === "127.0.0.1" &&
+        [url.username, url.password, url.search, url.hash].every(
+          (part) => part === "",
+        )
+      );
+    }),
+  ),
+);
+
+const credential = Schema.Redacted(
+  Schema.String.pipe(
+    Schema.minLength(8),
+    Schema.maxLength(512),
+    Schema.pattern(/^[A-Za-z0-9\-._~+/]+=*$/u),
+  ),
+);
+const publicOAuth = exactStruct({
+  kind: Schema.Literal("oauth"),
+  resource: httpsUrl.pipe(
+    Schema.filter(
+      (value) =>
+        new URL(value).pathname === "/mcp" && new URL(value).href === value,
+    ),
+    Schema.compose(Schema.URL),
+  ),
+  issuer: oauthIssuer,
+  scope: Schema.String.pipe(Schema.pattern(/^[\x21\x23-\x5B\x5D-\x7E]+$/u)),
+  allowedOrigins: Schema.optionalWith(
+    Schema.Array(
+      httpsUrl.pipe(Schema.filter((value) => new URL(value).origin === value)),
+    ),
+    { default: () => [] },
+  ),
+});
+const localBearer = exactStruct({
+  kind: Schema.Literal("local"),
+  credential: Schema.Redacted(
+    Schema.String.pipe(
+      Schema.minLength(32),
+      Schema.maxLength(512),
+      Schema.pattern(/^[A-Za-z0-9\-._~+/]+=*$/u),
     ),
   ),
-  Schema.annotations({ identifier: "true, yes, on, 1, false, no, off or 0" }),
-);
+});
 
-const configurationFields = {
-  registrationAgentName: setting(
-    "SHARNESS_REGISTRATION_AGENT_NAME",
-    AgentName,
-    undefined,
-  ),
-  registrationOperationId: setting(
-    "SHARNESS_REGISTRATION_OPERATION_ID",
-    RegistrationId,
-    undefined,
-  ),
-  registrationPrincipalId: setting(
-    "SHARNESS_REGISTRATION_PRINCIPAL_ID",
-    PrincipalId,
-    undefined,
-  ),
-  stateDirectory: setting("SHARNESS_STATE_DIRECTORY", configuredPath),
-  mcpPort: setting("SHARNESS_MCP_PORT", port),
-  registryOrigin: setting("SHARNESS_REGISTRY_ORIGIN", origin),
-  registrySignerPublicKey: setting(
-    "SHARNESS_REGISTRY_SIGNER_PUBLIC_KEY",
-    publicKeyJson,
-  ),
-  routerOrigin: setting("SHARNESS_ROUTER_ORIGIN", origin),
-  agentPrivateKeyFile: setting(
-    "SHARNESS_AGENT_PRIVATE_KEY_FILE",
-    configuredPath,
-  ),
-  admissionCredentialFile: setting(
-    "SHARNESS_ADMISSION_CREDENTIAL_FILE",
-    optionalConfiguredPath,
-    "",
-  ),
-  historyExport: setting("SHARNESS_HISTORY_EXPORT", configuredPath, undefined),
-  mcpCredentialFile: setting("SHARNESS_MCP_CREDENTIAL_FILE", configuredPath),
-  messagePolicyFile: setting(
-    "SHARNESS_MESSAGE_POLICY_FILE",
-    configuredPath,
-    undefined,
-  ),
-  decisionProviderKeyFile: setting(
-    "SHARNESS_DECISION_PROVIDER_KEY_FILE",
-    configuredPath,
-    undefined,
-  ),
-  hideGroups: setting(
-    "SHARNESS_EXPERIMENT_HIDE_GROUPS",
-    experimentSwitch,
-    false,
-  ),
-  hideCollectives: setting(
-    "SHARNESS_EXPERIMENT_HIDE_COLLECTIVES",
-    experimentSwitch,
-    false,
-  ),
+const commonFields = {
+  port: Schema.Int.pipe(Schema.between(1, 65535)),
+  host: Schema.NonEmptyString,
+  authentication: Schema.Union(localBearer, publicOAuth),
+  registryOrigin: origin,
+  registrySignerPublicKey: AgentPublicKey,
+  routerOrigin: origin,
+  admissionCredential: Schema.optional(credential),
+  hideGroups: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  hideCollectives: Schema.optionalWith(Schema.Boolean, {
+    default: () => false,
+  }),
 };
 
-const configuredValues = Config.all(configurationFields);
+const settings = exactStruct({
+  ...commonFields,
+  messagePolicy: Schema.optional(installedMessagePolicy),
+}).pipe(
+  Schema.filter(
+    (value) =>
+      value.authentication.kind === "oauth" || value.host === "127.0.0.1",
+  ),
+);
 
-/** Usage is generated from the same fields consumed by the process. */
+/** Process settings contain resolved policy and credential values for this startup. */
+export type DaemonSettings = typeof settings.Type;
+
+const seed = exactStruct({
+  agentName: AgentName,
+  principalId: PrincipalId,
+  operationId: RegistrationId,
+  privateKey: Schema.Redacted(Schema.NonEmptyString),
+});
+const setup = exactStruct({
+  ...commonFields,
+  agent: Schema.optional(seed),
+  messagePolicyFile: Schema.optional(Schema.NonEmptyString),
+  decisionProviderKeyFile: Schema.optional(Schema.NonEmptyString),
+}).pipe(
+  Schema.filter(
+    (value) =>
+      value.authentication.kind === "local" || value.agent === undefined,
+  ),
+);
+
+/** The document and its referenced files are read on every daemon start. */
 export const processHelp = [
   "Usage: sharnessd [--help]",
   "",
-  "Environment:",
-  "  Admission credential: required only before registration; MCP credential file: required.",
-  "  Message policy: unset, no firewall; the decision-provider key applies only with it.",
-  ...Object.values(configurationFields).map((field) => `  ${field.usage}`),
+  "SHARNESS_CONFIG_FILE: JSON daemon settings file",
+  "SHARNESS_DATABASE_URL: sqlite file URL or PostgreSQL connection URL",
+  "SHARNESS_DATABASE_KEY: base64url-encoded 32-byte encryption key",
+  "Deployment prepares the database schema and encryption verifier before startup.",
+  "Standard OTEL_* variables configure telemetry.",
   "",
-  "Docs: https://docs.moltzap.xyz/reference/spec/daemon#process-and-configuration",
+  `Docs: ${configurationDocs}`,
 ].join("\n");
 
-type ProcessConfigurationFailure = Exclude<
-  DaemonConfigurationFailure,
-  MessagePolicyConfigurationFailure
->;
-
-const RUN_SHARNESSD = "https://docs.moltzap.xyz/guides/run-an-agent-daemon";
-
-type SecretFileFailure = Exclude<ProcessConfigurationFailure, "environment">;
-
-const secretFileFailures: Readonly<
-  Record<SecretFileFailure, { readonly text: string; readonly docs: string }>
-> = {
-  "agent-private-key-file": {
-    text: "SHARNESS_AGENT_PRIVATE_KEY_FILE must name a readable file",
-    docs: `${RUN_SHARNESSD}#agent-private-key-file`,
-  },
-  "agent-private-key": {
-    text: "SHARNESS_AGENT_PRIVATE_KEY_FILE must contain an Ed25519 PKCS#8 private key",
-    docs: `${RUN_SHARNESSD}#agent-private-key`,
-  },
-  "admission-credential-file": {
-    text: "SHARNESS_ADMISSION_CREDENTIAL_FILE is required for an unregistered daemon and must name a readable file",
-    docs: `${RUN_SHARNESSD}#admission-credential-file`,
-  },
-  "admission-credential": {
-    text: "SHARNESS_ADMISSION_CREDENTIAL_FILE must contain a valid admission credential",
-    docs: `${RUN_SHARNESSD}#admission-credential`,
-  },
-  "mcp-credential-file": {
-    text: "SHARNESS_MCP_CREDENTIAL_FILE must name a readable file",
-    docs: `${RUN_SHARNESSD}#mcp-credential-file`,
-  },
-  "mcp-credential": {
-    text: "SHARNESS_MCP_CREDENTIAL_FILE must contain a valid token of at least 32 characters",
-    docs: `${RUN_SHARNESSD}#mcp-credential`,
-  },
-};
-
-const linked = (text: string, docs: string): string => `${text}. Docs: ${docs}`;
-
-const configurationError = (
-  reason: SecretFileFailure,
-): DaemonConfigurationError =>
-  new DaemonConfigurationError({
-    reason,
-    message: linked(
-      secretFileFailures[reason].text,
-      secretFileFailures[reason].docs,
-    ),
-  });
-
-/** Validates daemon settings and keeps secret-file locations redacted. */
-export const loadDaemonProcessConfiguration: Effect.Effect<
-  DaemonProcessConfiguration,
-  DaemonConfigurationError
-> = configuredValues.pipe(
-  Effect.flatMap((values) => {
-    const {
-      registrationAgentName,
-      registrationOperationId,
-      registrationPrincipalId,
-      ...configuration
-    } = values;
-    return registrationRequest({
-      registrationAgentName,
-      registrationOperationId,
-      registrationPrincipalId,
-    }).pipe(
-      Effect.map(
-        (registration): DaemonProcessConfiguration => ({
-          ...configuration,
-          ...(registration === undefined ? {} : { registration }),
-          agentPrivateKeyFile: Redacted.make(configuration.agentPrivateKeyFile),
-          admissionCredentialFile:
-            configuration.admissionCredentialFile === ""
-              ? undefined
-              : Redacted.make(configuration.admissionCredentialFile),
-          mcpCredentialFile: Redacted.make(configuration.mcpCredentialFile),
-          decisionProviderKeyFile:
-            configuration.decisionProviderKeyFile === undefined
-              ? undefined
-              : Redacted.make(configuration.decisionProviderKeyFile),
-        }),
-      ),
-    );
-  }),
-  Effect.mapError((cause) =>
-    cause instanceof DaemonConfigurationError
-      ? cause
-      : new DaemonConfigurationError({
-          reason: "environment",
-          message: linked(
-            configurationMessage(cause),
-            `${RUN_SHARNESSD}#setting`,
-          ),
-        }),
-  ),
-  Effect.withSpan("loadDaemonProcessConfiguration"),
-);
-
-/** Requires all registration fields together so partial input cannot choose an identity. */
-function registrationRequest(
-  input: Pick<
-    Config.Config.Success<typeof configuredValues>,
-    | "registrationAgentName"
-    | "registrationOperationId"
-    | "registrationPrincipalId"
-  >,
-): Effect.Effect<
-  DaemonProcessConfiguration["registration"],
-  DaemonConfigurationError
-> {
-  const {
-    registrationAgentName: agentName,
-    registrationOperationId: operationId,
-    registrationPrincipalId: principalId,
-  } = input;
-  if (
-    agentName === undefined &&
-    operationId === undefined &&
-    principalId === undefined
-  ) {
-    return Effect.succeed(undefined);
-  }
-  if (
-    agentName === undefined ||
-    operationId === undefined ||
-    principalId === undefined
-  ) {
-    return Effect.fail(
-      new DaemonConfigurationError({
-        reason: "environment",
-        message: linked(
-          "SHARNESS_REGISTRATION_AGENT_NAME, SHARNESS_REGISTRATION_OPERATION_ID and SHARNESS_REGISTRATION_PRINCIPAL_ID must all be supplied",
-          `${RUN_SHARNESSD}#registration-settings`,
-        ),
-      }),
-    );
-  }
-  return Effect.succeed({ agentName, operationId, principalId });
-}
-
-const credentialFailure =
-  (fileReason: SecretFileFailure, valueReason: SecretFileFailure) =>
-  (error: CredentialError): DaemonConfigurationError =>
-    configurationError(error.stage === "file" ? fileReason : valueReason);
-
-const mcpCredential = credentialText.pipe(Schema.minLength(32));
-
-const loadMcpCredential = (configuration: DaemonProcessConfiguration) =>
-  readCredential(configuration.mcpCredentialFile, mcpCredential).pipe(
-    Effect.mapError(credentialFailure("mcp-credential-file", "mcp-credential")),
-  );
-
-const loadConfiguredAdmissionCredential = (
-  configuration: DaemonProcessConfiguration,
-): Effect.Effect<Redacted.Redacted, DaemonConfigurationError> =>
-  configuration.admissionCredentialFile === undefined
-    ? Effect.fail(configurationError("admission-credential-file"))
-    : loadAdmissionCredential(configuration.admissionCredentialFile).pipe(
-        Effect.mapError(
-          credentialFailure(
-            "admission-credential-file",
-            "admission-credential",
-          ),
-        ),
-      );
-
-/**
- * Loads signing authority and the MCP credential. Defers admission-credential
- * loading until registration requires it.
- */
-export const loadDaemonBootstrap = (
-  configuration: DaemonProcessConfiguration,
-): Effect.Effect<DaemonBootstrap, DaemonConfigurationError> =>
-  Effect.gen(function* () {
-    const signingAuthority = yield* loadSigningAuthority(
-      configuration.agentPrivateKeyFile,
-    ).pipe(
-      Effect.mapError(
-        credentialFailure("agent-private-key-file", "agent-private-key"),
-      ),
-    );
-    const admissionCredential = yield* Effect.cached(
-      loadConfiguredAdmissionCredential(configuration),
-    );
-    const mcpCredential = yield* loadMcpCredential(configuration);
-    return Object.freeze({
-      configuration,
-      signingAuthority,
-      admissionCredential,
-      mcpCredential,
-    });
-  }).pipe(Effect.withSpan("loadDaemonBootstrap"));
-
-/** Keeps each setting's parser, default and help text together. */
-function setting<A, D = never>(
-  name: string,
-  schema: Schema.Schema<A, string>,
-  ...defaults: [] | [D]
+/** Policy references resolve against the runtime document, independent of the process directory. */
+export const loadDaemonSettings = Effect.fn("loadDaemonSettings")(function* (
+  filename?: string,
 ) {
-  const config = Schema.Config(name, schema);
-  return Object.assign(
-    defaults.length === 0
-      ? config
-      : config.pipe(Config.withDefault(defaults[0])),
+  const selected =
+    filename ??
+    (yield* Config.string("SHARNESS_CONFIG_FILE").pipe(
+      Effect.mapError(() =>
+        refused(
+          "environment",
+          "Set SHARNESS_CONFIG_FILE to the daemon settings document",
+        ),
+      ),
+    ));
+  const filesystem = yield* FileSystem.FileSystem;
+  const document = yield* filesystem.readFileString(selected).pipe(
+    Effect.flatMap(
+      Schema.decodeUnknown(Schema.parseJson(setup), {
+        onExcessProperty: "error",
+      }),
+    ),
+    Effect.mapError(() =>
+      refused(
+        "document",
+        "The daemon settings document is unreadable or invalid",
+      ),
+    ),
+  );
+  const root = dirname(resolve(selected));
+  const messagePolicy = yield* loadMessagePolicy(
     {
-      name,
-      reason: `must satisfy ${schema.ast.toString()}`,
-      usage: `${name}: ${settingUsage(defaults)}`,
+      messagePolicyFile:
+        document.messagePolicyFile === undefined
+          ? undefined
+          : resolve(root, document.messagePolicyFile),
+      decisionProviderKeyFile:
+        document.decisionProviderKeyFile === undefined
+          ? undefined
+          : Redacted.make(resolve(root, document.decisionProviderKeyFile)),
     },
+    readPolicyCredential,
+  ).pipe(
+    Effect.mapError(() =>
+      refused(
+        "policy",
+        "The configured message policy or provider credential is invalid",
+      ),
+    ),
   );
-}
-
-/** Distinguishes absent defaults from explicitly unset or empty defaults in operator help. */
-function settingUsage(defaults: readonly unknown[]): string {
-  if (defaults.length === 0) {
-    return "required; default: none";
-  }
-  if (defaults[0] === undefined) {
-    return "optional; default: unset";
-  }
-  if (defaults[0] === "") {
-    return "optional; default: none";
-  }
-  return `optional; default: ${JSON.stringify(defaults[0])}`;
-}
-
-/** ConfigError trees retain every missing field without printing rejected inputs. */
-function configurationMessage(error: ConfigError.ConfigError): string {
-  return Match.value(error).pipe(
-    Match.discriminatorsExhaustive("_op")({
-      And: (cause) =>
-        `${configurationMessage(cause.left)}; ${configurationMessage(cause.right)}`,
-      Or: (cause) =>
-        `${configurationMessage(cause.left)} or ${configurationMessage(cause.right)}`,
-      MissingData: (cause) => `${Array.from(cause.path).join("_")} is required`,
-      InvalidData: invalidConfigurationMessage,
-      SourceUnavailable: (cause) =>
-        `${Array.from(cause.path).join("_")} configuration source unavailable`,
-      Unsupported: (cause) =>
-        `${Array.from(cause.path).join("_")} configuration source unavailable`,
-    }),
+  const values = Struct.omit(
+    document,
+    "agent",
+    "messagePolicyFile",
+    "decisionProviderKeyFile",
   );
-}
-
-/** Only declared setting constraints may appear in invalid-value diagnostics. */
-function invalidConfigurationMessage(error: ConfigError.InvalidData): string {
-  const name = Array.from(error.path).join("_");
-  const field = Object.values(configurationFields).find(
-    (candidate) => candidate.name === name,
+  const captured = yield* Schema.validate(settings)({
+    ...values,
+    messagePolicy: Option.getOrUndefined(messagePolicy),
+  }).pipe(
+    Effect.mapError(() =>
+      refused(
+        "document",
+        "Local bearer access requires the 127.0.0.1 listener",
+      ),
+    ),
   );
-  return field === undefined
-    ? "environment configuration is invalid"
-    : `${name} ${field.reason}`;
-}
+  return {
+    settings: captured,
+    ...(document.agent === undefined ? {} : { agent: document.agent }),
+  };
+}, Effect.withSpan("loadDaemonSettings"));
 
 const otelVariable = (name: string) =>
   Config.option(Config.string(name)).pipe(

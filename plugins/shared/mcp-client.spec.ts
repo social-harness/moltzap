@@ -1,4 +1,4 @@
-/** @file A host's accepted callback controls acknowledgment on the shared MCP connection. */
+/** @file Inbox reads record delivery before native host callbacks run. */
 import { Client, ProtocolError } from "@modelcontextprotocol/client";
 import {
   Deferred,
@@ -59,7 +59,7 @@ const inboxFixture = Effect.gen(function* () {
 
 describe("shared inbox reception", () => {
   it.each(["poll", "push"] as const)(
-    "acknowledges after host acceptance over %s",
+    "records delivery before host acceptance over %s",
     (receiveMode) =>
       Effect.gen(function* () {
         const fixture = yield* inboxFixture;
@@ -69,16 +69,16 @@ describe("shared inbox reception", () => {
         );
         const entered = yield* Deferred.make<void>();
         const accepted = yield* Deferred.make<void>();
-        const receiver = yield* connection
-          .consumeInbox({ receiveMode }, (received) => {
-            expect(received).toEqual(entry);
-            return Deferred.succeed(entered, undefined).pipe(
-              Effect.zipRight(Deferred.await(accepted)),
-            );
-          })
-          .pipe(Effect.forkScoped);
+        const consume = connection.consumeInbox;
+        const options = { onReady: Effect.void, receiveMode };
+        const receiver = yield* consume(options, (received) => {
+          expect(received).toEqual(entry);
+          return Deferred.succeed(entered, undefined).pipe(
+            Effect.zipRight(Deferred.await(accepted)),
+          );
+        }).pipe(Effect.forkScoped);
         yield* Deferred.await(entered);
-        expect(yield* Ref.get(fixture.acknowledged)).toBe(0);
+        expect(yield* Ref.get(fixture.acknowledged)).toBe(1);
         yield* Deferred.succeed(accepted, undefined);
         yield* Deferred.await(fixture.receipt);
         yield* Fiber.interrupt(receiver);
@@ -86,7 +86,7 @@ describe("shared inbox reception", () => {
       }).pipe(Effect.scoped, Effect.runPromise),
   );
 
-  it("leaves an unsuccessful callback pending", () =>
+  it("keeps a failed callback from undoing delivery", () =>
     Effect.gen(function* () {
       const fixture = yield* inboxFixture;
       const connection = yield* acquireMcpConnection(
@@ -98,7 +98,7 @@ describe("shared inbox reception", () => {
           .consumeInbox({}, () => Effect.fail("host-refused"))
           .pipe(Effect.flip),
       ).toBe("host-refused");
-      expect(yield* Ref.get(fixture.acknowledged)).toBe(0);
+      expect(yield* Ref.get(fixture.acknowledged)).toBe(1);
     }).pipe(Effect.scoped, Effect.runPromise));
 
   it("interrupts a pending callback when its connection closes", () =>
@@ -123,29 +123,67 @@ describe("shared inbox reception", () => {
       yield* Scope.close(scope, Exit.void);
       yield* Deferred.await(interrupted);
       yield* Fiber.await(receiver);
-      expect(yield* Ref.get(fixture.acknowledged)).toBe(0);
+      expect(yield* Ref.get(fixture.acknowledged)).toBe(1);
     }).pipe(Effect.scoped, Effect.runPromise));
 });
 
 describe("credential transport", () => {
   it.each([
-    "http://remote.example/mcp",
-    "http://localhost/mcp",
-    "https://user:password@remote.example/mcp",
-    "https://remote.example/mcp#fragment",
-    "ftp://remote.example/mcp",
-  ])("refuses %s before sending a bearer", (url) => {
-    const fetch = vi.spyOn(globalThis, "fetch");
+    { url: "http://remote.example/mcp", allowHttp: undefined },
+    { url: "http://remote.example/mcp", allowHttp: false },
+    { url: "http://localhost/mcp", allowHttp: undefined },
+    { url: "https://user:password@remote.example/mcp", allowHttp: true },
+    { url: "https://remote.example/mcp#fragment", allowHttp: true },
+    { url: "http://user:password@remote.example/mcp", allowHttp: true },
+    { url: "http://remote.example/mcp#fragment", allowHttp: true },
+    { url: "ftp://remote.example/mcp", allowHttp: true },
+  ])(
+    "refuses $url with allowHttp=$allowHttp before sending a bearer",
+    ({ url, allowHttp }) => {
+      const fetch = vi.spyOn(globalThis, "fetch");
+      return acquireMcpConnection(
+        {
+          endpoint: new URL(url),
+          credential,
+          ...(allowHttp === undefined ? {} : { allowHttp }),
+        },
+        implementation,
+      ).pipe(
+        Effect.scoped,
+        Effect.flip,
+        Effect.tap((error) =>
+          Effect.sync(() => {
+            expect(error.reason).toBe("transport-failed");
+            expect(fetch).not.toHaveBeenCalled();
+          }),
+        ),
+        Effect.asVoid,
+        Effect.runPromise,
+      );
+    },
+  );
+  it("sends the bearer to host-approved HTTP without following redirects", () => {
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 401 }));
+    const endpoint = new URL("http://internal.example/mcp");
     return acquireMcpConnection(
-      { endpoint: new URL(url), credential },
+      { endpoint, credential, allowHttp: true },
       implementation,
     ).pipe(
       Effect.scoped,
       Effect.flip,
-      Effect.tap((error) =>
+      Effect.tap(() =>
         Effect.sync(() => {
-          expect(error.reason).toBe("transport-failed");
-          expect(fetch).not.toHaveBeenCalled();
+          const call = fetch.mock.calls[0];
+          if (call === undefined)
+            return expect.unreachable("MCP did not connect");
+          const request = new Request(...call);
+          expect(request.url).toBe(endpoint.href);
+          expect(request.headers.get("Authorization")).toBe(
+            `Bearer ${Redacted.value(credential)}`,
+          );
+          expect(request.redirect).toBe("error");
         }),
       ),
       Effect.asVoid,
@@ -240,14 +278,6 @@ describe("management failures", () => {
       },
       data: { reason: "unknown-event" },
       tag: "InboxError",
-    },
-    {
-      request: {
-        name: "acknowledge_delivery",
-        arguments: { deliveryToken: entry.deliveryToken },
-      },
-      data: { reason: "unknown-delivery" },
-      tag: "DeliveryAcknowledgeError",
     },
     {
       request: { name: "search_conversations", arguments: {} },

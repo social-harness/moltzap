@@ -14,6 +14,11 @@ import {
   Effect,
   Encoding,
   Fiber,
+  Redacted,
+  Schedule,
+  TestClock,
+  TestContext,
+  TestServices,
 } from "effect";
 import { createHmac } from "node:crypto";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Restart scenarios retain the same test directory across independent Effect scopes.
@@ -80,6 +85,40 @@ function stateDirectory() {
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals, sonarjs/no-hardcoded-ip -- Protocol codes and deliberately unsafe IP fixtures pin the callback trust boundary. */
 
+it("keeps each agent's webhook registration and revocation separate in one database", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const store = yield* openCallbackInbox(stateDirectory());
+      const first = yield* scriptedWebhook(store, "first");
+      const second = yield* scriptedWebhook(store, "second");
+      const firstEvents = yield* first.acquire;
+      const secondEvents = yield* second.acquire;
+      yield* firstEvents.subscribe(input);
+      expect((yield* secondEvents.status).mode).toBe("none");
+      yield* secondEvents.subscribe(input);
+      yield* firstEvents.revoke;
+      const recoveredFirst = yield* first.acquire;
+      const recoveredSecond = yield* second.acquire;
+      expect((yield* recoveredFirst.status).mode).toBe("none");
+      expect((yield* recoveredSecond.status).mode).toBe("webhook");
+      const retained = yield* store.sql<
+        Record<"state", string>
+      >`SELECT state FROM mcp_webhook_state`;
+      expect(JSON.stringify(retained)).not.toContain(secret);
+      expect(JSON.stringify(retained)).not.toContain(url);
+      yield* store.sql`UPDATE mcp_webhook_state SET state = (SELECT state FROM mcp_webhook_state WHERE agent_key = 'second') WHERE agent_key = 'first'`;
+      expect(yield* first.acquire.pipe(Effect.isFailure)).toBe(true);
+      const wrongKey = yield* scriptedWebhook(
+        store,
+        "second",
+        Redacted.make(new Uint8Array(32).fill(9)),
+      );
+      expect(yield* wrongKey.acquire.pipe(Effect.isFailure)).toBe(true);
+      const unaffected = yield* second.acquire;
+      expect((yield* unaffected.status).mode).toBe("webhook");
+    }),
+  ));
+
 /** Moves the clock of a scenario that runs `onSteppedClock`. */
 class SteppedClock extends Context.Tag("SteppedClock")<
   SteppedClock,
@@ -91,17 +130,15 @@ const stepClock = (span: Duration.DurationInput) =>
   Effect.flatMap(SteppedClock, (step) => step(span));
 
 /**
- * Runs `scenario` on its own clock, starting at the epoch, which only
- * `stepClock` moves, at once. These scenarios only read the time, and the
- * clock's sleeps never end because a scripted callback answers before its
- * bound.
- * @param scenario Scenario that reads and steps the clock.
- * @returns The scenario on a fresh stepped clock.
+ * Advances wall time without simulating every missed timer interval. Each step
+ * wakes one real retry-loop tick, as when a paused process is scheduled again.
+ * Callback timeouts and worker sleeps use Effect's test clock.
  */
 const onSteppedClock = <Value, Failure>(
   scenario: Effect.Effect<Value, Failure, SteppedClock>,
 ): Effect.Effect<Value, Failure> =>
-  Effect.suspend(() => {
+  Effect.gen(function* () {
+    const timer = yield* TestClock.testClock();
     let millis = 0;
     const clock: Clock.Clock = {
       [Clock.ClockTypeId]: Clock.ClockTypeId,
@@ -109,17 +146,17 @@ const onSteppedClock = <Value, Failure>(
       currentTimeMillis: Effect.sync(() => millis),
       unsafeCurrentTimeNanos: () => BigInt(millis) * 1_000_000n,
       currentTimeNanos: Effect.sync(() => BigInt(millis) * 1_000_000n),
-      sleep: () => Effect.never,
+      sleep: (duration) => timer.sleep(duration),
     };
-    return scenario.pipe(
+    return yield* scenario.pipe(
       Effect.withClock(clock),
       Effect.provideService(SteppedClock, (span) =>
         Effect.sync(() => {
           millis += Duration.toMillis(span);
-        }),
+        }).pipe(Effect.zipRight(timer.adjust("1 second"))),
       ),
     );
-  });
+  }).pipe(Effect.provide(TestContext.TestContext));
 
 /** Select callbacks by their signed event identity, independently of verification traffic. */
 const eventPosts = (
@@ -133,6 +170,19 @@ const verificationPosts = (
 ) =>
   posts.filter((post) =>
     post.headers["webhook-id"]?.startsWith("msg_verification_"),
+  );
+
+/** A timer wakeup can finish before the asynchronous callback commits its receipt. */
+const awaitDrainedInbox = (
+  store: Effect.Effect.Success<ReturnType<typeof openCallbackInbox>>,
+) =>
+  store.pending.pipe(
+    Effect.repeat({
+      schedule: Schedule.spaced("1 millis"),
+      until: (pending) => pending.pendingCount === 0,
+    }),
+    Effect.timeout("3 seconds"),
+    TestServices.provideLive,
   );
 
 const rotatedSubscription = {
@@ -158,7 +208,8 @@ const signsVerifiesAndRotates = () =>
         .digest("base64");
       expect(control?.headers["webhook-signature"]).toBe(`v1,${expected}`);
       yield* enqueue(store, 1);
-      yield* events.observe();
+      yield* stepClock("0 millis");
+      yield* awaitDrainedInbox(store);
       expect(decodeOccurrence(eventPosts(test.posts, 1)[0]?.body).data).toEqual(
         {
           kind: "item",
@@ -199,20 +250,20 @@ const retainsTerminalRejections = () =>
         yield* enqueue(store, 1);
         yield* events.subscribe(input);
         test.status(status);
-        yield* events.observe();
+        yield* stepClock("0 millis");
         expect((yield* events.status).stalled).toBe("terminal");
-        const restarted = yield* test.acquire;
         test.status(200);
+        const restarted = yield* test.acquire;
         yield* restarted.subscribe(input);
         expect((yield* restarted.resume.pipe(Effect.flip)).code).toBe(-32014);
         yield* stepClock("1 day");
         yield* restarted.subscribe(input);
-        yield* restarted.observe();
+        yield* stepClock("0 millis");
         expect(eventPosts(test.posts, 1)).toHaveLength(1);
         expect((yield* store.pending).pendingCount).toBe(1);
         yield* restarted.revoke;
         yield* restarted.subscribe(input);
-        yield* restarted.observe();
+        yield* stepClock("0 millis");
         expect((yield* store.pending).pendingCount).toBe(0);
       }
     }),
@@ -227,7 +278,8 @@ it("delivers local guidance and its subject map through a signed webhook", () =>
       const guidance = localGuidance(1);
       yield* store.save(token(1), item(), guidance);
       yield* events.subscribe(input);
-      yield* events.observe();
+      yield* stepClock("0 millis");
+      yield* awaitDrainedInbox(store);
       expect(decodeOccurrence(eventPosts(test.posts, 1)[0]?.body).data).toEqual(
         {
           kind: "item",
@@ -285,7 +337,7 @@ const permitsReadAndRevokeDuringDelivery = () =>
           Effect.asVoid,
         ),
       );
-      const delivery = yield* events.observe().pipe(Effect.fork);
+      const delivery = yield* stepClock("0 millis").pipe(Effect.fork);
       yield* Deferred.await(entered);
       expect((yield* store.harness.getInboxEvent(token(1))).item).toEqual(
         item(),
@@ -296,7 +348,7 @@ const permitsReadAndRevokeDuringDelivery = () =>
       expect((yield* events.status).mode).toBe("none");
       expect((yield* store.pending).pendingCount).toBe(1);
     }),
-  );
+  ).pipe(onSteppedClock);
 
 const refreshPreservesTerminalReceipt = () =>
   Effect.scoped(
@@ -315,13 +367,22 @@ const refreshPreservesTerminalReceipt = () =>
           Effect.asVoid,
         ),
       );
-      const delivery = yield* events.observe().pipe(Effect.fork);
+      const delivery = yield* stepClock("0 millis").pipe(Effect.fork);
       yield* Deferred.await(entered);
       yield* events.subscribe(input);
       yield* events.resume;
       yield* Deferred.succeed(release, undefined);
       yield* Fiber.join(delivery);
-      expect((yield* events.status).stalled).toBe("terminal");
+      const settled = yield* events.status.pipe(
+        Effect.repeat({
+          schedule: Schedule.spaced("1 millis"),
+          until: (status) => status.stalled !== null,
+        }),
+        Effect.zipRight(events.status),
+        Effect.timeout("3 seconds"),
+        TestServices.provideLive,
+      );
+      expect(settled.stalled).toBe("terminal");
       expect((yield* store.pending).pendingCount).toBe(1);
     }),
   ).pipe(onSteppedClock);
@@ -338,7 +399,7 @@ const retriesAcrossRestart = () => {
         yield* enqueue(store, 1);
         yield* events.subscribe(input);
         test.status(503);
-        yield* events.observe();
+        yield* stepClock("0 millis");
         original = eventPosts(test.posts, 1)[0]?.body;
         expect((yield* store.pending).pendingCount).toBe(1);
       }),
@@ -348,15 +409,15 @@ const retriesAcrossRestart = () => {
       Effect.gen(function* () {
         const store = yield* openCallbackInbox(path);
         const test = yield* scriptedWebhook(store);
-        const events = yield* test.acquire;
-        yield* events.observe();
+        yield* test.acquire;
+        yield* stepClock("0 millis");
         expect(eventPosts(test.posts, 1)[0]?.body).toBe(original);
         expect(eventPosts(test.posts, 1)[0]?.headers["webhook-id"]).toBe(
           token(1),
         );
         expect((yield* store.pending).pendingCount).toBe(0);
         yield* stepClock("10 minutes");
-        yield* events.observe();
+        yield* stepClock("0 millis");
         expect(eventPosts(test.posts, 1)).toHaveLength(1);
       }),
     );
@@ -386,6 +447,17 @@ const webhookMarkers = (exporter: InMemorySpanExporter) =>
         span.name.startsWith("retry.") && span.attributes.kind === "webhook",
     )
     .map((span) => ({ name: span.name, ...span.attributes }));
+
+/** SQL-backed delivery can remain suspended after a timer tick has completed. */
+const waitForWebhookMarkers = (exporter: InMemorySpanExporter, count: number) =>
+  Effect.sync(() => webhookMarkers(exporter)).pipe(
+    Effect.repeat({
+      schedule: Schedule.spaced("1 millis"),
+      until: (markers) => markers.length >= count,
+    }),
+    Effect.timeout("3 seconds"),
+    TestServices.provideLive,
+  );
 
 /** The `webhook` pending marker for event `id`, as `webhookMarkers` lists it. */
 const pendingMarker = (id: string) => ({
@@ -424,7 +496,8 @@ const marksADeliveryBusyUntilItsReceipt = () => {
         yield* enqueue(store, 1);
         yield* events.subscribe(input);
         test.status(503);
-        yield* events.observe();
+        yield* stepClock("0 millis");
+        yield* waitForWebhookMarkers(exporter, 1);
       }),
     );
     expect(webhookMarkers(exporter)).toEqual([pending, settled("interrupted")]);
@@ -432,8 +505,9 @@ const marksADeliveryBusyUntilItsReceipt = () => {
     yield* Effect.scoped(
       Effect.gen(function* () {
         const store = yield* openCallbackInbox(path);
-        const events = yield* (yield* scriptedWebhook(store)).acquire;
-        yield* events.observe();
+        yield* (yield* scriptedWebhook(store)).acquire;
+        yield* stepClock("0 millis");
+        yield* waitForWebhookMarkers(exporter, 4);
       }),
     );
     expect(webhookMarkers(exporter)).toEqual([
@@ -461,9 +535,11 @@ const settlesALapsedDeliveryAsGivenUp = () => {
       yield* enqueue(store, 1);
       yield* events.subscribe(input);
       test.status(503);
-      yield* events.observe();
+      yield* stepClock("0 millis");
+      yield* waitForWebhookMarkers(exporter, 1);
       yield* stepClock("25 hours");
-      yield* events.observe();
+      yield* stepClock("0 millis");
+      yield* waitForWebhookMarkers(exporter, 2);
 
       expect(webhookMarkers(exporter)).toEqual([
         pendingMarker(id),
@@ -488,7 +564,8 @@ const settlesARevokedDeliveryAsInterrupted = () => {
       yield* enqueue(store, 1);
       yield* events.subscribe(input);
       test.status(503);
-      yield* events.observe();
+      yield* stepClock("0 millis");
+      yield* waitForWebhookMarkers(exporter, 1);
       yield* events.revoke;
 
       expect(webhookMarkers(exporter)).toEqual([
@@ -508,22 +585,22 @@ const resumesExhaustedCallbacks = () =>
       yield* enqueue(store, 1);
       yield* events.subscribe(input);
       test.status(503);
-      yield* Effect.replicateEffect(
-        events.observe().pipe(Effect.zipRight(stepClock("5 minutes"))),
-        99,
-        { discard: true },
-      );
+      yield* stepClock("0 millis");
+      yield* Effect.replicateEffect(stepClock("5 minutes"), 98, {
+        discard: true,
+      });
+      expect(eventPosts(test.posts, 1)).toHaveLength(99);
       expect((yield* events.status).stalled).toBeNull();
-      yield* events.observe();
+      yield* stepClock("5 minutes");
       expect((yield* events.status).stalled).toBe("callback");
       expect((yield* store.pending).pendingCount).toBe(1);
-      const restarted = yield* test.acquire;
       test.status(200);
+      const restarted = yield* test.acquire;
       yield* stepClock("5 minutes");
-      yield* restarted.observe();
+      yield* stepClock("0 millis");
       expect(eventPosts(test.posts, 1)).toHaveLength(100);
       yield* restarted.resume;
-      yield* restarted.observe();
+      yield* stepClock("0 millis");
       expect(eventPosts(test.posts, 1)).toHaveLength(101);
       expect(eventPosts(test.posts, 1).at(-1)?.body).toBe(
         eventPosts(test.posts, 1)[0]?.body,
@@ -545,7 +622,8 @@ const boundsPayloadAndDrains = () =>
         yield* enqueue(store, index);
       }
       yield* events.subscribe(input);
-      yield* events.observe();
+      yield* stepClock("0 millis");
+      yield* awaitDrainedInbox(store);
       expect(
         test.posts.filter((post) =>
           post.headers["webhook-id"]?.startsWith("dlv_"),
@@ -560,7 +638,7 @@ const boundsPayloadAndDrains = () =>
       expect((yield* store.pending).pendingCount).toBe(0);
       yield* enqueue(store, 55);
       yield* stepClock("1 day");
-      yield* events.observe();
+      yield* stepClock("0 millis");
       expect((yield* events.status).mode).toBe("webhook");
       expect((yield* store.pending).pendingCount).toBe(1);
     }),
@@ -575,12 +653,12 @@ const removesRetiredOccurrence = () =>
       yield* enqueue(store, 1);
       yield* events.subscribe(input);
       test.status(503);
-      yield* events.observe();
+      yield* stepClock("0 millis");
       yield* store.harness.acknowledgeDelivery(token(1));
       yield* store.save(token(2), item("replacement"));
-      const restarted = yield* test.acquire;
       test.status(200);
-      yield* restarted.observe();
+      yield* test.acquire;
+      yield* stepClock("0 millis");
       expect(eventPosts(test.posts, 1)).toHaveLength(1);
       expect(eventPosts(test.posts, 2)).toHaveLength(1);
       expect((yield* store.harness.getInboxEvent(token(1))).item).toEqual(
