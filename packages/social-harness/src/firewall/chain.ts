@@ -8,6 +8,7 @@
 
 import { Effect, Schema } from "effect";
 import type { Message, Outgoing } from "../communication/service.js";
+import type { AgentCard } from "../identity/agent-cards.js";
 import { exactStruct } from "../encoding/canonical-json.js";
 import {
   FirewallPolicyError,
@@ -24,6 +25,13 @@ export interface FirewallEvidence {
     readonly visibleToAgent: boolean;
   }>;
   readonly earlierHistoryOmitted: boolean;
+  /**
+   * This agent's sent messages that the Router has not ordered yet, oldest
+   * first. They are not in `history`; the Router orders them before any later
+   * message of this agent, and a peer's message may be ordered between them.
+   */
+  readonly pendingOutgoing: readonly Message[];
+  /** What else the history lacks, such as messages beyond the evidence byte limit. */
   readonly gaps: readonly string[];
 }
 
@@ -63,11 +71,12 @@ export const chainRuleFileSchema = exactStruct({
   ),
 );
 
-/** What a matcher sees: the message, its direction and the permitted history. */
+/** What a matcher sees: the message, its direction, the permitted history and this agent. */
 export interface MatchInput {
   readonly direction: "incoming" | "outgoing";
   readonly message: Outgoing;
   readonly evidence: FirewallEvidence;
+  readonly self: AgentCard;
 }
 
 /**
@@ -76,7 +85,7 @@ export interface MatchInput {
  * JSON value the refused agent reads, and `reply` is the text a `reply` rule
  * sends to the sender of the message it withholds.
  */
-type MatchResult =
+export type MatchResult =
   | { readonly matched: false }
   | {
       readonly matched: true;
