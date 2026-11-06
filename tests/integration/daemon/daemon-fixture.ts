@@ -62,9 +62,6 @@ interface ProcessWireVersions {
   readonly history: readonly string[];
 }
 
-/** The mode of the firewall a daemon fixture installs; absent for `sharnessd` itself. */
-export type FirewallMode = "guidance" | "enforcement";
-
 /** One closed process-fixture failure with captured child output when available. */
 export class ProcessTestError extends Data.TaggedError("ProcessTestError")<{
   readonly message: string;
@@ -100,8 +97,8 @@ export interface ProcessInfrastructure {
 
 /**
  * Exact reusable process inputs for one daemon identity and state directory.
- * A fixture with a `firewall` mode runs `firewall-daemon.ts`, which installs
- * that firewall; one without runs `sharnessd`.
+ * A fixture with `firewall` runs `firewall-daemon.ts`, which installs a
+ * firewall; one without runs `sharnessd`.
  */
 export interface DaemonProcessFixture {
   readonly agentName: AgentName;
@@ -114,7 +111,7 @@ export interface DaemonProcessFixture {
   readonly admissionCredentialFile: string;
   readonly mcpCredentialFile: string;
   readonly mcpCredential: Redacted.Redacted;
-  readonly firewall?: FirewallMode;
+  readonly firewall?: true;
   readonly wireVersions?: ProcessWireVersions;
 }
 
@@ -657,7 +654,7 @@ const makeIdentifier = (prefix: "opn_" | "prn_"): string =>
 export const makeDaemonProcessFixture = (
   infrastructure: ProcessInfrastructure,
   name: string,
-  firewall?: FirewallMode,
+  firewall = false,
   options: {
     readonly settings?: Readonly<Record<string, unknown>>;
     readonly database?: {
@@ -701,9 +698,6 @@ export const makeDaemonProcessFixture = (
             ).href.replace(/^file:/u, "sqlite:")
           : Redacted.value(options.database.runtimeLocator),
       SHARNESS_DATABASE_KEY: randomBytes(32).toString("base64url"),
-      ...(firewall === undefined
-        ? {}
-        : { SHARNESS_TEST_FIREWALL_MODE: firewall }),
     };
     yield* writePrivateFile(
       setupFile,
@@ -771,7 +765,7 @@ export const makeDaemonProcessFixture = (
       admissionCredentialFile: credentialPath,
       ...credentials,
       environment,
-      ...(firewall === undefined ? {} : { firewall }),
+      ...(firewall ? { firewall } : {}),
     };
   }).pipe(Effect.withSpan("makeDaemonProcessFixture"));
 
