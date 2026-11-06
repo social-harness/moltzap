@@ -13,7 +13,14 @@ import {
   localOwner,
   migrateDaemon,
 } from "@moltzap/social-harness/test";
-import { ConfigProvider, Context, Effect, Layer, Redacted } from "effect";
+import {
+  ConfigProvider,
+  Context,
+  Effect,
+  Layer,
+  Redacted,
+  Schema,
+} from "effect";
 import { randomBytes } from "node:crypto";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- Filesystem effects use FileSystem; Node supplies the POSIX permission constants.
 import { constants } from "node:fs";
@@ -190,6 +197,32 @@ it("resolves provider credential references relative to the settings file", () =
     }
   }).pipe(Effect.provide(NodeContext.layer)));
 
+/** A message policy file beside the settings, with a decision provider and its key when `judged`. */
+function messagePolicy(
+  test: Effect.Effect.Success<typeof fixture>,
+  judged: boolean,
+) {
+  return Effect.gen(function* () {
+    yield* test.filesystem.writeFileString(
+      join(test.directory, "policy.json"),
+      JSON.stringify({
+        format: "org.social-harness/message-policy/v2",
+        ...(judged
+          ? { decisionProvider: { kind: "jev", model: "configured-model" } }
+          : {}),
+      }),
+    );
+    yield* test.filesystem.writeFileString(
+      join(test.directory, "provider.key"),
+      "private-decision-provider-key",
+    );
+    return {
+      messagePolicyFile: "policy.json",
+      ...(judged ? { decisionProviderKeyFile: "provider.key" } : {}),
+    };
+  });
+}
+
 it("resolves the norms directory relative to the settings file", () =>
   Effect.gen(function* () {
     const test = yield* fixture;
@@ -203,13 +236,15 @@ it("resolves the norms directory relative to the settings file", () =>
       join(shippedNorms, "rules.json"),
       join(norms, "rules.json"),
     );
-    yield* test.write({ ...settings, normsDirectory: "norms" });
+    yield* test.write({
+      ...settings,
+      ...(yield* messagePolicy(test, false)),
+      normsDirectory: "norms",
+    });
     const loaded = yield* loadDaemonSettings(test.filename);
-    expect(loaded.settings.norms?.documents).toEqual(
-      expect.arrayContaining([
-        yield* test.filesystem.readFileString(join(shippedNorms, "chat.lisp")),
-      ]),
-    );
+    expect(loaded.settings.norms?.initial).toEqual([
+      yield* test.filesystem.readFileString(join(shippedNorms, "chat.lisp")),
+    ]);
   }).pipe(Effect.provide(NodeContext.layer)));
 
 /** A norms directory holding the shipped `office-hours`, whose documents give English rules. */
@@ -229,16 +264,67 @@ function normsWithRules(test: Effect.Effect.Success<typeof fixture>) {
   });
 }
 
-it("adds the norms' English rules to the message policy as fixed rules", () =>
+it("loads the decision provider that judges initial norms' English rules, though the policy has no text rules", () =>
   Effect.gen(function* () {
     const test = yield* fixture;
     yield* normsWithRules(test);
-    yield* test.filesystem.writeFileString(
-      join(test.directory, "policy.json"),
-      JSON.stringify({
-        format: "org.social-harness/message-policy/v2",
-        decisionProvider: { kind: "jev", model: "configured-model" },
-      }),
+    yield* test.write({
+      ...settings,
+      ...(yield* messagePolicy(test, true)),
+      normsDirectory: "norms",
+    });
+
+    const loaded = yield* loadDaemonSettings(test.filename);
+
+    expect(loaded.settings.norms?.initial).toHaveLength(1);
+    expect(loaded.settings.messagePolicy?.policy.text).toBeUndefined();
+    expect(loaded.settings.messagePolicy?.provider?.kind).toBe("jev");
+  }).pipe(Effect.provide(NodeContext.layer)));
+
+it.each([
+  { what: "no message policy", policy: () => Effect.succeed({}) },
+  {
+    what: "a message policy without a decision provider",
+    policy: (test: Effect.Effect.Success<typeof fixture>) =>
+      messagePolicy(test, false),
+  },
+])("refuses initial norms with English rules under $what", ({ policy }) =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    yield* normsWithRules(test);
+    yield* test.write({
+      ...settings,
+      ...(yield* policy(test)),
+      normsDirectory: "norms",
+    });
+
+    const failure = yield* loadDaemonSettings(test.filename).pipe(Effect.flip);
+
+    expect(failure).toMatchObject({ reason: "norms" });
+  }).pipe(Effect.provide(NodeContext.layer)),
+);
+
+it("loads the shipped example message policy, each of whose fixed behaviors becomes a fixed rule", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    const example = fileURLToPath(
+      new URL(
+        "../../../packages/social-harness/config/firewall/message-policy.json",
+        import.meta.url,
+      ),
+    );
+    const selected = yield* test.filesystem.readFileString(example).pipe(
+      Effect.flatMap(
+        Schema.decodeUnknown(
+          Schema.parseJson(
+            Schema.Struct({
+              text: Schema.Struct({
+                fixedBehaviors: Schema.Array(Schema.String),
+              }),
+            }),
+          ),
+        ),
+      ),
     );
     yield* test.filesystem.writeFileString(
       join(test.directory, "provider.key"),
@@ -246,31 +332,15 @@ it("adds the norms' English rules to the message policy as fixed rules", () =>
     );
     yield* test.write({
       ...settings,
-      normsDirectory: "norms",
-      messagePolicyFile: "policy.json",
+      messagePolicyFile: example,
       decisionProviderKeyFile: "provider.key",
     });
 
     const loaded = yield* loadDaemonSettings(test.filename);
 
-    expect(
-      loaded.settings.messagePolicy?.policy.text?.fixedRules.map((rule) => ({
-        id: rule.id,
-        applies: rule.applies,
-      })),
-    ).toEqual([{ id: "office-hours-rule-1", applies: "both" }]);
-    expect(loaded.settings.messagePolicy?.provider?.kind).toBe("jev");
-  }).pipe(Effect.provide(NodeContext.layer)));
-
-it("refuses norms with English rules when no message policy can check them", () =>
-  Effect.gen(function* () {
-    const test = yield* fixture;
-    yield* normsWithRules(test);
-    yield* test.write({ ...settings, normsDirectory: "norms" });
-
-    const failure = yield* loadDaemonSettings(test.filename).pipe(Effect.flip);
-
-    expect(failure).toMatchObject({ reason: "norms" });
+    expect(loaded.settings.messagePolicy?.policy.text?.fixedRules).toHaveLength(
+      selected.text.fixedBehaviors.length,
+    );
   }).pipe(Effect.provide(NodeContext.layer)));
 
 it("refuses a norms directory without its rule file", () =>
