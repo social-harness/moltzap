@@ -100,12 +100,13 @@ Accepting nonempty rule text promises no assessment accuracy in any language.
 
 ## Incoming messages
 
-Admitted peer content reaches the host unchanged. Valid uncertain judgments
-may supply registered instructions and their choice and probability.
-New checks generate only uncertain guidance. Existing saved guidance keeps its
-original representation when replayed. Guidance contains no private assessor evidence or peer text promoted to
-instructions. It creates no obligation to reply. Identities come from verified
-context: recipients and answer members use `AgentCard`.
+Admitted peer content reaches the host unchanged. When an admitted message has
+an uncertain text assessment, the host may also receive advice configured for
+the relevant rule, with the assessor's selected judgment and probability.
+
+Guidance contains no private assessment evidence and does not turn peer text
+into instructions. It creates no obligation to reply. Recipient and
+answer-member identities come from verified context as `AgentCard` values.
 
 A text rule whose `action` is `reply` uses its registered feedback to propose
 a reply to each message it withholds for a rule violation. The reply follows
