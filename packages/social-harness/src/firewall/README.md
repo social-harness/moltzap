@@ -17,8 +17,9 @@ flowchart LR
 ```
 
 One call keeps the same policy for every message, including the question and
-answers in a collective result. Structural success continues to protocol and semantic assessment. Norm semantic
-rules remain mandatory after a chain allow. Advice uses registered instructions.
+answers in a collective result. Structural success continues to protocol and
+semantic assessment. A configured contract's semantic rules remain mandatory
+after a chain allow. Advice uses registered instructions.
 
 The daemon supplies verified participants and permitted conversation history.
 It saves completed checks. Incoming messages remain pending if checking is
@@ -49,9 +50,8 @@ through Effect.
 The test-only entry exports `checkMessage` for evaluating supplied rules and
 evidence with an injected provider. It performs no storage or configuration reads.
 
-Structured documents compile in `norms/compiler.ts` into the firewall-owned
-contract grammar. `structure.ts` validates individual messages; `protocol.ts`
-projects admitted conversation facts and validates transitions. `contract-check.ts`
-joins supplied history with exact local assessment records. None reads transport
-queues or schedules model work. The [norm specification](../../../../docs/reference/spec/norms/shared-norms.md)
-defines authoring, correction behavior and snapshot limitations.
+The firewall receives compiled contracts describing message forms, transitions
+and text rules. It joins supplied conversation history with exact local
+assessment records to check those contracts. The
+[message-policy specification](../../../../docs/reference/spec/firewall/message-policy.md)
+defines its inputs, decisions and evidence requirements.

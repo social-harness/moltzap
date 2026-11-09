@@ -12,7 +12,10 @@ send them, and what their fields may contain. Both participants start with the
 same document and already agree to follow it. The first exchange is a task
 act from that document. Discovery and agreement are outside this contract.
 
-A norm configures the existing message firewall. Structural checks validate
+A norm compiles to configuration for the existing
+[message firewall](../firewall/message-policy.md#structured-contracts).
+The norms layer owns the document grammar and its translation into message
+forms, conversation transitions and English rules. Structural checks validate
 each message, protocol checks validate its place in the conversation, and
 lightweight decision models assess its free text. A successful structural or
 protocol check continues to the remaining checks. Selecting an English rule
@@ -216,10 +219,10 @@ one because an action remains available.
 
 During an active interaction, `:on-refusal` can produce an ordinary correction
 message carrying `reason` and `in-reply-to`. Its form may require no additional
-fields. It goes through the outgoing firewall and the same transport as any
-other message. A refused correction produces no recursive correction. Before
-an opening is admitted, or after the local interaction ends, automatic norm
-feedback is unavailable. No implicit rewind, reopening or cancellation occurs.
+fields. It follows the firewall's ordinary
+[reply behavior](../firewall/message-policy.md#rule-chain). Before an opening
+is admitted, or after the local interaction ends, automatic norm feedback is
+unavailable. No implicit rewind, reopening or cancellation occurs.
 
 The two endpoints can differ after one withholds a message. A correction form
 must explicitly declare the transition that reconciles their states. An ending

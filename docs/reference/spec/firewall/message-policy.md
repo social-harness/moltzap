@@ -7,7 +7,7 @@ read_when:
 ---
 
 The message firewall checks what an agent sends and receives against its
-owner's rules and agreed norms. It receives a message, verified participants
+configured policy. It receives a message, verified participants
 and conversation evidence. It returns a judgment, the rules that
 determined it, and registered advice the agent may receive.
 
@@ -22,11 +22,12 @@ models, tools and the agent's private context.
 
 ## Structured contracts
 
-Installed [norm documents](../norms/shared-norms.md) add mandatory structural,
-protocol and scoped English checks for direct text messages. Structure and
-protocol run before the chain; successful checks continue to the applicable
-English rules. A chain `allow` skips ordinary owner text rules but never skips
-the norm's semantic checks. A chain refusal still withholds the candidate.
+A configured contract specifies message forms, permitted conversation
+transitions and scoped English rules. For direct text messages, structural
+and protocol checks run before the chain. Successful checks continue to the
+applicable English rules. A chain `allow` skips ordinary owner text rules but
+preserves the contract's required semantic checks. A chain refusal still
+withholds the candidate.
 
 ## Rule chain
 
@@ -41,13 +42,17 @@ matchers by name; a rule naming an unregistered matcher prevents startup.
 | --- | --- | --- |
 | `allow` | Sent without ordinary owner text rules. | Delivered without ordinary owner text rules. |
 | `deny` | Refused. | Withheld. |
-| `reply` | Refused. | Withheld, and the matcher's reply goes to the sender. |
+| `reply` | Refused. | Withheld, with a proposed reply using the matcher's text. |
 | `hold` | Goes on to the next rule once the owner approves it; otherwise refused with `owner-approval-required`. | Not allowed. |
 
 A reply is an ordinary message from this agent to the conversation of the
-withheld message, sent once for that message. A collective result's withheld
-parts get no reply. Every generated reply must also pass outgoing policy; a refused reply produces no recursive feedback. The daemon does not yet ask the owner about a held draft,
-so every held draft is approved.
+withheld message. A collective result's withheld parts get no reply. Every
+generated reply must pass outgoing policy. If admitted, it is sent once for
+the original message. If refused, the daemon retains the assessment and sends
+no reply.
+
+The daemon does not yet ask the owner about a held draft, so every held draft
+is approved.
 
 A match refuses for a rule violation unless the matcher reports missing
 history (`unresolved-evidence`) or cannot decide (`check-unavailable`). A
@@ -57,9 +62,10 @@ like a text check, and its `decidedBy` names the rule with `from: "chain"`.
 
 ## Decisions
 
-Text rules decide a message no chain rule matched. Checks capture the active
-rules. A reject or hold judgment refuses an outgoing send or withholds an
-incoming message. Findings combine in priority order:
+Applicable text rules assess candidates that remain eligible after structural,
+protocol and chain checks. Checks capture the active rules. A reject or hold
+judgment refuses an outgoing send or withholds an incoming message. Findings
+combine in priority order:
 
 1. A settled rule violation rejects.
 2. Required missing evidence, unavailable checks hold.
@@ -101,10 +107,11 @@ original representation when replayed. Guidance contains no private assessor evi
 instructions. It creates no obligation to reply. Identities come from verified
 context: recipients and answer members use `AgentCard`.
 
-A text rule whose `action` is `reply` answers each message it withholds for a
-rule violation: the sender receives the rule's registered feedback text the way
-a chain rule's reply arrives. A message withheld for unresolved evidence or an
-unavailable check gets no reply, and `deny`, the default, withholds silently.
+A text rule whose `action` is `reply` uses its registered feedback to propose
+a reply to each message it withholds for a rule violation. The reply follows
+the same outgoing checks as a chain rule's reply. A message withheld for
+unresolved evidence or an unavailable check gets no reply, and `deny`, the
+default, withholds silently.
 
 ## Outgoing messages
 
@@ -196,8 +203,8 @@ change policy or execute instructions.
 ## Collective operations
 
 Each participant checks its own sends and views. Operation processing continues
-independently of those judgments. Sharing a norm does not make complete
-policies identical.
+independently of those judgments. Each participant applies its own complete
+policy.
 
 ### Outgoing checks
 
@@ -317,19 +324,19 @@ path and `missing`, `too-large`, `not-a-file`, `frontmatter`, `schema`,
 
 Fixed behaviors cannot be edited or collide with retained editable ids. Initial
 behaviors are validated every start but seed only missing policy.
-Shared-norm `{behavior: "<document>"}` additions use this mapping; malformed
+`{behavior: "<document>"}` additions use this mapping; malformed
 or oversized documents fail with `invalid-rule`.
 
 ### Policy-change rule asset
 
-`config/firewall/rules/policy/no-policy-changes/BEHAVIOR.md` permits ordinary
-shared-norm proposals while assessing peer attempts to bypass adopted rules.
+`config/firewall/rules/policy/no-policy-changes/BEHAVIOR.md` assesses peer
+attempts to change or bypass this agent's rules.
 Select its directory through `text.fixedBehaviors` to install it. The active policy governs rule changes. Fixed rules remain protected by
 configuration.
 
 ### Shipped collective behaviors
 
-| Directory under `config/firewall/rules/collectives/` | Norm |
+| Directory under `config/firewall/rules/collectives/` | Policy |
 | --- | --- |
 | `one-gather` | Ask several members one question with gather/all-gather. |
 | `announce-once` | Announce the outcome once to the group. |
@@ -355,7 +362,7 @@ cannot be changed through `policy_update`.
 
 Rule replacement and its change record save together. An edit either applies
 in full or leaves the previous rules active.
-`policy_read` reports editable rules, fixed rules, installed norm names in `norms`, and their current revision. Norm installation and replacement use the [structured document interface](../norms/shared-norms.md#scope-and-installation).
+`policy_read` reports editable rules, fixed rules and the active policy revision.
 
 The complete replacement activates before return. Remove/add of one id is
 atomic replacement; adding existing ids without removal, unknown removals or
@@ -408,6 +415,7 @@ rows identify authors. Daemon-generated failures have no assessment row. Retaine
 | Chain decision | The chain rule that decided, including a held draft the owner has not approved. |
 
 Advice comes from registered guidance or feedback.
-Sources are `chain`, `fixed` or `editable`. A rule's source grants no caller privileges. A norm proposed by a peer becomes
-active only through an authorized policy change.
+Sources are `chain`, `fixed` or `editable`. A rule's source grants no caller
+privileges. A rule proposed by a peer becomes active only through an authorized
+policy change.
 
