@@ -15,7 +15,7 @@ import {
 import { expect } from "vitest";
 import type { DecisionRequest } from "../firewall/check.js";
 import type { AgentCard } from "../identity/agent-cards.js";
-import type { InboxEntry } from "../index.js";
+import type { InboxEntry } from "./inbox.js";
 import type { ReadHistoryResult, SendRequest } from "./social-harness.js";
 import {
   encodeCollectiveContent,
@@ -36,6 +36,7 @@ import {
   makeHarnessFixture,
   waitForInbox,
 } from "./__tests__/service-fixtures.js";
+import { inboxReference } from "./inbox-item.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Closed public failure reasons are part of the service contract. */
 
@@ -349,14 +350,16 @@ it("recovers an interrupted check and retains its published view after edits, ac
     if (delivery === undefined) {
       return yield* Effect.dieMessage("Expected recovered delivery");
     }
-    const saved = yield* resumed.harness.getInboxEvent(delivery.deliveryToken);
+    const saved = yield* resumed.harness.getInboxEvent(
+      inboxReference(delivery),
+    );
     expect(saved.guidance).toBeDefined();
     yield* resumed.firewall.updatePolicy({ remove: ["privacy"] });
     yield* resumed.harness.acknowledgeDelivery(delivery.deliveryToken);
     yield* resumed.harness.acknowledgeDelivery(delivery.deliveryToken);
     expect((yield* resumed.harness.listInbox()).items).toEqual([]);
     expect(
-      yield* resumed.harness.getInboxEvent(delivery.deliveryToken),
+      yield* resumed.harness.getInboxEvent(inboxReference(delivery)),
     ).toEqual(saved);
     yield* subject.disconnectRegistry();
     expect(
@@ -365,7 +368,7 @@ it("recovers an interrupted check and retains its published view after edits, ac
     yield* Scope.close(resumedScope, Exit.void);
     const reopened = yield* subject.open();
     expect(
-      yield* reopened.harness.getInboxEvent(delivery.deliveryToken),
+      yield* reopened.harness.getInboxEvent(inboxReference(delivery)),
     ).toEqual(saved);
     yield* subject.deliver({ kind: "message", message });
     expect((yield* reopened.harness.listInbox()).items).toEqual([]);
@@ -382,6 +385,12 @@ it("reads result-only history without contacting Registry", () =>
     }
     yield* runtime.harness.acknowledgeDelivery(entry.deliveryToken);
     yield* subject.disconnectRegistry();
+    expect(yield* runtime.harness.getInboxEvent(inboxReference(entry))).toEqual(
+      {
+        address: entry.address,
+        item: entry.item,
+      },
+    );
     expect(
       (yield* runtime.harness.readHistory({ address: bobAddress })).records,
     ).toMatchObject([{ kind: "result", item: { kind: "operationFailed" } }]);
@@ -760,7 +769,7 @@ it("uses one captured policy for peer-controlled result text and trusts the loca
       return yield* Effect.dieMessage("Expected original request");
     }
     const originalView = yield* runtime.harness.getInboxEvent(
-      shown.deliveryToken,
+      inboxReference(shown),
     );
     yield* runtime.harness.acknowledgeDelivery(shown.deliveryToken);
     completing = true;
@@ -810,7 +819,7 @@ it("uses one captured policy for peer-controlled result text and trusts the loca
     expect(ordered).toEqual(
       [subject.bob.agentId, subject.carol.agentId].sort(compareAscii),
     );
-    expect(yield* runtime.harness.getInboxEvent(shown.deliveryToken)).toEqual(
+    expect(yield* runtime.harness.getInboxEvent(inboxReference(shown))).toEqual(
       originalView,
     );
     expect(
@@ -833,6 +842,11 @@ it("can answer a presented request after acknowledgment and restart", () =>
     if (entry === undefined) {
       return yield* Effect.dieMessage("Expected request delivery");
     }
+    expect(
+      (yield* runtime.harness
+        .getInboxEvent({ operationId: original.request.operationId })
+        .pipe(Effect.flip)).reason,
+    ).toBe("unknown-event");
     yield* runtime.harness.acknowledgeDelivery(entry.deliveryToken);
     expect(subject.submitted).toEqual([]);
     yield* Scope.close(scope, Exit.void);

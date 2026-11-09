@@ -20,7 +20,8 @@ import { digest, testAgentCard } from "../../__tests__/agents.js";
 import { collectiveOperationId } from "../../communication/__tests__/request-ids.js";
 import { openTestDatabase } from "../../communication/__tests__/store-fixtures.js";
 import { LocalGuidance, PermittedItem } from "../../firewall/service.js";
-import { DeliveryToken, InboxError, InboxEvent } from "../inbox.js";
+import { InboxEvent, InboxReference, inboxReference } from "../inbox-item.js";
+import { DeliveryToken, InboxError } from "../inbox.js";
 import { INBOX_ITEM_EVENT } from "../mcp/contracts.js";
 import { makeWebhookEvents } from "../mcp/webhook.js";
 import { SocialHarness } from "../social-harness.js";
@@ -60,6 +61,7 @@ const occurrence = Schema.Struct({
     }),
     Schema.Struct({
       kind: Schema.Literal("reference"),
+      reference: InboxReference,
       itemKind: Schema.String,
       bytes: Schema.Number,
     }),
@@ -202,9 +204,7 @@ export const openCallbackInbox = Effect.fn("openCallbackInbox")(function* (
 ) {
   const database = yield* openTestDatabase(directory);
   const sql = database.sql;
-  yield* sql.unsafe(
-    "CREATE TABLE IF NOT EXISTS callback_fixture (token TEXT PRIMARY KEY, payload TEXT NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0)",
-  );
+  yield* sql`CREATE TABLE IF NOT EXISTS callback_fixture (token TEXT PRIMARY KEY, payload TEXT NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0)`;
   const payload = Schema.parseJson(Schema.typeSchema(InboxEvent));
   const save = (
     deliveryToken: DeliveryToken,
@@ -278,7 +278,34 @@ export const openCallbackInbox = Effect.fn("openCallbackInbox")(function* (
             Effect.fail(new InboxError({ reason: "persistence-failed" })),
         }),
       ),
-    getInboxEvent,
+    getInboxEvent: (reference: InboxReference) =>
+      sql<{
+        readonly payload: string;
+      }>`SELECT payload FROM callback_fixture`.pipe(
+        Effect.flatMap((rows) =>
+          Effect.forEach(
+            rows,
+            (row) => Schema.decodeUnknown(payload)(row.payload),
+            { concurrency: 1 },
+          ),
+        ),
+        Effect.flatMap((events) => {
+          const event = events.find(
+            (entry) =>
+              JSON.stringify(inboxReference(entry)) ===
+              JSON.stringify(reference),
+          );
+          return event === undefined
+            ? Effect.fail(new InboxError({ reason: "unknown-event" }))
+            : Effect.succeed(event);
+        }),
+        Effect.catchTags({
+          SqlError: () =>
+            Effect.fail(new InboxError({ reason: "persistence-failed" })),
+          ParseError: () =>
+            Effect.fail(new InboxError({ reason: "persistence-failed" })),
+        }),
+      ),
     acknowledgeDelivery,
     listConversations: () => Effect.succeed({ addresses: [] }),
     readHistory: () => Effect.succeed({ records: [] }),
@@ -289,5 +316,5 @@ export const openCallbackInbox = Effect.fn("openCallbackInbox")(function* (
   }>`SELECT COUNT(*) AS total FROM callback_fixture WHERE acknowledged=0`.pipe(
     Effect.map((rows) => ({ pendingCount: rows[0]?.total ?? 0 })),
   );
-  return { ...database, harness, save, pending };
+  return { ...database, harness, save, pending, readSaved: getInboxEvent };
 });

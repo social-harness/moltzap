@@ -14,6 +14,7 @@ import {
   type AgentCard,
   groupMembers,
   type GuidanceBodyOrigin,
+  type InboxEvent,
   type Message,
   MessageAddressInput,
   type MessageAddressInput as MessageAddressInputValue,
@@ -58,7 +59,6 @@ import {
 import {
   acquireMcpConnection,
   callTool,
-  type InboxEntry,
   type McpConnection,
 } from "#sharness-mcp/mcp-client";
 
@@ -141,7 +141,7 @@ interface TurnSender {
 }
 
 /**
- * One retained delivery becomes one host turn under its stable event id.
+ * Peer turns use their canonical message id; endpoint outcomes use their operation id.
  * `address` selects the conversation for replies.
  */
 interface HostTurn {
@@ -589,13 +589,9 @@ function reportConnected(
 function handleInboxEntry(
   ctx: ChannelGatewayContext<Account>,
   runtime: OpenClawAccountRuntime,
-  delivery: InboxEntry,
+  delivery: InboxEvent,
 ) {
-  const projected = inboundItemTurn(
-    delivery.item,
-    delivery.deliveryToken,
-    delivery.address,
-  );
+  const projected = inboundItemTurn(delivery.item, delivery.address);
   const guidance = delivery.guidance;
   const turn: HostTurn =
     guidance === undefined
@@ -626,16 +622,15 @@ function handleInboxEntry(
  */
 function inboundItemTurn(
   item: PermittedItem,
-  eventId: string,
   address: MessageAddressInputValue,
 ): HostTurn {
   switch (item.kind) {
     case "multicast":
-      return multicastTurn(item.message, eventId, address);
+      return multicastTurn(item.message, address);
     case "collectiveRequest":
       return addressedTurn(
         {
-          id: eventId,
+          id: item.message.msgId,
           origin: "peer",
           sender: agentSender(item.message.author),
         },
@@ -643,9 +638,13 @@ function inboundItemTurn(
         renderCollectiveRequest(item, requestAnswerInstructions(address)),
       );
     case "collectiveResult":
-      return endpointTurn(eventId, address, renderCollectiveResult(item));
+      return endpointTurn(
+        item.operationId,
+        address,
+        renderCollectiveResult(item),
+      );
     case "operationFailed":
-      return endpointTurn(eventId, address, item.error);
+      return endpointTurn(item.operationId, address, item.error);
     default:
       return absurd(item);
   }
@@ -658,12 +657,11 @@ function requestAnswerInstructions(to: MessageAddressInputValue): string {
 
 function multicastTurn(
   message: Message,
-  eventId: string,
   address: MessageAddressInputValue,
 ): HostTurn {
   return addressedTurn(
     {
-      id: eventId,
+      id: message.msgId,
       origin: "peer",
       sender: agentSender(message.author),
     },

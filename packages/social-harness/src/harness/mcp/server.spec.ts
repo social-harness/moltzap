@@ -262,13 +262,13 @@ describe("MCP tool contracts", () => {
         fixture.fetch(
           mcpRequest("tools/call", {
             name: "read_event",
-            arguments: { eventId: "private-invalid-token" },
+            arguments: { operationId: "private-invalid-token" },
           }),
         ),
       );
       const error = (yield* json(reply)).error;
       expect(error?.code).toBe(-32602);
-      expect(JSON.stringify(error?.data)).toContain("eventId");
+      expect(JSON.stringify(error?.data)).toContain("operationId");
       expect(JSON.stringify(error)).not.toContain("private-invalid-token");
     }));
 

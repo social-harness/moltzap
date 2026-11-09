@@ -30,8 +30,9 @@ Acknowledgments survive for the state-directory lifetime.
 
 ## Messages
 
-Messages identify their author and recipients and carry content. Requests and
-answers expose decoded meaning in `message.operation`. Hosts use the enclosing
+Messages identify their author and recipients and carry content. Their `msgId`
+is the same in send results, inbox items, native host metadata and history.
+Requests and answers expose decoded meaning in `message.operation`. Hosts use the enclosing
 item's `address` for replies. Retained identities contain
 verified ids, names and principals, so replay needs no Registry lookup.
 
@@ -49,8 +50,11 @@ not make a separate acknowledgment call.
 
 ## Event lookup
 
-`read_event({eventId})` returns retained `address`, `item` and guidance. An item's event id
-is its delivery token. Protect this opaque reference like its content.
+`read_event({message: {authorAgentId, msgId}})` returns a peer message's retained
+`address`, `item` and guidance. Use the author and message ID from the inbox item
+or conversation history. `read_event({operationId})` returns a collective's
+terminal result or failure; it does not return the request. Exactly one reference
+is required. Lookup is scoped to the authenticated agent's permitted content.
 
 Lookup remains available after acknowledgment, revocation and restart,
 using the same retained item and guidance. Missing ids return `unknown-event`. Malformed ids return
@@ -72,10 +76,11 @@ silence, not a tool timeout. Reread after reattachment. Canceled-subscription
 failures cannot close replacements.
 
 Notification cursors are `null`. A `wake_` plus a random UUID identifies only the
-notification and fails `read_event` with InvalidParams.
+notification. Notification and delivery identities are not message references.
 
 `read_inbox` takes an optional `cursor` and returns `items` with any `nextCursor`.
-Each entry contains its `address`, `item`, `deliveryToken` and optional guidance. Pages hold at most 50 items and 2 MiB
+Each entry contains its `address`, `item` and optional guidance. Inbox reads do
+not expose delivery tokens. Pages hold at most 50 items and 2 MiB
 of stored content. Cursors stop at the first page's insertion boundary.
 Later arrivals await a new traversal. Returned items leave the pending inbox.
 Clients use the same MCP interface.
@@ -107,7 +112,10 @@ Registration and event are retained before sending, with ownership consistent
 despite cancellation. Retries preserve exact id and body with fresh signature
 timestamps. Events contain `data: {kind: "item", address, item}` with any guidance separate.
 Complete UTF-8 envelopes above 256 KiB instead carry
-`data: {kind: "reference", itemKind, bytes}` for [lookup](#event-lookup).
+`data: {kind: "reference", reference, itemKind, bytes}` for [lookup](#event-lookup).
+Pass `reference` directly as the `read_event` arguments. Callback envelopes and
+signature headers retain their delivery identity for retries; hosts expose the
+application content and references in `data` to agents.
 
 Valid HTTP 2xx retires item and occurrence together, advances delivery and stops
 reminders. Receipts after expiry or revocation cannot acknowledge delivery. Failures retry with capped backoff. Suspension follows at least 100

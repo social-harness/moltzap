@@ -234,9 +234,7 @@ const signsVerifiesAndRotates = () =>
           .pipe(Effect.flip)).code,
       ).toBe(-32011);
       yield* events.unsubscribe({ ...input, delivery: { url } });
-      expect((yield* store.harness.getInboxEvent(token(1))).item).toEqual(
-        item(),
-      );
+      expect((yield* store.readSaved(token(1))).item).toEqual(item());
     }),
   ).pipe(onSteppedClock);
 
@@ -288,9 +286,7 @@ it("delivers local guidance and its subject map through a signed webhook", () =>
           guidance,
         },
       );
-      expect((yield* store.harness.getInboxEvent(token(1))).guidance).toEqual(
-        guidance,
-      );
+      expect((yield* store.readSaved(token(1))).guidance).toEqual(guidance);
     }),
   ).pipe(onSteppedClock));
 
@@ -339,9 +335,7 @@ const permitsReadAndRevokeDuringDelivery = () =>
       );
       const delivery = yield* stepClock("0 millis").pipe(Effect.fork);
       yield* Deferred.await(entered);
-      expect((yield* store.harness.getInboxEvent(token(1))).item).toEqual(
-        item(),
-      );
+      expect((yield* store.readSaved(token(1))).item).toEqual(item());
       yield* events.revoke;
       yield* Deferred.succeed(release, undefined);
       yield* Fiber.join(delivery);
@@ -424,9 +418,7 @@ const retriesAcrossRestart = () => {
     yield* Effect.scoped(
       Effect.gen(function* () {
         const store = yield* openCallbackInbox(path);
-        expect((yield* store.harness.getInboxEvent(token(1))).item).toEqual(
-          item(),
-        );
+        expect((yield* store.readSaved(token(1))).item).toEqual(item());
       }),
     );
   }).pipe(onSteppedClock);
@@ -631,8 +623,13 @@ const boundsPayloadAndDrains = () =>
       ).toHaveLength(54);
       const body = eventPosts(test.posts, 1)[0]?.body ?? "";
       expect(Buffer.byteLength(body)).toBeLessThanOrEqual(maximumEventBytes);
-      expect(decodeOccurrence(body).data.kind).toBe("reference");
-      expect((yield* store.harness.getInboxEvent(token(1))).item).toEqual(
+      const data = decodeOccurrence(body).data;
+      if (data.kind !== "reference") {
+        return yield* Effect.dieMessage(
+          "Expected a public oversized-item reference",
+        );
+      }
+      expect((yield* store.harness.getInboxEvent(data.reference)).item).toEqual(
         item(large),
       );
       expect((yield* store.pending).pendingCount).toBe(0);
@@ -661,12 +658,10 @@ const removesRetiredOccurrence = () =>
       yield* stepClock("0 millis");
       expect(eventPosts(test.posts, 1)).toHaveLength(1);
       expect(eventPosts(test.posts, 2)).toHaveLength(1);
-      expect((yield* store.harness.getInboxEvent(token(1))).item).toEqual(
-        item(),
+      expect((yield* store.readSaved(token(1))).item).toEqual(item());
+      expect((yield* store.readSaved(token(3)).pipe(Effect.flip)).reason).toBe(
+        "unknown-event",
       );
-      expect(
-        (yield* store.harness.getInboxEvent(token(3)).pipe(Effect.flip)).reason,
-      ).toBe("unknown-event");
     }),
   ).pipe(onSteppedClock);
 

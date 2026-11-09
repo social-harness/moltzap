@@ -16,25 +16,21 @@ import {
   loopbackMcpEndpoint,
   mcpTestCredential,
 } from "../../packages/social-harness/src/harness/__tests__/mcp-fixtures.js";
-import { toolDefinitions } from "@moltzap/social-harness";
+import { inboxReference, toolDefinitions } from "@moltzap/social-harness";
+import { InboxEntry } from "../../packages/social-harness/src/harness/inbox.js";
 import { acquireMcpConnection, callTool } from "./mcp-client.js";
 
 const implementation = { name: "shared-mcp-test", version: "1" };
 const credential = Redacted.make("private-fixture-credential");
-const entry = Schema.decodeUnknownSync(toolDefinitions.read_inbox.output)({
-  items: [
-    {
-      deliveryToken: `dlv_${"A".repeat(43)}`,
-      address: "agent:bob",
-      item: {
-        kind: "operationFailed",
-        operationId: `col_${"A".repeat(64)}`,
-        error: "request failed",
-      },
-    },
-  ],
-}).items[0];
-if (entry === undefined) throw new Error("Fixture has no inbox entry");
+const entry = Schema.decodeUnknownSync(InboxEntry)({
+  deliveryToken: `dlv_${"A".repeat(43)}`,
+  address: "agent:bob",
+  item: {
+    kind: "operationFailed",
+    operationId: `col_${"A".repeat(64)}`,
+    error: "request failed",
+  },
+});
 afterEach(() => vi.restoreAllMocks());
 
 const inboxFixture = Effect.gen(function* () {
@@ -72,7 +68,10 @@ describe("shared inbox reception", () => {
         const consume = connection.consumeInbox;
         const options = { onReady: Effect.void, receiveMode };
         const receiver = yield* consume(options, (received) => {
-          expect(received).toEqual(entry);
+          expect(received).toEqual({
+            address: entry.address,
+            item: entry.item,
+          });
           return Deferred.succeed(entered, undefined).pipe(
             Effect.zipRight(Deferred.await(accepted)),
           );
@@ -274,7 +273,7 @@ describe("management failures", () => {
     {
       request: {
         name: "read_event",
-        arguments: { eventId: entry.deliveryToken },
+        arguments: inboxReference(entry),
       },
       data: { reason: "unknown-event" },
       tag: "InboxError",

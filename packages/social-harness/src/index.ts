@@ -38,16 +38,15 @@ export {
 export { FirewallPolicyError } from "./firewall/rules.js";
 /** Guidance contains only the source text local policy permits the agent to read. */
 export type { CheckedGuidance } from "./firewall/check.js";
-/** Inbox items retain their content and token after acknowledgment. */
+/** Saved inbox views use message or operation references independently of delivery. */
 export {
-  DeliveryAcknowledgeError,
-  DeliveryToken,
-  InboxEntry,
-  InboxError,
   InboxEvent,
-  InboxPage,
+  InboxReference,
+  inboxReference,
   MessageAddress,
-} from "./harness/inbox.js";
+} from "./harness/inbox-item.js";
+/** Inbox failures expose only the caller's actionable reason. */
+export { InboxError } from "./harness/inbox.js";
 /** History uses the saved policy view and never rechecks old content. */
 export {
   HistoryError,

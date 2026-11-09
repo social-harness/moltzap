@@ -1,9 +1,9 @@
 /** @file Projects the public Social Harness endpoint capability into NanoClaw. */
 import {
-  type DeliveryAcknowledgeError,
   type FirewallRefusal,
   groupMembers,
   type GuidanceBodyOrigin,
+  type InboxEvent,
   MessageAddressInput,
   packageVersion,
   parseMessageText,
@@ -34,7 +34,6 @@ import { readFile } from "node:fs/promises";
 import {
   acquireMcpConnection,
   callTool,
-  type InboxEntry,
   type McpConnectError,
   type McpConnection,
 } from "#sharness-mcp/mcp-client";
@@ -499,17 +498,13 @@ class HarnessChannelAdapter {
   }
 
   private handleDelivery(
-    delivery: InboxEntry,
-  ): Effect.Effect<void, ChannelError | DeliveryAcknowledgeError> {
+    delivery: InboxEvent,
+  ): Effect.Effect<void, ChannelError> {
     const config = this.setupConfig;
     if (config === null) {
       return Effect.void;
     }
-    const projected = projectItem(
-      delivery.item,
-      delivery.deliveryToken,
-      delivery.address,
-    );
+    const projected = projectItem(delivery.item, delivery.address);
     let text = projected.text;
     if (delivery.guidance !== undefined) {
       text =
@@ -584,14 +579,13 @@ class HarnessChannelAdapter {
 /** Each item keeps its canonical attribution and conversation before guidance is added. */
 function projectItem(
   item: PermittedItem,
-  eventId: string,
   address: MessageAddressInput,
 ): ProjectedItem {
   switch (item.kind) {
     case "multicast":
       return {
         origin: "peer",
-        id: eventId,
+        id: item.message.msgId,
         address: address,
         sender: `agent:${item.message.author.agentName}`,
         text: renderContent(item.message.content),
@@ -599,7 +593,7 @@ function projectItem(
     case "collectiveRequest":
       return {
         origin: "peer",
-        id: eventId,
+        id: item.message.msgId,
         address: address,
         sender: `agent:${item.message.author.agentName}`,
         text: renderCollectiveRequest(
@@ -610,7 +604,7 @@ function projectItem(
     case "collectiveResult":
       return {
         origin: "endpoint",
-        id: eventId,
+        id: item.operationId,
         address,
         sender: ENDPOINT_SENDER,
         text: renderCollectiveResult(item),
@@ -618,7 +612,7 @@ function projectItem(
     case "operationFailed":
       return {
         origin: "endpoint",
-        id: eventId,
+        id: item.operationId,
         address,
         sender: ENDPOINT_SENDER,
         text: item.error,

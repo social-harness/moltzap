@@ -41,7 +41,7 @@ import {
   checkedGuidanceSchema,
 } from "../firewall/check.js";
 import { AgentName } from "../identity/agent-cards.js";
-import { MessageAddress } from "./inbox.js";
+import { MessageAddress } from "./inbox-item.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect schemas share the public names of their derived value types. */
 

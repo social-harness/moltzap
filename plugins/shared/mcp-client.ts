@@ -15,6 +15,7 @@ import {
   FirewallRefusal,
   HistoryError,
   InboxError,
+  type InboxEvent,
   RegistrationError,
   RequestError,
   SendError,
@@ -91,9 +92,6 @@ export interface InboxOptions {
   readonly onReady?: Effect.Effect<void>;
 }
 
-/** Inbox values contain a stable lookup token, content and saved local advice. */
-export type InboxEntry = ToolResult<"read_inbox">["items"][number];
-
 /**
  * Allows one inbox consumer at a time. Reading marks items delivered before the
  * callback runs. Callback failure stops reception; saved history retains the item.
@@ -102,7 +100,7 @@ export interface McpConnection {
   readonly client: Client;
   readonly consumeInbox: <E, R>(
     options: InboxOptions,
-    accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
+    accept: (entry: InboxEvent) => Effect.Effect<void, E, R>,
   ) => Effect.Effect<void, E | McpReceiveError, R>;
 }
 
@@ -217,7 +215,7 @@ function acquireConnection(
       client,
       consumeInbox: <E, R>(
         options: InboxOptions,
-        accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
+        accept: (entry: InboxEvent) => Effect.Effect<void, E, R>,
       ) => {
         const ready = options.onReady ?? Effect.void;
         const wakeups =
@@ -385,7 +383,7 @@ function managementFailure(
 
 function consumePending<E, R>(
   client: Pick<Client, "callTool">,
-  accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
+  accept: (entry: InboxEvent) => Effect.Effect<void, E, R>,
 ): Effect.Effect<void, E | McpReceiveError, R> {
   return Effect.gen(function* () {
     let cursor: string | undefined;
@@ -426,7 +424,7 @@ function runReception<E, R>(
     readonly scope: Scope.Scope;
   },
   wakeups: Stream.Stream<undefined, McpReceiveError>,
-  accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
+  accept: (entry: InboxEvent) => Effect.Effect<void, E, R>,
 ) {
   return Effect.acquireUseRelease(
     Effect.forkIn(
@@ -444,7 +442,7 @@ function receiveInbox<E, R>(
   client: Pick<Client, "callTool">,
   receiving: Ref.Ref<boolean>,
   wakeups: Stream.Stream<undefined, McpReceiveError>,
-  accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
+  accept: (entry: InboxEvent) => Effect.Effect<void, E, R>,
 ) {
   return Effect.scoped(
     Effect.gen(function* () {

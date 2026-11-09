@@ -80,7 +80,11 @@
     },
     {
       "file": "harness/inbox.ts",
-      "reason": "Saved inbox item grammar"
+      "reason": "Inbox read failures"
+    },
+    {
+      "file": "harness/inbox-item.ts",
+      "reason": "Agent-visible inbox content and application lookup references"
     },
     {
       "file": "harness/mcp/contracts.ts",

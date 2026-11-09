@@ -42,13 +42,8 @@ import {
 } from "../../identity/agent-cards.js";
 import { RegistrationId } from "../../identity/registry.js";
 import { RegistrationError } from "../../identity/service.js";
-import {
-  DeliveryToken,
-  InboxError,
-  InboxEvent,
-  InboxPage,
-  MessageAddress,
-} from "../inbox.js";
+import { InboxEvent, InboxReference, MessageAddress } from "../inbox-item.js";
+import { InboxError } from "../inbox.js";
 import { SendRequest, SendResultSchema } from "../message-format.js";
 import { HistoryError } from "../social-harness.js";
 
@@ -177,7 +172,6 @@ const historyRecord = Schema.Union(
   Schema.Struct({
     kind: Schema.Literal("result"),
     address: MessageAddress,
-    deliveryToken: DeliveryToken,
     item: savedItemSchema,
     guidance: Schema.optionalWith(LocalGuidance, { exact: true }),
   }),
@@ -239,6 +233,7 @@ const itemEventDataSchema = Schema.Union(
   }),
   exactStruct({
     kind: Schema.Literal("reference"),
+    reference: InboxReference,
     itemKind: Schema.Literal(
       "multicast",
       "collectiveRequest",
@@ -253,11 +248,9 @@ export const itemEventDataJsonSchema = JSONSchema.make(itemEventDataSchema, {
   target: "jsonSchema2020-12",
 });
 
-const readEventRequestSchema = exactStruct({
-  eventId: Schema.propertySignature(DeliveryToken).annotations({
-    description:
-      "The eventId of an org.social-harness/inbox.item event, or one a host's wakeup carries from an inbox item; retained content remains readable after acknowledgment.",
-  }),
+/** MCP tool discovery requires an object root even when all alternatives are objects. */
+const readEventRequestSchema = InboxReference.annotations({
+  jsonSchema: { ...JSONSchema.make(InboxReference), type: "object" },
 });
 const readEventResultSchema = Schema.typeSchema(InboxEvent);
 
@@ -277,7 +270,10 @@ const inboxRequestSchema = exactStruct({
     }),
   ),
 });
-const inboxResultSchema = Schema.typeSchema(InboxPage);
+const inboxResultSchema = Schema.Struct({
+  ...PaginatedResult.fields,
+  items: Schema.Array(Schema.typeSchema(InboxEvent)),
+});
 const invocationValidationErrorSchema = Schema.Struct({
   reason: Schema.Literal("content-invalid"),
   detail: Schema.optionalWith(Schema.String, { exact: true }),
@@ -432,7 +428,7 @@ export const toolDefinitions = {
   },
   read_event: {
     description:
-      "Retrieve a saved inbox item and its advice by eventId, including after delivery or restart. This leaves pending delivery unchanged.",
+      "Retrieve a saved inbox item and its guidance by message {authorAgentId, msgId}, or retrieve a terminal collective outcome by operationId. These are the application identities from messages and history. Content remains readable after delivery or restart; lookup leaves pending delivery unchanged.",
     input: readEventRequestSchema,
     output: readEventResultSchema,
     annotations: read,

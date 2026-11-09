@@ -3,7 +3,7 @@ import { Client, ProtocolError } from "@modelcontextprotocol/client";
 import {
   AgentAddress,
   AgentCard,
-  DeliveryToken,
+  type InboxEvent,
   MsgId,
   PermittedItem,
   SendError,
@@ -14,7 +14,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as McpModule from "#sharness-mcp/mcp-client";
 import type {
   acquireMcpConnection,
-  InboxEntry,
   McpConnection,
 } from "#sharness-mcp/mcp-client";
 import type { ChannelRegistration, ChannelSetup } from "./adapter.js";
@@ -35,7 +34,6 @@ vi.mock("#sharness-mcp/mcp-client", async (original) => ({
 }));
 
 const messageText = "hello";
-const deliveryToken = `dlv_${"A".repeat(43)}`;
 const msgId = Schema.decodeUnknownSync(MsgId)(`msg_${"A".repeat(43)}`);
 const address = Schema.decodeUnknownSync(AgentAddress)("agent:alice");
 const agent = (name: string, byte: number) =>
@@ -71,7 +69,7 @@ function connection() {
     content: [],
     structuredContent: { id: msgId, address } satisfies SendResult,
   });
-  const inbox = Effect.runSync(Queue.unbounded<InboxEntry>());
+  const inbox = Effect.runSync(Queue.unbounded<InboxEvent>());
   const released = vi.fn();
   boundary.acquire.mockReturnValue(
     Effect.gen(function* () {
@@ -173,7 +171,6 @@ describe("NanoClaw messages", () => {
     await current.setup(callbacks);
     Effect.runSync(
       Queue.offer(fake.inbox, {
-        deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(deliveryToken),
         address,
         item,
       }),
@@ -184,6 +181,7 @@ describe("NanoClaw messages", () => {
     expect(callbacks.onMetadata).toHaveBeenCalledWith(address, address, false);
     const event = callbacks.onInboundEvent.mock.calls[0]?.[0];
     expect(event?.replyTo?.platformId).toBe(address);
+    expect(event?.message.id).toBe(msgId);
     expect(event?.message.content).toContain(messageText);
   });
   it("disconnects when the native inbound callback fails", async () => {
@@ -194,7 +192,6 @@ describe("NanoClaw messages", () => {
     await current.setup(callbacks);
     Effect.runSync(
       Queue.offer(fake.inbox, {
-        deliveryToken: Schema.decodeUnknownSync(DeliveryToken)(deliveryToken),
         address,
         item,
       }),

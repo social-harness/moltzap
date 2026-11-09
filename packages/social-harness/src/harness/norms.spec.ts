@@ -20,6 +20,7 @@ import {
   makeHarnessFixture,
   waitForInbox,
 } from "./__tests__/service-fixtures.js";
+import { inboxReference } from "./inbox-item.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Synthetic acts and closed failure stages pin the mechanism, not an authored scheduling policy. */
 
@@ -436,15 +437,15 @@ it("reopens baseline saved inbox guidance without running response prediction", 
       kind: "message",
       message: yield* subject.message("Saved message"),
     });
-    const token = (yield* waitForInbox(runtime)).items[0]?.deliveryToken;
-    if (token === undefined) {
+    const saved = (yield* waitForInbox(runtime)).items[0];
+    if (saved === undefined) {
       return yield* Effect.dieMessage("Expected saved delivery");
     }
     yield* Scope.close(scope, Exit.void);
     const reopened = yield* subject.open();
-    expect((yield* reopened.harness.getInboxEvent(token)).guidance).toEqual(
-      legacy,
-    );
+    expect(
+      (yield* reopened.harness.getInboxEvent(inboxReference(saved))).guidance,
+    ).toEqual(legacy);
   }));
 
 it.prop(

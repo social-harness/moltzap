@@ -8,6 +8,7 @@ import {
   decodeHarnessSendErrorData,
   managementSearchConversationsRequestSchema,
   managementSearchConversationsResultSchema,
+  toolDefinitions,
 } from "./contracts.js";
 
 describe("message operation contracts", () => {
@@ -53,6 +54,18 @@ describe("message operation contracts", () => {
 });
 
 describe("management and history contracts", () => {
+  it("requires exactly one application reference for retained lookup", () => {
+    const message = {
+      authorAgentId: testAgentCard("alice").agentId,
+      msgId: `msg_${"A".repeat(43)}`,
+    };
+    const operationId = collectiveOperationId(testAgentCard("alice").agentId);
+    const decode = Schema.decodeUnknownSync(toolDefinitions.read_event.input);
+    expect(decode({ message })).toEqual({ message });
+    expect(decode({ operationId })).toEqual({ operationId });
+    expect(() => decode({})).toThrow();
+    expect(() => decode({ message, operationId })).toThrow();
+  });
   describe("conversation pagination", () => {
     it("accepts a cursor without interpreting its contents", () => {
       expect(

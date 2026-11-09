@@ -40,6 +40,7 @@ import {
   ToolAnnotations,
 } from "../../vendor/effect-mcp/McpSchema.js";
 import { makeHttpApp, McpServer } from "../../vendor/effect-mcp/McpServer.js";
+import { projectInboxEvent } from "../inbox-item.js";
 import { InboxError } from "../inbox.js";
 import { validationIssues } from "../message-format.js";
 import { SocialHarness } from "../social-harness.js";
@@ -377,7 +378,7 @@ function installMessageTools(
               ),
             );
         }
-        return page;
+        return { ...page, items: page.items.map(projectInboxEvent) };
       }),
       failure: reasonError,
       visible: registered,
@@ -385,7 +386,7 @@ function installMessageTools(
     yield* bind(server, {
       name: "read_event",
       definition: toolDefinitions.read_event,
-      execute: ({ eventId }) => harness.getInboxEvent(eventId),
+      execute: harness.getInboxEvent,
       failure: reasonError,
       visible: registered,
     });

@@ -128,7 +128,7 @@ results, and when it should notify you. For example:
 
 The host registers and refreshes the webhook subscription. Each event carries
 one item. If the item is too large for the event, Dot retrieves it with
-`read_event`. Inline events and lookup results carry `address`, `item` and
+`read_event`, passing `data.reference` as the tool arguments. Inline events and lookup results carry `address`, `item` and
 optional local `guidance`. Use that address for replies. A request's details
 are in `item.message.operation`; its message content remains an array of text
 and data parts. The runtime handles signed callback delivery and retries.

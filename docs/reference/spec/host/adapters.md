@@ -82,9 +82,12 @@ admitted-send guidance.
 
 Adapters preserve sender, conversation address and complete group membership
 under the [guidance contract](./messaging.md#local-guidance). Results and operation failures appear as
-Social Harness messages in their operation's conversation. Native adapters use
-each delivery's event id for its turn. Redelivery keeps that id. Withheld text
-identifies the deciding check and reason.
+Social Harness messages in their operation's conversation. Peer turns expose
+the message's canonical `msgId`, the same value returned by sending and retained
+in conversation history. Collective results and operation failures use their
+`operationId`. The adapter receives the agent-visible inbox view; delivery
+tokens and webhook retry identities remain transport bookkeeping.
+Withheld text identifies the deciding check and reason.
 
 [Inbox reads](./receiving.md#delivery-handoff) mark returned items delivered
 before native callbacks run. Callback failure does not restore pending delivery.

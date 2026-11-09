@@ -20,6 +20,11 @@ import {
 } from "effect";
 import { createHash } from "node:crypto";
 import type { FirewallEvidence } from "../firewall/chain.js";
+import type {
+  InboxEvent,
+  InboxReference,
+  MessageAddress,
+} from "./inbox-item.js";
 import { SendError } from "../communication/errors.js";
 import {
   AgentAddress,
@@ -67,10 +72,8 @@ import {
   type DeliveryToken,
   historyCursor,
   InboxError,
-  type InboxEvent,
   type InboxPage,
   makeInbox,
-  type MessageAddress,
   type PendingItem,
 } from "./inbox.js";
 import {
@@ -101,10 +104,7 @@ export type HistoryRecord =
         readonly msgId: Message["msgId"];
       };
     } & InboxEvent)
-  | ({
-      readonly kind: "result";
-      readonly deliveryToken: DeliveryToken;
-    } & InboxEvent);
+  | ({ readonly kind: "result" } & InboxEvent);
 /** A missing nextCursor ends this fixed-boundary history traversal. */
 export interface ReadHistoryResult extends PaginatedResult {
   readonly records: readonly HistoryRecord[];
@@ -154,7 +154,7 @@ interface SocialHarnessService {
   ) => Effect.Effect<InboxPage, InboxError>;
   /** Saved content remains readable after acknowledgment and restart. */
   readonly getInboxEvent: (
-    token: DeliveryToken,
+    reference: InboxReference,
   ) => Effect.Effect<InboxEvent, InboxError>;
   /** Repeating an acknowledgment is harmless and does not answer a request. */
   readonly acknowledgeDelivery: (
@@ -507,9 +507,9 @@ function makeHarness<R>(
               : waitForInbox(inbox, changes, page, wait),
           ),
         ),
-      getInboxEvent: (token) =>
+      getInboxEvent: (reference) =>
         requireRegistered(new InboxError({ reason: "not-registered" })).pipe(
-          Effect.zipRight(inbox.getInboxEvent(token)),
+          Effect.zipRight(inbox.getInboxEvent(reference)),
         ),
       acknowledgeDelivery: (token) =>
         requireRegistered(
@@ -674,7 +674,6 @@ function makeHarness<R>(
           for (const result of selected) {
             records.push({
               kind: "result",
-              deliveryToken: result.token,
               ...result.event,
             });
           }

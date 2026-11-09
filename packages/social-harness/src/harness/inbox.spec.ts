@@ -6,9 +6,10 @@ import { testAgentCard } from "../__tests__/agents.js";
 import { Message } from "../communication/service.js";
 import { migrateDaemon } from "../database/migrations.js";
 import { databaseConnection } from "../database/sql.js";
-import { makeInbox, MessageAddress } from "./inbox.js";
+import { MessageAddress } from "./inbox-item.js";
+import { makeInbox } from "./inbox.js";
 
-it("retains the same peer message independently and rejects foreign event and acknowledgment tokens", () =>
+it("retains the same peer message independently and keeps lookup scoped to admitted views and acknowledgments scoped to tokens", () =>
   Effect.gen(function* () {
     yield* migrateDaemon;
     const first = yield* makeInbox("first");
@@ -45,13 +46,25 @@ it("retains the same peer message independently and rejects foreign event and ac
     } as const;
     yield* first.publish(firstItem, decision);
     expect(
+      Exit.isFailure(
+        yield* first
+          .getInboxEvent({
+            message: {
+              ...reference,
+              authorAgentId: testAgentCard("agent:carol").agentId,
+            },
+          })
+          .pipe(Effect.exit),
+      ),
+    ).toBeTruthy();
+    expect(
       (yield* first.visibleMessages([message]))[0]?.visibleToAgent,
     ).toBeTruthy();
     expect(
       (yield* second.visibleMessages([message]))[0]?.visibleToAgent,
     ).toBeFalsy();
     const foreignRead = yield* second
-      .getInboxEvent(firstItem.token)
+      .getInboxEvent({ message: reference })
       .pipe(Effect.exit);
     const foreignAck = yield* second
       .acknowledgeDelivery(firstItem.token)
@@ -65,8 +78,8 @@ it("retains the same peer message independently and rejects foreign event and ac
     expect(retained.items.map((item) => item.deliveryToken)).toEqual([
       secondItem.token,
     ]);
-    expect(yield* reopened.getInboxEvent(secondItem.token)).toEqual(
-      yield* first.getInboxEvent(firstItem.token),
+    expect(yield* reopened.getInboxEvent({ message: reference })).toEqual(
+      yield* first.getInboxEvent({ message: reference }),
     );
     expect((yield* first.listInbox()).items).toHaveLength(0);
   }).pipe(
