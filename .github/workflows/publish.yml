@@ -269,7 +269,7 @@ jobs:
       # Registry and Router input keys ignore what a release writes, so the
       # bump and the resume of one release resolve the same indexes. The
       # images job tags the ones this step passes on.
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         if: (steps.plan.outputs.mode == 'bump' || steps.plan.outputs.mode == 'resume') && steps.select.outputs.packages != ''
       - name: Resolve the release service images
         id: resolve
@@ -607,7 +607,7 @@ jobs:
     outputs:
       payload: ${{ steps.tag.outputs.payload }}
     steps:
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       # `build` ran installed code, so the references it passes are checked
       # for shape and signature before anything is tagged.
       - name: Tag release indexes and record their digests
@@ -697,7 +697,7 @@ jobs:
       contents: write
       packages: write
     steps:
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       # `build` ran installed code, so the keys it passes are checked for
       # shape before use. The OpenClaw agent, whose key is usually published
       # long before, goes first and each image is recorded once tagged, so a
