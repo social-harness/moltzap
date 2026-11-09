@@ -12,7 +12,11 @@ import {
   maximumMembers,
   MessageAddressInput,
 } from "../communication/messages.js";
-import { FirewallRefusal, PermittedItem } from "../firewall/service.js";
+import {
+  FirewallRefusal,
+  LocalGuidance,
+  PermittedItem,
+} from "../firewall/service.js";
 import {
   type MessageTextError,
   parseMessageText,
@@ -425,14 +429,13 @@ const normGuidance: CheckedGuidance = {
   instructions: [
     {
       ruleId: "reply",
-      expectation: "required",
-      subjects: ["proposal"],
+      uncertain: { choice: "unresolved", probability: 1 },
       instruction: "Answer Alice's question.",
     },
   ],
 };
 
-it("renders a norm's expectation, instruction and subject reference", () => {
+it("renders registered uncertain advice and subject references", () => {
   const rendered = renderLocalGuidance(normGuidance, {
     text: "Which day?",
     origin: "peer",
@@ -446,8 +449,7 @@ it("renders a norm's expectation, instruction and subject reference", () => {
       instructions: [
         {
           ruleId: "reply",
-          expectation: "required",
-          subjects: ["proposal"],
+          uncertain: { choice: "unresolved", probability: 1 },
           instruction: normGuidance.instructions[0]?.instruction,
         },
       ],
@@ -462,6 +464,29 @@ it("renders a norm's expectation, instruction and subject reference", () => {
     },
   ]);
   expect(rendered.endsWith(JSON.stringify("Which day?"))).toBe(true);
+});
+
+it("decodes and renders retained response advice inside a collective result", () => {
+  const saved = {
+    ...normGuidance,
+    instructions: [
+      {
+        ruleId: "reply",
+        expectation: "required",
+        subjects: ["proposal"],
+        instruction: "Answer the saved question.",
+      },
+    ],
+  };
+  const guidance = Schema.decodeUnknownSync(LocalGuidance)({
+    question: saved,
+    answers: [{ member: testAgentCard("agent:alice"), ...saved }],
+  });
+  const text = renderLocalGuidance(guidance);
+  expect(JSON.parse(text.split("\n")[1] ?? "[]")).toMatchObject([
+    { for: "agent:alice", instructions: saved.instructions },
+    { for: "question", instructions: saved.instructions },
+  ]);
 });
 
 it("renders an uncertain norm's choice and probability on an admitted send", () => {

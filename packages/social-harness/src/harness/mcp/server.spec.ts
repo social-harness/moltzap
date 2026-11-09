@@ -79,6 +79,47 @@ it("publishes signed identity schemas accepted by native draft-07 and 2020 clien
     ).toBeDefined();
   }));
 
+it("rejects a mixed norm installation before updating any firewall policy", () =>
+  Effect.gen(function* () {
+    let updates = 0;
+    const fixture = yield* mcpFixture({
+      firewall: {
+        readPolicy: () =>
+          Effect.succeed({
+            rules: [],
+            fixedRules: [],
+            norms: [],
+            activeRevision: "initial",
+          }),
+        updatePolicy: () =>
+          Effect.sync(() => {
+            updates += 1;
+            return { activeRevision: "updated" };
+          }),
+      },
+    });
+    const reply = yield* Effect.tryPromise(() =>
+      fixture.fetch(
+        mcpRequest("tools/call", {
+          name: "policy_update",
+          arguments: {
+            add: [
+              {
+                norm: "(norm exchange :initiator Sender :participant Receiver) (content propose :by Sender :starts true)",
+              },
+              { norm: "(invalid)" },
+            ],
+          },
+        }),
+      ),
+    );
+    expect((yield* json(reply)).error?.data).toMatchObject({
+      reason: "invalid-rule",
+      path: ["add", 1],
+    });
+    expect(updates).toBe(0);
+  }));
+
 // @agent-code-guard/regression-only: These cases exercise finite MCP authentication and wire-error contracts.
 describe("MCP authentication and discovery", () => {
   it.each([{ authorization: "" }, { authorization: "Bearer wrong" }])(

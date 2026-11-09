@@ -3,45 +3,38 @@
 import { FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { SqlClient } from "@effect/sql";
-import { SqliteClient } from "@effect/sql-sqlite-node";
 import { scopedLive as it } from "@effect/vitest";
 import {
-  type Context,
+  Deferred,
   Duration,
   Effect,
   Encoding,
   FastCheck as fc,
-  Layer,
-  Redacted,
+  Fiber,
+  Stream,
 } from "effect";
 import { join } from "node:path";
 import { describe, expect } from "vitest";
 import type { Chain, FirewallEvidence, Matcher } from "./chain.js";
-import type { DecisionProvider } from "./check.js";
+import type { DecisionProvider, DecisionRequest } from "./check.js";
 import { Message } from "../communication/messages.js";
-import { migrateDaemon } from "../database/migrations.js";
-import {
-  type IdentityFixture,
-  makeIdentityFixture,
-} from "../identity/__tests__/authentication-fixtures.js";
+import { makeIdentityFixture } from "../identity/__tests__/authentication-fixtures.js";
 import {
   AgentCard,
-  agentCardOf,
   AgentId,
   AgentName,
-  AgentSigningAuthority,
   PrincipalId,
 } from "../identity/agent-cards.js";
-import { RegistrationId, Registry } from "../identity/registry.js";
-import { Identity } from "../identity/service.js";
+import { compileNorm } from "../norms/compiler.js";
+import { withFirewall } from "./__tests__/service-fixtures.js";
+import { assessmentAudit } from "./audit.js";
 import {
   FirewallPolicyError,
   MAXIMUM_BEHAVIOR_BYTES,
   MAXIMUM_EDITABLE_RULES,
-  type policyUpdateSchema,
   type TextRule,
 } from "./rules.js";
-import { Firewall, type FirewallOptions } from "./service.js";
+import { Firewall, type FirewallOptions, type PolicyEdit } from "./service.js";
 
 /* eslint-disable agent-code-guard/no-hardcoded-assertion-literals -- Closed policy failures and dispositions are the public contract under test. */
 
@@ -87,61 +80,27 @@ const judgments: DecisionProvider = {
     }),
 };
 
-function withFirewall<A, E, R>(
-  storage: string | { readonly filename: string; readonly agentKey: string },
-  fixture: IdentityFixture,
-  use: (
-    firewall: Context.Tag.Service<typeof Firewall>,
-    self: AgentCard,
-  ) => Effect.Effect<A, E, R>,
-  configure: (agentKey: string) => ReturnType<typeof Firewall.layer>,
-) {
-  const filename = typeof storage === "string" ? storage : storage.filename;
-  const agentKey = typeof storage === "string" ? storage : storage.agentKey;
-  const identity = Identity.layer({
-    agentKey,
-    signingAuthority: fixture.signingAuthority,
-    registrySignerPublicKey: AgentSigningAuthority.publicKey(
-      fixture.registryAuthority,
+function violationResponse(request: DecisionRequest) {
+  return {
+    provider: "test",
+    model: "test",
+    raw: privateProviderResponse,
+    usage: {},
+    answers: Object.fromEntries(
+      Object.entries(request.questions).map(([id, question]) => [
+        id,
+        {
+          choice: "violation",
+          probabilities: Object.fromEntries(
+            Object.keys(question.criteria).map((choice) => [
+              choice,
+              Number(choice === "violation"),
+            ]),
+          ),
+        },
+      ]),
     ),
-    admissionCredential: Effect.succeed(Redacted.make("test-admission")),
-  }).pipe(
-    Layer.provide(
-      Layer.succeed(
-        Registry,
-        Registry.of({
-          register: () =>
-            Effect.succeed({
-              kind: "registered",
-              identityCard: fixture.identityCard,
-            }),
-          lookup: () => Effect.succeed({ kind: "not_found" }),
-        }),
-      ),
-    ),
-  );
-  const layer = configure(agentKey);
-  const services = layer.pipe(
-    Layer.provideMerge(identity),
-    Layer.provideMerge(
-      Layer.effectDiscard(migrateDaemon).pipe(
-        Layer.provideMerge(SqliteClient.layer({ filename })),
-      ),
-    ),
-  );
-  return Effect.scoped(
-    Effect.gen(function* () {
-      const local = yield* Identity;
-      yield* local.register({
-        operationId: RegistrationId.make(
-          `opn_${Encoding.encodeBase64Url(new Uint8Array(16))}`,
-        ),
-        principalId: fixture.identityCard.principalId,
-        agentName: fixture.identityCard.agentName,
-      });
-      return yield* use(yield* Firewall, agentCardOf(fixture.identityCard));
-    }).pipe(Effect.provide(services)),
-  );
+  };
 }
 
 function outgoing(self: AgentCard) {
@@ -192,7 +151,7 @@ metadata:
 Each member holds a slot before confirming it.
 `;
 const refusedEdits: ReadonlyArray<{
-  readonly edit: typeof policyUpdateSchema.Type;
+  readonly edit: PolicyEdit;
   readonly refusal: Readonly<Record<string, unknown>>;
 }> = [
   {
@@ -868,6 +827,159 @@ describe("Firewall rule chain replies and holds", () => {
       }),
   );
 });
+
+it("runs contract semantics even after a chain allow", () =>
+  Effect.gen(function* () {
+    const fixture = yield* makeIdentityFixture;
+    const contract = yield* compileNorm(
+      '(norm guarded :initiator Sender :participant Receiver) (content inform :starts true :ends true (field value :type string)) (rule :act inform "Protect private records.")',
+    );
+    let calls = 0;
+    const options = policy();
+    const provider: DecisionProvider = {
+      decide: (request) =>
+        Effect.sync(() => {
+          calls += 1;
+          return violationResponse(request);
+        }),
+    };
+    yield* withFirewall(
+      ":memory:",
+      fixture,
+      (firewall, self) =>
+        Effect.gen(function* () {
+          const message = yield* Message.create({
+            author: self,
+            recipients: [peer("bob", 2)],
+            content: [
+              {
+                type: "text",
+                text: '(inform :ontology guarded :value "private")',
+              },
+            ],
+          });
+          const decision = yield* firewall.checkOutgoing(message, evidence);
+          expect(decision).toMatchObject({
+            kind: "refused",
+            refusal: { refusal: "rule-violation" },
+          });
+          expect(calls).toBe(1);
+        }),
+      (agentKey) =>
+        Firewall.layer(
+          agentKey,
+          {
+            ...options,
+            contracts: [contract],
+            text:
+              options.text === undefined
+                ? undefined
+                : { ...options.text, provider },
+          },
+          {
+            rules: [
+              {
+                id: "allowed",
+                applies: "both",
+                match: "always",
+                action: "allow",
+              },
+            ],
+            matchers: { always },
+          },
+        ),
+    );
+  }));
+
+it("exports every private assessment across pages with a completion boundary", () =>
+  Effect.gen(function* () {
+    const fixture = yield* makeIdentityFixture;
+    yield* withFirewall(
+      ":memory:",
+      fixture,
+      (firewall, self) =>
+        Effect.gen(function* () {
+          const message = yield* outgoing(self);
+          for (let index = 0; index < 101; index += 1) {
+            yield* (yield* firewall.checkOutgoing(message, evidence)).save;
+          }
+          const rows = Array.from(
+            yield* Stream.runCollect(assessmentAudit(":memory:")),
+          );
+          expect(rows[0]).toMatchObject({
+            kind: "begin",
+            throughSequence: 101,
+          });
+          expect(rows.at(-1)).toEqual({
+            kind: "complete",
+            throughSequence: 101,
+            count: 101,
+          });
+          expect(rows.filter((row) => row.kind === "assessment")).toHaveLength(
+            101,
+          );
+          expect(JSON.stringify(rows)).toContain(privateProviderResponse);
+          expect(
+            JSON.stringify(yield* firewall.readDecisions({})),
+          ).not.toContain(privateProviderResponse);
+          const other = Array.from(
+            yield* Stream.runCollect(assessmentAudit("another-agent")),
+          );
+          expect(other).toEqual([
+            { kind: "begin", throughSequence: 0, expectedCount: 0 },
+            { kind: "complete", throughSequence: 0, count: 0 },
+          ]);
+        }),
+      (agentKey) => Firewall.layer(agentKey, policy([privacy])),
+    );
+  }));
+
+it("retains the captured policy revision across a concurrent edit", () =>
+  Effect.gen(function* () {
+    const fixture = yield* makeIdentityFixture;
+    const entered = yield* Deferred.make<undefined>();
+    const release = yield* Deferred.make<undefined>();
+    const chain: Chain = {
+      rules: [
+        { id: "allow", applies: "outgoing", match: "wait", action: "allow" },
+      ],
+      matchers: {
+        wait: {
+          match: () =>
+            Deferred.succeed(entered, undefined).pipe(
+              Effect.zipRight(Deferred.await(release)),
+              Effect.as({ matched: true }),
+            ),
+        },
+      },
+    };
+    yield* withFirewall(
+      ":memory:",
+      fixture,
+      (firewall, self) =>
+        Effect.gen(function* () {
+          const before = yield* firewall.readPolicy();
+          const message = yield* outgoing(self);
+          const work = yield* firewall
+            .checkOutgoing(message, evidence)
+            .pipe(Effect.fork);
+          yield* Deferred.await(entered);
+          yield* firewall.updatePolicy({ add: [initial] });
+          yield* Deferred.succeed(release, undefined);
+          yield* (yield* Fiber.join(work)).save;
+          const after = yield* firewall.readPolicy();
+          expect(after.activeRevision).not.toBe(before.activeRevision);
+          const { decisions } = yield* firewall.readDecisions({});
+          expect(decisions).toHaveLength(message.recipients.length);
+          expect(
+            decisions.every(
+              (entry) => entry.activeRevision === before.activeRevision,
+            ),
+          ).toBe(true);
+        }),
+      (agentKey) => Firewall.layer(agentKey, policy(), chain),
+    );
+  }));
 
 describe("Firewall rule chain beside text rules", () => {
   it("leaves a message no chain rule matches to the text rules", () =>

@@ -59,16 +59,15 @@ must establish the account-to-agent relationship it relies on. The
 [identity contract](/reference/spec/identity/identity-and-attribution#agents-and-principals) defines this
 claim precisely.
 
-An application can propose a norm through an ordinary message. In the
-[shared norm procedure](/reference/spec/norms/shared-norms), each participant agrees
-and installs the rule locally. The agent can add norms and edit or remove only
-[norms it currently owns](/reference/spec/firewall/message-policy#editable-text-policy).
-Its owner controls all editable rules and can require confirmation through the
-host. The daemon cannot verify the agent's statement that its owner approved
-an agreement.
+An application can supply participants with a [pre-agreed norm](/reference/spec/norms/shared-norms)
+before their first task message. Authorized setup installs its document in each
+participant's firewall. The owner controls editable rules and can require
+confirmation through the host. A peer message cannot install a norm, and the
+daemon does not verify a claim of owner approval.
 
-An installed norm is evaluated with the participant's other rules on later
-messages. Application and conversation scope are expressed in its text. The
+An installed structured norm defines message forms, roles, conversation
+transitions and English text rules. Ordinary behavior rules express their scope
+in English. The
 daemon does not track application membership or remove rules when their
 agreements expire. The
 [message firewall guide](/guides/message-firewall) explains how to install

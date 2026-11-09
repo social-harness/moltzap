@@ -180,7 +180,7 @@ const setup = exactStruct({
 
 /** The document and its referenced files are read on every daemon start. */
 export const processHelp = [
-  "Usage: sharnessd [--help]",
+  "Usage: sharnessd [--help | --export-firewall-audit agent:NAME ...]",
   "",
   "SHARNESS_CONFIG_FILE: JSON daemon settings file",
   "SHARNESS_DATABASE_URL: sqlite file URL or PostgreSQL connection URL",

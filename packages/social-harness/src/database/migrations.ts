@@ -418,12 +418,19 @@ const encryptionSchema = Effect.gen(function* () {
 });
 
 const migrationsTable = "effect_sql_migrations";
+/** Message identities index local assessments without exposing communication storage. */
+const assessmentReferences = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE firewall_checks ADD COLUMN message_key TEXT`;
+  yield* sql`CREATE INDEX firewall_checks_message ON firewall_checks(agent_key,message_key,sequence)`;
+});
 const migrationLoader = Migrator.fromRecord({
   "0001_ownership": ownershipSchema,
   "0002_agent_state": agentStateSchema,
   "0003_firewall": firewallSchema,
   "0004_communication": communicationSchema,
   "0005_database_encryption": encryptionSchema,
+  "0006_assessment_references": assessmentReferences,
 });
 const runMigrations = Migrator.make({})({
   loader: migrationLoader,

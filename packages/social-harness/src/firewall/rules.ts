@@ -79,16 +79,18 @@ export const editableDocumentSchema = Schema.Array(editableRuleSchema).pipe(
 );
 
 const behaviorAddition = exactStruct({ behavior: Schema.String });
+const normAddition = exactStruct({ norm: Schema.String });
+const normRemoval = exactStruct({ norm: Schema.NonEmptyString });
 
 /** Removing and adding the same editable id replaces it in one activation. */
 export const policyUpdateSchema = exactStruct({
   add: Schema.optional(
-    Schema.Array(Schema.Union(editableRuleSchema, behaviorAddition)).pipe(
-      Schema.maxItems(MAXIMUM_EDITABLE_RULES),
-    ),
+    Schema.Array(
+      Schema.Union(editableRuleSchema, behaviorAddition, normAddition),
+    ).pipe(Schema.maxItems(MAXIMUM_EDITABLE_RULES)),
   ),
   remove: Schema.optional(
-    Schema.Array(TextRule.fields.id).pipe(
+    Schema.Array(Schema.Union(TextRule.fields.id, normRemoval)).pipe(
       Schema.maxItems(MAXIMUM_EDITABLE_RULES),
     ),
   ),
@@ -98,6 +100,7 @@ export const policyUpdateSchema = exactStruct({
 export const policyReadSchema = exactStruct({
   rules: editableDocumentSchema,
   fixedRules: Schema.Array(TextRule),
+  norms: Schema.Array(Schema.String),
   activeRevision: Schema.NonEmptyString,
 });
 
@@ -207,6 +210,7 @@ export class FirewallPolicyError extends Schema.TaggedError<FirewallPolicyError>
   {
     ruleId: Schema.optional(Schema.String),
     problem: Schema.optional(policyProblemSchema),
+    detail: Schema.optional(Schema.String),
     path: Schema.optional(
       Schema.Tuple(Schema.Literal("add", "remove"), Schema.NonNegativeInt),
     ),
@@ -223,9 +227,10 @@ export class FirewallPolicyError extends Schema.TaggedError<FirewallPolicyError>
   override get message(): string {
     const subject = editSubject(this.path, this.ruleId);
     const cause =
-      this.problem === undefined
+      this.detail ??
+      (this.problem === undefined
         ? policyReasonText[this.reason]
-        : policyProblemText[this.problem];
+        : policyProblemText[this.problem]);
     const text = subject === undefined ? cause : `${subject}: ${cause}`;
     return ["invalid-rule", "fixed-rule", "build-failed"].includes(this.reason)
       ? `${text}. ${editRefusalDocs}`
@@ -237,11 +242,13 @@ export class FirewallPolicyError extends Schema.TaggedError<FirewallPolicyError>
     ruleId?: string;
     path?: readonly [field: "add" | "remove", index: number];
     problem?: PolicyProblem;
+    detail?: string;
   }> {
     return {
       ...(this.ruleId === undefined ? {} : { ruleId: this.ruleId }),
       ...(this.path === undefined ? {} : { path: this.path }),
       ...(this.problem === undefined ? {} : { problem: this.problem }),
+      ...(this.detail === undefined ? {} : { detail: this.detail }),
     };
   }
 }

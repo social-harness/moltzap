@@ -56,6 +56,30 @@ type OwnershipTables = Record<"owner_bindings", typeof bindingRow.Type> &
  */
 export class OwnershipError extends Data.TaggedError("OwnershipError") {}
 
+/** Operator inspection resolves requested names without reading signing credentials. */
+export function ownedAgents(names: readonly AgentName[]) {
+  return Effect.gen(function* () {
+    const queries = yield* makeQueries<OwnershipTables>();
+    const rows = yield* executeQuery(
+      queries
+        .selectFrom("agent_profiles")
+        .select(["agent_key", "agent_name"])
+        .where("agent_name", "in", names),
+    );
+    return yield* Schema.decodeUnknown(
+      Schema.Array(
+        Schema.Struct({ agent_key: Schema.UUID, agent_name: AgentName }),
+      ),
+    )(rows);
+  }).pipe(
+    Effect.catchTags({
+      SqlError: () => Effect.fail(new OwnershipError()),
+      ParseError: () => Effect.fail(new OwnershipError()),
+    }),
+    Effect.withSpan("ownedAgents"),
+  );
+}
+
 const freshKey = Effect.gen(function* () {
   const keys = yield* Effect.tryPromise(() =>
     generateKeyPair("EdDSA", { extractable: true }),

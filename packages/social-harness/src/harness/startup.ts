@@ -6,6 +6,7 @@ import {
   Cause,
   Console,
   Context,
+  Data,
   Deferred,
   Duration,
   Effect,
@@ -14,13 +15,17 @@ import {
   FiberSet,
   Layer,
   type Redacted,
+  Schema,
   ScopedCache,
+  Stream,
 } from "effect";
 import { Router } from "../communication/router/client.js";
 import { Communication } from "../communication/service.js";
 import { checkDatabase } from "../database/migrations.js";
 import { databaseAccess, databaseConnection } from "../database/sql.js";
+import { assessmentAudit } from "../firewall/audit.js";
 import { Firewall } from "../firewall/service.js";
+import { AgentName } from "../identity/agent-cards.js";
 import { Registry } from "../identity/registry.js";
 import { Identity, IdentityError } from "../identity/service.js";
 import { packageVersion, WIRE_VERSION } from "../version.js";
@@ -38,12 +43,80 @@ import {
   listOwnedAgentKeys,
   loadAgentRegistration,
   localOwner,
+  ownedAgents,
   type OwnerAccount,
 } from "./ownership.js";
 import { SocialHarness } from "./social-harness.js";
 
 /** Usage names the runtime inputs without opening storage or allocating an owner. */
 export const daemonHelp = processHelp;
+
+/** Private audit export requires the daemon's database credentials and explicit agent addresses. */
+class FirewallAuditError extends Data.TaggedError("FirewallAuditError") {
+  override get message() {
+    return "Firewall audit export requires registered agent: addresses. Docs: https://docs.moltzap.xyz/reference/spec/firewall/message-policy#private-assessment-export";
+  }
+}
+
+type AuditFailure =
+  | FirewallAuditError
+  | Effect.Effect.Error<typeof databaseAccess>
+  | Effect.Effect.Error<ReturnType<typeof checkDatabase>>
+  | Effect.Effect.Error<ReturnType<typeof ownedAgents>>
+  | Stream.Stream.Error<ReturnType<typeof assessmentAudit>>
+  | Layer.Layer.Error<ReturnType<typeof databaseConnection>>;
+
+/** An operator reads complete retained assessments without starting network or agent resources. */
+export function exportFirewallAudit(
+  addresses: readonly string[],
+): Effect.Effect<void, AuditFailure> {
+  return runFirewallAudit(addresses);
+}
+
+function runFirewallAudit(addresses: readonly string[]) {
+  return Effect.gen(function* () {
+    const access = yield* databaseAccess;
+    const names = yield* Effect.forEach(
+      addresses,
+      (address) =>
+        address.startsWith("agent:")
+          ? Schema.decodeUnknown(AgentName)(
+              address.slice("agent:".length),
+            ).pipe(
+              Effect.catchTag("ParseError", () =>
+                Effect.fail(new FirewallAuditError()),
+              ),
+            )
+          : Effect.fail(new FirewallAuditError()),
+      { concurrency: 1 },
+    );
+    if (names.length === 0 || new Set(names).size !== names.length) {
+      return yield* new FirewallAuditError();
+    }
+    return yield* Effect.gen(function* () {
+      yield* checkDatabase(access.unlockKey);
+      const agents = yield* ownedAgents(names);
+      if (agents.length !== names.length) {
+        return yield* new FirewallAuditError();
+      }
+      for (const agent of agents) {
+        yield* assessmentAudit(agent.agent_key).pipe(
+          Stream.runForEach((assessment) => {
+            return Console.log(
+              JSON.stringify({
+                agent: `agent:${agent.agent_name}`,
+                ...assessment,
+              }),
+            );
+          }),
+        );
+      }
+    }).pipe(Effect.provide(databaseConnection(access.locator)), Effect.scoped);
+  }).pipe(
+    Effect.provide(NodeFileSystem.layer),
+    Effect.withSpan("exportFirewallAudit"),
+  );
+}
 
 /** A daemon scope restores saved agents and serves authenticated requests to them. */
 export const daemonLayer = Layer.scopedDiscard(runDaemon()).pipe(

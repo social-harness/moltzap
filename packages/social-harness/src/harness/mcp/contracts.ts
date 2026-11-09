@@ -472,14 +472,14 @@ export const toolDefinitions = {
   },
   policy_read: {
     description:
-      "Read active editable rules, fixed rules and the policy revision.",
+      "Read active editable rules, fixed rules, installed norm names and the policy revision.",
     input: empty,
     output: policyReadSchema,
     annotations: read,
   },
   policy_update: {
     description:
-      "Add, remove or replace editable rules. A behavior is a complete BEHAVIOR.md document. Remove and add the same id to replace a rule. Fixed rules refuse edits. Returns after the complete edit is active; saved decisions remain unchanged.",
+      "Add, remove or replace editable rules and pre-agreed norms. A behavior is a complete BEHAVIOR.md document; a norm is a complete Lisp norm document. Remove a norm with {norm: name}. Remove and add together to replace it. Invalid documents leave the whole edit unapplied. Fixed rules refuse edits. Active interactions keep their opening norm revision. Use policy_read to inspect installed names.",
     input: policyUpdateSchema,
     output: policyUpdateResultSchema,
     annotations: { readOnlyHint: false, openWorldHint: false },

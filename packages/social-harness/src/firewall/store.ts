@@ -40,6 +40,7 @@ const activationRow = Schema.Struct({
 const disposition = Schema.Literal("admitted", "withheld");
 const completedCheck = Schema.Struct({
   checkId: Schema.NonEmptyString,
+  messageKey: Schema.String,
   direction: Schema.Literal("incoming", "outgoing"),
   canonicalCandidate: bytes,
   canonicalInput: bytes,
@@ -58,6 +59,16 @@ const decisionRow = Schema.Struct({
   canonicalResult: bytes,
   disposition,
   time: storedTime,
+});
+const auditRow = Schema.Struct({
+  sequence: storedTime,
+  checkId: Schema.String,
+  direction: completedCheck.fields.direction,
+  canonicalCandidate: bytes,
+  canonicalInput: bytes,
+  canonicalResult: bytes,
+  time: storedTime,
+  disposition,
 });
 const savedSummary = Schema.parseJson(
   Schema.Struct({ summaries: Schema.Array(firewallDecisionSummarySchema) }),
@@ -88,6 +99,7 @@ interface FirewallTables {
     readonly agent_key: string;
     readonly sequence: Generated<number>;
     readonly check_id: string;
+    readonly message_key: string | null;
     readonly direction: typeof completedCheck.Type.direction;
     readonly canonical_candidate: Uint8Array;
     readonly canonical_input: Uint8Array;
@@ -136,6 +148,7 @@ export function makeFirewallStore(agentKey: string) {
             .values({
               agent_key: agentKey,
               check_id: value.checkId,
+              message_key: value.messageKey,
               direction: value.direction,
               canonical_candidate: value.canonicalCandidate,
               canonical_input: value.canonicalInput,
@@ -175,6 +188,84 @@ export function makeFirewallStore(agentKey: string) {
         }
       });
     return {
+      readAssessments: (messageKeys: readonly string[]) =>
+        run(
+          Effect.gen(function* () {
+            const rows: Array<{
+              readonly messageKey: string;
+              readonly at: number;
+              readonly disposition: "admitted" | "withheld";
+              readonly result: Uint8Array;
+              readonly candidate: Uint8Array;
+            }> = [];
+            for (let start = 0; start < messageKeys.length; start += 400) {
+              const batch = yield* executeQuery(
+                checks
+                  .select([
+                    "message_key as messageKey",
+                    "decided_at as at",
+                    "disposition",
+                    "canonical_result as result",
+                    "canonical_candidate as candidate",
+                  ])
+                  .where(
+                    "message_key",
+                    "in",
+                    messageKeys.slice(start, start + 400),
+                  )
+                  .orderBy("sequence", "asc"),
+              ).pipe(
+                Effect.flatMap(
+                  Schema.decodeUnknown(
+                    Schema.Array(
+                      Schema.Struct({
+                        messageKey: Schema.String,
+                        at: storedTime,
+                        disposition,
+                        result: bytes,
+                        candidate: bytes,
+                      }),
+                    ),
+                  ),
+                ),
+              );
+              rows.push(...batch);
+            }
+            return rows;
+          }),
+        ),
+      auditSequences: () =>
+        run(
+          executeQuery(
+            checks.select("sequence").orderBy("sequence", "asc"),
+          ).pipe(
+            Effect.flatMap(
+              Schema.decodeUnknown(
+                Schema.Array(Schema.Struct({ sequence: Schema.Int })),
+              ),
+            ),
+            Effect.map((rows) => rows.map((row) => row.sequence)),
+          ),
+        ),
+      exportAssessments: (sequences: readonly number[]) =>
+        run(
+          executeQuery(
+            checks
+              .select([
+                "sequence",
+                "check_id as checkId",
+                "direction",
+                "canonical_candidate as canonicalCandidate",
+                "canonical_input as canonicalInput",
+                "canonical_result as canonicalResult",
+                "decided_at as time",
+                "disposition",
+              ])
+              .where("sequence", "in", sequences)
+              .orderBy("sequence", "asc")
+              .limit(100),
+          ).pipe(Effect.flatMap(Schema.decodeUnknown(Schema.Array(auditRow)))),
+        ),
       readPolicy: () =>
         run(
           executeQuery(policy).pipe(

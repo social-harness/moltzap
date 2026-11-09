@@ -341,7 +341,7 @@ it("recovers an interrupted check and retains its published view after edits, ac
       .open({
         policy: firewallOptions({
           decide: (request) =>
-            Effect.succeed(decisionResponse(request, "compliant", "required")),
+            Effect.succeed(decisionResponse(request, "unresolved")),
         }),
       })
       .pipe(Scope.extend(resumedScope));
@@ -461,14 +461,21 @@ it("withholds peer content from both the inbox and history", () =>
     ).toEqual([]);
   }));
 
-it("answers a message its rule withholds with that rule's feedback, as an ordinary message", () =>
+it("checks a configured refusal through outgoing policy before sending it", () =>
   Effect.gen(function* () {
     const subject = yield* makeHarnessFixture;
     const runtime = yield* subject.open({
       policy: firewallOptions(
         {
           decide: (request) =>
-            Effect.succeed(decisionResponse(request, "violation")),
+            Effect.succeed(
+              decisionResponse(
+                request,
+                decisionState(request.state).direction === "incoming"
+                  ? "violation"
+                  : "compliant",
+              ),
+            ),
         },
         "reply",
       ),
@@ -1005,7 +1012,7 @@ it("uses the public invalid-answer reason without exposing the original answer",
         decide: (request) =>
           Effect.sync(() => {
             seen.push(request);
-            return decisionResponse(request, "compliant", "required");
+            return decisionResponse(request, "unresolved");
           }),
       }),
     });

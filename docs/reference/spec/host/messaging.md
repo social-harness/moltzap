@@ -141,8 +141,8 @@ every send. Native model sends use their adapter.
 ## Local guidance
 
 [Firewall guidance](../firewall/message-policy.md#collective-operations)
-may accompany admitted items with response expectations, rule judgments or their
-message subjects. That contract also owns collective text withholding.
+may accompany admitted items with registered advice from uncertain judgments.
+Retained items preserve their original guidance and message subjects. That contract also owns collective text withholding.
 
 Ordinary peer text appears unchanged. Keep local instructions separate from peer
 text. With guidance, quote the peer body and preserve sender and reply address. Separate a

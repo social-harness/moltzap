@@ -33,6 +33,7 @@ import {
   Communication,
   CommunicationError,
   type Conversation,
+  type HistoryPage,
   type Incoming,
   Message,
   type Outgoing,
@@ -451,6 +452,8 @@ function makeHarness<R>(
               communication,
               [value.author, ...value.recipients],
               historyLimit,
+              undefined,
+              firewall.requiresProtocolHistory(),
             );
             const decision = yield* firewall
               .checkOutgoing(value, context)
@@ -720,6 +723,7 @@ function checkIncoming(
         [value.message.author, ...value.message.recipients],
         limit,
         value.message,
+        firewall.requiresProtocolHistory(),
       );
     } else if (value.kind === "result") {
       const question =
@@ -764,13 +768,33 @@ function checkIncoming(
       };
     }
     const decision = yield* firewall.checkIncoming(value, evidence);
-    const reply = yield* replyTo(value, decision, agentCardOf(card));
+    const proposedReply = yield* replyTo(value, decision, agentCardOf(card));
+    const replyEvidence = {
+      ...(evidence !== undefined && "history" in evidence
+        ? evidence
+        : { history: [], earlierHistoryOmitted: false, gaps: [] }),
+      references:
+        value.kind === "message" || value.kind === "request"
+          ? [
+              {
+                authorAgentId: value.message.author.agentId,
+                msgId: value.message.msgId,
+              },
+            ]
+          : [],
+    };
+    const replyDecision =
+      proposedReply === undefined
+        ? undefined
+        : yield* firewall.checkOutgoing(proposedReply, replyEvidence);
+    const reply = replyDecision?.kind === "allowed" ? proposedReply : undefined;
     const expired =
       value.kind === "request" &&
       (yield* Clock.currentTimeMillis) >= value.message.operation.deadlineAt;
     const sql = yield* SqlClient.SqlClient;
     yield* sql.withTransaction(
       decision.save.pipe(
+        Effect.zipRight(replyDecision?.save ?? Effect.void),
         Effect.zipRight(inbox.publish(entry, decision, expired)),
         Effect.tap(() =>
           reply === undefined
@@ -857,68 +881,16 @@ function evidenceFor(
   members: readonly AgentCard[],
   limit: number,
   before?: Message,
+  protocol = false,
 ): Effect.Effect<FirewallEvidence, InboxError> {
-  return Effect.gen(function* () {
-    const selected = yield* conversation(members).pipe(
-      Effect.catchTag("HistoryError", () =>
-        Effect.fail(new InboxError({ reason: "persistence-failed" })),
-      ),
-    );
-    const page = yield* communication
-      .readHistory({
-        members: selected,
-        order: "newest",
-        limit,
-        ...(before === undefined
-          ? {}
-          : {
-              beforeMessage: {
-                authorAgentId: before.author.agentId,
-                msgId: before.msgId,
-              },
-            }),
-      })
-      .pipe(
-        Effect.catchTag("CommunicationError", (error) =>
-          error.reason === "history-gap" || error.reason === "unknown-message"
-            ? Effect.succeed(undefined)
-            : Effect.fail(new InboxError({ reason: "persistence-failed" })),
-        ),
-      );
-    if (page === undefined) {
-      return {
-        history: [],
-        earlierHistoryOmitted: false,
-        gaps: ["The preceding conversation history is unavailable."],
-      };
-    }
-    let bytes = 0;
-    const recent: Array<(typeof page.entries)[number]> = [];
-    for (const entry of [...page.entries].reverse()) {
-      if (bytes + entry.messageBytes > MAXIMUM_RUNTIME_ITEM_BYTES) {
-        break;
-      }
-      recent.push(entry);
-      bytes += entry.messageBytes;
-    }
-    recent.reverse();
-    const history = yield* inbox.visibleMessages(
-      recent.map((entry) => entry.message),
-    );
-    return {
-      history,
-      earlierHistoryOmitted:
-        page.earlierMessagesOmitted || recent.length < page.entries.length,
-      gaps: [
-        ...(page.pendingOutgoing
-          ? ["An earlier outgoing message is not yet complete."]
-          : []),
-        ...(recent.length < page.entries.length
-          ? ["The preceding history exceeds the evidence byte limit."]
-          : []),
-      ],
-    };
-  });
+  return conversation(members).pipe(
+    Effect.catchTag("HistoryError", () =>
+      Effect.fail(new InboxError({ reason: "persistence-failed" })),
+    ),
+    Effect.flatMap((selected) =>
+      readEvidence(inbox, communication, selected, { limit, before, protocol }),
+    ),
+  );
 }
 
 function conversation(
@@ -1027,4 +999,132 @@ function supervise<E, R>(
   return Effect.forkIn(Effect.interruptible(work), scope).pipe(
     Effect.flatMap((fiber) => FiberSet.add(workers, fiber)),
   );
+}
+
+/** Protocol completeness uses only the transport's public history contract. */
+function readEvidence(
+  inbox: Inbox,
+  communication: CommunicationService,
+  members: Conversation,
+  options: {
+    readonly limit: number;
+    readonly before?: Message;
+    readonly protocol?: boolean;
+  },
+): Effect.Effect<FirewallEvidence, InboxError> {
+  return Effect.gen(function* () {
+    const { limit, before, protocol = false } = options;
+    const full = protocol
+      ? yield* readProtocolHistory(communication, members, limit, before)
+      : undefined;
+    const page =
+      full === undefined
+        ? yield* readEvidencePage(communication, members, limit, before)
+        : {
+            entries: full.entries.slice(-limit),
+            earlierMessagesOmitted: full.entries.length > limit,
+          };
+    if (page === undefined) {
+      return {
+        history: [],
+        earlierHistoryOmitted: false,
+        gaps: ["The preceding conversation history is unavailable."],
+      };
+    }
+    let bytes = 0;
+    const recent: Array<(typeof page.entries)[number]> = [];
+    for (const entry of [...page.entries].reverse()) {
+      if (bytes + entry.messageBytes > MAXIMUM_RUNTIME_ITEM_BYTES) {
+        break;
+      }
+      recent.push(entry);
+      bytes += entry.messageBytes;
+    }
+    recent.reverse();
+    return {
+      history: yield* inbox.visibleMessages(
+        recent.map((entry) => entry.message),
+      ),
+      earlierHistoryOmitted:
+        page.earlierMessagesOmitted || recent.length < page.entries.length,
+      gaps:
+        full?.complete === false
+          ? ["The preceding conversation history is unavailable."]
+          : [],
+      ...(full === undefined
+        ? {}
+        : {
+            protocolHistory: {
+              messages: full.entries.map((entry) => entry.message),
+              complete: full.complete,
+            },
+          }),
+    };
+  }).pipe(Effect.withSpan("readEvidence"));
+}
+
+/** Incoming candidates stop the traversal at their own position, excluding future conversation messages. */
+function readProtocolHistory(
+  communication: CommunicationService,
+  members: Conversation,
+  limit: number,
+  before?: Message,
+) {
+  return Effect.gen(function* () {
+    const pages: Array<HistoryPage["entries"]> = [];
+    let boundary = before;
+    while (true) {
+      const page = yield* readEvidencePage(
+        communication,
+        members,
+        limit,
+        boundary,
+      );
+      if (page === undefined) {
+        return { entries: [...pages].reverse().flat(), complete: false };
+      }
+      pages.push(page.entries);
+      if (!page.earlierMessagesOmitted) {
+        return { entries: [...pages].reverse().flat(), complete: true };
+      }
+      const first = page.entries[0]?.message;
+      if (
+        first === undefined ||
+        (first.author.agentId === boundary?.author.agentId &&
+          first.msgId === boundary.msgId)
+      ) {
+        return { entries: [...pages].reverse().flat(), complete: false };
+      }
+      boundary = first;
+    }
+  });
+}
+
+function readEvidencePage(
+  communication: CommunicationService,
+  members: Conversation,
+  limit: number,
+  before?: Message,
+) {
+  return communication
+    .readHistory({
+      members,
+      order: "newest",
+      limit,
+      ...(before === undefined
+        ? {}
+        : {
+            beforeMessage: {
+              authorAgentId: before.author.agentId,
+              msgId: before.msgId,
+            },
+          }),
+    })
+    .pipe(
+      Effect.catchTag("CommunicationError", (error) =>
+        error.reason === "history-gap" || error.reason === "unknown-message"
+          ? Effect.succeed(undefined)
+          : Effect.fail(new InboxError({ reason: "persistence-failed" })),
+      ),
+    );
 }

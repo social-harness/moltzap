@@ -101,6 +101,22 @@
     {
       "file": "communication/store.ts",
       "reason": "One private communication store owns SQL operations and row types."
+    },
+    {
+      "file": "encoding/sexpr.ts",
+      "reason": "Inert declarative document syntax"
+    },
+    {
+      "file": "firewall/contract.ts",
+      "reason": "Immutable compiled firewall configuration"
+    },
+    {
+      "file": "firewall/audit.ts",
+      "reason": "Operator assessment export"
+    },
+    {
+      "file": "norms/compiler.ts",
+      "reason": "Declarative norm compilation"
     }
   ],
   "compositionRoots": [
@@ -133,7 +149,8 @@
       ],
       "entrypoints": [
         "src/encoding/canonical-json.ts",
-        "src/encoding/identifier.ts"
+        "src/encoding/identifier.ts",
+        "src/encoding/sexpr.ts"
       ],
       "reason": "Shared encoding at external boundaries"
     },
@@ -174,7 +191,9 @@
         "src/firewall/service.ts",
         "src/firewall/check.ts",
         "src/firewall/rules.ts",
-        "src/firewall/chain.ts"
+        "src/firewall/chain.ts",
+        "src/firewall/contract.ts",
+        "src/firewall/audit.ts"
       ],
       "reason": "Policy, assessment and permitted content"
     },
@@ -225,6 +244,16 @@
         "src/database/migrations.ts"
       ],
       "reason": "SQL connections, typed query compilation, transaction context and credential persistence shared by daemon domains"
+    },
+    {
+      "name": "norms",
+      "roots": [
+        "src/norms"
+      ],
+      "entrypoints": [
+        "src/norms/compiler.ts"
+      ],
+      "reason": "Pure norm documents compile to firewall-owned configuration"
     }
   ],
   "layers": [
@@ -235,6 +264,13 @@
         "vendor"
       ],
       "reason": "Host calls coordinate lower services"
+    },
+    {
+      "name": "norms",
+      "folders": [
+        "norms"
+      ],
+      "reason": "Compilation produces firewall configuration without resource ownership"
     },
     {
       "name": "firewall",

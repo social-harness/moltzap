@@ -8,15 +8,17 @@ rules. It returns a judgment and advice, and manages changes to editable rules.
 ```mermaid
 flowchart LR
   A[Messages and permitted history] --> B[Capture input and active rules]
-  B --> C[Run code checks]
-  C --> D[Assess text rules]
+  B --> S[Check declared structure]
+  S --> P[Check protocol against local admitted history]
+  P --> C[Run configured chain]
+  C --> D[Assess applicable text rules]
   D --> E[Combine findings and select advice]
   E --> F[Return judgments and completed checks]
 ```
 
 One call keeps the same policy for every message, including the question and
-answers in a collective result. Advice selects registered instructions and
-references the host may see.
+answers in a collective result. Structural success continues to protocol and semantic assessment. Norm semantic
+rules remain mandatory after a chain allow. Advice uses registered instructions.
 
 The daemon supplies verified participants and permitted conversation history.
 It saves completed checks. Incoming messages remain pending if checking is
@@ -46,3 +48,10 @@ through Effect.
 
 The test-only entry exports `checkMessage` for evaluating supplied rules and
 evidence with an injected provider. It performs no storage or configuration reads.
+
+Structured documents compile in `norms/compiler.ts` into the firewall-owned
+contract grammar. `structure.ts` validates individual messages; `protocol.ts`
+projects admitted conversation facts and validates transitions. `contract-check.ts`
+joins supplied history with exact local assessment records. None reads transport
+queues or schedules model work. The [norm specification](../../../../docs/reference/spec/norms/shared-norms.md)
+defines authoring, correction behavior and snapshot limitations.

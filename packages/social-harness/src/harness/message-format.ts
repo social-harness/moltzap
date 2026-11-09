@@ -472,6 +472,7 @@ function renderInstructions(guidance: CheckedGuidance) {
   }));
 }
 
+/** Retained inbox items keep their original registered advice representation. */
 function instructionDetails(
   instruction: CheckedGuidance["instructions"][number],
 ) {
