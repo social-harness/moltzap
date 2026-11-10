@@ -62,12 +62,6 @@ function validateForm(
     if (form.starts) {
       yield* validateOpening(contract, form);
     }
-    if (form.replyTo !== undefined && !forms.has(form.replyTo)) {
-      return yield* new NormDocumentError({
-        detail: "A reply reference names an undeclared act.",
-        declaration: form.act,
-      });
-    }
     if (form.delay !== undefined) {
       yield* validateDelay(contract, form.delay);
     }
@@ -107,7 +101,6 @@ function validateOpening(contract: CompiledContract, form: MessageForm) {
   const needsHistory =
     form.when.length !== 0 ||
     form.delay !== undefined ||
-    form.replyTo !== undefined ||
     form.relations.length !== 0;
   return !form.by.includes(contract.roles.initiator) || needsHistory
     ? Effect.fail(
@@ -159,10 +152,8 @@ function validateRelation(
   forms: ReadonlyMap<string, MessageForm>,
 ) {
   return Effect.gen(function* () {
-    const source = relation.source;
-    const target = forms.get(source.act);
     const candidate = form.fields.properties[relation.field];
-    if (candidate === undefined || target === undefined) {
+    if (candidate === undefined) {
       return yield* new NormDocumentError({
         detail: "A relation refers to undeclared acts or fields.",
         declaration: form.act,
@@ -174,18 +165,52 @@ function validateRelation(
         declaration: form.act,
       });
     }
-    if (source.kind === "values") {
-      yield* validateSelectedValues(source.keys, target, forms);
-    } else {
-      const fields = source.kind === "field" ? [source.field] : source.fields;
-      if (
-        fields.some((field) => !Object.hasOwn(target.fields.properties, field))
-      ) {
+    const targets = referenceNames(relation.source.act, forms);
+    if (targets.length === 0) {
+      return yield* new NormDocumentError({
+        detail: "A relation refers to an undeclared source.",
+      });
+    }
+    for (const act of targets) {
+      const target = forms.get(act);
+      if (target === undefined) {
         return yield* new NormDocumentError({
-          detail: "A relation names an undeclared source field.",
+          detail: "A relation refers to undeclared acts or fields.",
           declaration: form.act,
         });
       }
+      yield* validateSource(form, relation.source, target, forms);
+    }
+  });
+}
+
+function validateSource(
+  form: MessageForm,
+  source: MessageForm["relations"][number]["source"],
+  target: MessageForm,
+  forms: ReadonlyMap<string, MessageForm>,
+) {
+  return Effect.gen(function* () {
+    if (source.kind === "values") {
+      return yield* validateSelectedValues(source.keys, target, forms);
+    }
+    const fields = source.kind === "field" ? [source.field] : source.fields;
+    if (
+      fields.some((field) => !Object.hasOwn(target.fields.properties, field))
+    ) {
+      return yield* new NormDocumentError({
+        detail: "A relation names an undeclared source field.",
+        declaration: form.act,
+      });
+    }
+    if (
+      source.kind === "field-values" &&
+      fields.some((field) => target.fields.properties[field]?.type !== "string")
+    ) {
+      return yield* new NormDocumentError({
+        detail: "Direct values require declared string fields.",
+        declaration: form.act,
+      });
     }
   });
 }
@@ -198,22 +223,45 @@ function validateSelectedValues(
   target: MessageForm,
   forms: ReadonlyMap<string, MessageForm>,
 ) {
-  const field = forms.get(keys.act)?.fields.properties[keys.field];
-  if (field?.type !== "array" || !("enum" in field.items)) {
-    return Effect.fail(
-      new NormDocumentError({
-        detail:
-          "Selected values require a choice list of declared string field names.",
-      }),
-    );
-  }
-  return field.items.enum.some(
-    (key) => target.fields.properties[key]?.type !== "string",
-  )
-    ? Effect.fail(
-        new NormDocumentError({
+  return Effect.gen(function* () {
+    const targets = referenceNames(keys.act, forms);
+    if (targets.length === 0) {
+      return yield* new NormDocumentError({
+        detail: "A relation refers to an undeclared source.",
+      });
+    }
+    for (const act of targets) {
+      const field = forms.get(act)?.fields.properties[keys.field];
+      if (field?.type !== "array" || !("enum" in field.items)) {
+        return yield* new NormDocumentError({
+          detail:
+            "Selected values require a choice list of declared string field names.",
+        });
+      }
+      if (
+        field.items.enum.some(
+          (key) => target.fields.properties[key]?.type !== "string",
+        )
+      ) {
+        return yield* new NormDocumentError({
           detail: "Selected values name an undeclared string field.",
-        }),
-      )
-    : Effect.void;
+        });
+      }
+    }
+  });
+}
+
+function referenceNames(
+  reference: MessageForm["relations"][number]["source"]["act"],
+  forms: ReadonlyMap<string, MessageForm>,
+) {
+  if (typeof reference === "string") {
+    return [reference];
+  }
+  if ("fact" in reference) {
+    return [...forms.values()]
+      .filter((form) => form.initiates.includes(reference.fact))
+      .map((form) => form.act);
+  }
+  return reference;
 }

@@ -9,17 +9,17 @@
   (field option1 :type string :min-length 1 :max-length 120)
   (field option2 :type string :min-length 1 :max-length 120)
   (field option3 :type string :max-length 120 :optional true))
-(content accept-proposal :by Student :when offered :reply-to propose
+(content accept-proposal :by Student :when offered
   :terminates offered :initiates hold-due
   (field available :type multi-select :choices (option1 option2 option3) :min-items 1
     :description "Every offered option the student can attend, using field names from the latest offer.")
   (relation subset available (present propose option1 option2 option3)))
-(content reject-proposal :by Student :when offered :reply-to propose
+(content reject-proposal :by Student :when offered
   :terminates offered :initiates offer-due)
-(content agree :by Professor :when hold-due :reply-to accept-proposal
+(content agree :by Professor :when hold-due
   :terminates hold-due :initiates held
   (field recheck-after :type integer :minimum 5 :maximum 60 :description "Seconds before the student checks back."))
-(content query-if :by Student :when held :reply-to agree
+(content query-if :by Student :when held
   :after held :delay recheck-after :unit seconds
   :terminates held :initiates (decision-due offer-due))
 (content confirm :by Professor :when decision-due :ends true

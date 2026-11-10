@@ -732,9 +732,6 @@ describe("Firewall rule chain actions", () => {
               feedback: [],
               detail: { accepts: ["inform"] },
             });
-            expect(refusal?.message).toContain(
-              'Details: {"accepts":["inform"]}',
-            );
           }),
         (agentKey) => Firewall.layer(agentKey, undefined, chain),
       );

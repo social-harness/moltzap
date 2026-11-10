@@ -7,11 +7,7 @@
  */
 
 import { Effect, Schema } from "effect";
-import type {
-  Message,
-  MessageReference,
-  Outgoing,
-} from "../communication/service.js";
+import type { Message, Outgoing } from "../communication/service.js";
 import { exactStruct } from "../encoding/canonical-json.js";
 import {
   FirewallPolicyError,
@@ -23,8 +19,8 @@ type RefusalReason = typeof firewallRefusalReasonSchema.Type;
 
 /** Carries bounded preceding history and each message's visibility to the agent. */
 export interface FirewallEvidence {
-  /** Known incoming references may be answered even when their content was withheld. */
-  readonly references?: readonly MessageReference[];
+  /** Incoming messages awaiting persistence retain reference ancestry for refusal replies. */
+  readonly references?: readonly Message[];
   /** Complete preceding application history for a contract, separate from the bounded text window. */
   readonly protocolHistory?: {
     readonly messages: readonly Message[];

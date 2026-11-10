@@ -112,6 +112,7 @@ export const MessageIntent = exactStruct({
   membershipHash: MembershipHash,
   authorAgentId: AgentId,
   msgId: MsgId,
+  replyToMsgId: Schema.optional(MsgId),
   content: Content,
 });
 export type MessageIntent = typeof MessageIntent.Type;

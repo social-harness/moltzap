@@ -88,7 +88,7 @@ export function defaultDecision(
   }).pipe(Effect.withSpan("defaultDecision"));
 }
 
-/** A structural or protocol refusal retains current state alongside its exact assessment input. */
+/** Retains the failed check and its exact inputs without recommending another transition. */
 export function contractRefusal(
   activeRevision: string,
   candidate: Candidate,
@@ -97,7 +97,6 @@ export function contractRefusal(
 ) {
   return Effect.gen(function* () {
     const detail = {
-      ...check.guidance,
       ...(check.selected === undefined
         ? {}
         : { norm: check.selected.name, revision: check.selected.digest }),
@@ -179,7 +178,6 @@ export function attachContract(
       ),
     );
     const detail = {
-      ...check.guidance,
       norm: check.contract.name,
       revision: check.contract.digest,
       act: check.record.act.name,
@@ -193,7 +191,6 @@ export function attachContract(
       canonicalInput: yield* canonicalBytes({
         ...input,
         contract: check.contract,
-        protocolContext: check.guidance,
       }),
       canonicalResult: yield* canonicalBytes({
         ...result,

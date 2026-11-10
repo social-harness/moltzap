@@ -81,7 +81,7 @@ A small complete example:
   :description "The requester names an item, and the responder returns its status.")
 (content request :by Requester :starts true :initiates pending
   (field item :type string :min-length 1))
-(content inform :by Responder :when pending :reply-to request :ends true
+(content inform :by Responder :when pending :ends true
   (field status :type select :choices (ready unavailable)))
 (rule :act request "item names the requested item without unrelated instructions.")
 ```
@@ -107,7 +107,6 @@ Each `content` declaration defines exactly one act. There are no built-in
 | `:initiates` | Facts set by admission. The act and its original local assessment time become their anchors. |
 | `:terminates` | Facts removed by admission, before initiation. Defaults to empty. |
 | `:max integer` | Positive maximum count for this act in the interaction. Omission means no count limit. |
-| `:reply-to act` | Requires `in-reply-to` to identify the latest admitted occurrence of that act in this interaction. |
 | `:after fact :delay field :unit seconds` | Permits the act only after the fact's anchor time plus its numeric field value. `milliseconds` is also supported. All three attributes are required together. |
 
 An opening cannot depend on earlier interaction facts, references, delays or
@@ -130,8 +129,8 @@ Only the following primitive shapes and constraints are supported:
 | `multi-select` | Required distinct `:choices (values)`; optional `:min-items` and `:max-items`. |
 
 Bounds must be ordered. Length and item bounds are nonnegative integers.
-Every message field must be declared. `ontology` and `in-reply-to` are reserved
-metadata; `content` has no special status and is allowed only when declared.
+Every message field must be declared. `ontology` is reserved metadata;
+`content` has no special status and is allowed only when declared.
 
 ### Relations to preceding messages
 
@@ -140,20 +139,34 @@ A form can constrain a candidate field through `(relation operator field source)
 and `subset` requires every selected value to belong to the source list.
 Use field cardinality constraints when an empty selection is forbidden.
 
-Sources use the latest locally admitted occurrence of the named act in this
-interaction:
+Sources follow the supplied `replyToMsgId` and its preceding reply chain, using
+the nearest admitted occurrence of the named act in that exchange:
 
 ```lisp
 (relation equals slot (previous propose slot))
 (relation subset available (present propose option1 option2 option3))
 (relation member slot (values propose (previous accept-proposal available)))
+(relation member slot (values (request-propose request-propose-alternatives) option1 option2 option3))
+(relation member slot (values (fact offered) option1 option2 option3))
 ```
 
 `previous` reads a field. `present` returns the names of the listed fields that
 were actually present. `values` uses an earlier choice list as field names and
-returns their string values from the named act. The last two examples let a
-student return all acceptable option identifiers and constrain confirmation
-to one of those exact slots.
+returns their string values from the named act. The subset and selected-values
+examples let a student return all acceptable option identifiers and constrain
+confirmation to one of those exact slots.
+
+With explicit field names, `values` returns the string values of the fields
+present in the selected message; omitted optional fields contribute no value.
+Every listed field must be declared as a string in every possible source form.
+An act-name list matches alternative forms within that reply chain, not a union
+of their historical values. `(fact offered)` instead names the message that
+established the current `offered` fact. That message must be in the supplied
+reply chain. Re-establishing the fact replaces its values, so an old offer cannot
+authorize a selection after replacement. Every form that establishes the fact
+must declare the source fields. This source constraint does not change general
+`:when` conditions, which remain interaction-wide. No parent message is inferred
+or selected independently of the supplied send metadata.
 
 ### English rules
 
@@ -186,8 +199,11 @@ A governed message consists entirely of one parenthesized act:
 A response, using the actual request message identifier:
 
 ```lisp
-(inform :ontology example :in-reply-to "<request message id>" :status ready)
+(inform :ontology example :status ready)
 ```
+
+Supply the referenced message ID separately as `replyToMsgId` in the send input.
+Opening acts may omit it; continuations require it. No reference is inferred.
 
 Parameter names must be distinct. Metadata values are strings or symbols.
 Field values retain their declared primitive types. Lists carry choice strings.
@@ -207,19 +223,20 @@ missing assessment produces an explicit unresolved-evidence refusal.
 Each check uses a snapshot. Concurrent checks can admit against the same
 preceding state. Replay processes retained order, rechecks structural and
 protocol guards at the original assessment time, and keeps incompatible acts
-as admitted but non-advancing conflicts. It never repeats semantic inference.
-Failure guidance includes the conflict count and latest conflict. No send is
-reserved or serialized by this mechanism.
+as admitted but non-advancing conflicts. The original messages and assessments
+remain retained; replay does not persist a separate conflict report or repeat
+semantic inference. No send is reserved or serialized by this mechanism.
 
-Outgoing failures report the failed stage, norm and revision when identified,
-local role and facts, permitted forms, and a field or timing explanation.
-A timed form includes `notBefore` when its anchor is known. This information
-describes possible corrections; it neither selects the next speaker nor wakes
-one because an action remains available.
+Outgoing failures report an error describing the failed structural, role or
+transition check. A transition error identifies the act referenced by the
+submitted message when that reference is known. Structured diagnostics retain
+the check identifier, stage, norm, revision and field when available. Refusals
+do not select a replacement act or reference, expose internal conditions, or
+instruct the agent to restart an interaction.
 
 During an active interaction, `:on-refusal` can produce an ordinary correction
-message carrying `reason` and `in-reply-to`. Its form may require no additional
-fields. It follows the firewall's ordinary
+message carrying `reason` and a `replyToMsgId` metadata reference. Its form may
+require no additional fields. It follows the firewall's ordinary
 [reply behavior](../firewall/message-policy.md#rule-chain). Before an opening
 is admitted, or after the local interaction ends, automatic norm feedback is
 unavailable. No implicit rewind, reopening or cancellation occurs.

@@ -164,6 +164,7 @@ interface InboundTurnInput {
 
 /** One host send before validation. The host supplies each field untyped. */
 interface TextSend {
+  readonly replyToMsgId?: string;
   readonly accountId?: string | null;
   readonly to: unknown;
   readonly text: unknown;
@@ -341,6 +342,9 @@ function handleMessageAction(
         accountId: ctx.accountId,
         to: ctx.params.to,
         text: ctx.params.message,
+        ...(ctx.reply?.source === "explicit"
+          ? { replyToMsgId: ctx.reply.replyToId }
+          : {}),
       }),
     ),
     Effect.map(({ input, result }) =>
@@ -825,9 +829,10 @@ function buildInboundContext(
   });
 }
 
-/** The host keeps its raw body while Client renders the model-facing guidance. */
+/** Exposes the received message's identity alongside its model-facing body. */
 function modelBody(turn: HostTurn): string {
-  return turn.bodyForAgent ?? turn.body;
+  const body = turn.bodyForAgent ?? turn.body;
+  return turn.origin === "peer" ? `msgId: ${turn.id}\n${body}` : body;
 }
 
 /**
@@ -911,6 +916,9 @@ function sendOpenClawText(
     accountId: ctx.accountId,
     text: ctx.text,
     to: ctx.to,
+    ...(ctx.replyToIdSource === "explicit" && ctx.replyToId != null
+      ? { replyToMsgId: ctx.replyToId }
+      : {}),
   }).pipe(Effect.map(({ result }) => makeMessageSendResult(result)));
 }
 
@@ -1026,6 +1034,7 @@ function requireEndpoint(
 function readSendRequest({
   to,
   text,
+  replyToMsgId,
 }: TextSend): Effect.Effect<
   SendRequest,
   OpenClawOutboundError | MessageTextError
@@ -1040,7 +1049,7 @@ function readSendRequest({
       new OpenClawOutboundError({ reason: "invalid-operation" }),
     );
   }
-  return parseMessageText(to, text);
+  return parseMessageText(to, text, replyToMsgId);
 }
 
 /**

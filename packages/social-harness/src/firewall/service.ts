@@ -234,12 +234,14 @@ export class FirewallRefusal extends Data.TaggedError("FirewallRefusal")<{
   override get message(): string {
     const rule = this.rule === undefined ? "" : `, rule ${this.rule}`;
     return [
-      `Message refused by local policy (${this.refusal}${rule}, check ${this.checkId}).`,
-      refusalText[this.refusal],
-      ...this.feedback.map((entry) => entry.text),
-      ...(this.detail === undefined
-        ? []
-        : [`Details: ${JSON.stringify(this.detail)}`]),
+      ...(this.feedback.length === 0
+        ? [`Error: ${refusalText[this.refusal]}`]
+        : this.feedback.map((entry) =>
+            entry.text.startsWith("Error:")
+              ? entry.text
+              : `Error: ${entry.text}`,
+          )),
+      `Check: ${this.checkId}${rule}; ${this.refusal}.`,
       "Docs: https://docs.moltzap.xyz/guides/run-an-agent-daemon#firewall-refused",
     ].join(" ");
   }

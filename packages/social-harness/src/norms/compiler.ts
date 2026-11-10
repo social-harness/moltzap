@@ -110,7 +110,6 @@ function compileForm(form: Declaration, roles: CompiledContract["roles"]) {
       ":initiates",
       ":terminates",
       ":max",
-      ":reply-to",
       ":after",
       ":delay",
       ":unit",
@@ -162,7 +161,6 @@ function compileForm(form: Declaration, roles: CompiledContract["roles"]) {
       : [roles.initiator, roles.participant];
     const maximum = yield* numberAttribute(form, ":max");
     const delay = yield* compileDelay(form);
-    const replyTo = atom(form.attributes.get(":reply-to"));
     return {
       act: form.name ?? "",
       by,
@@ -174,7 +172,6 @@ function compileForm(form: Declaration, roles: CompiledContract["roles"]) {
       initiates: yield* names(form.attributes.get(":initiates")),
       terminates: yield* names(form.attributes.get(":terminates")),
       ...(maximum === undefined ? {} : { maximum }),
-      ...(replyTo === undefined ? {} : { replyTo }),
       ...(delay === undefined ? {} : { delay }),
       relations: yield* Effect.forEach(
         children.filter((child) => child.kind === "relation"),
@@ -248,12 +245,7 @@ function compileSource(
       });
     }
     const [head, act, ...rest] = node.values;
-    const name = atom(act);
-    if (name === undefined) {
-      return yield* new NormDocumentError({
-        detail: "A value source names an earlier act.",
-      });
-    }
+    const name = yield* compileActReference(act);
     if (
       atom(head) === "previous" &&
       rest.length === 1 &&
@@ -268,13 +260,53 @@ function compileSource(
         fields: yield* names({ kind: "list", values: rest }),
       };
     }
-    if (atom(head) === "values" && rest.length === 1 && rest[0] !== undefined) {
-      const keys = yield* compileSource(rest[0]);
-      if (keys.kind === "field") {
-        return { kind: "values", act: name, keys };
+    if (atom(head) === "values") {
+      if (rest.length === 1 && rest[0]?.kind === "list") {
+        const keys = yield* compileSource(rest[0]);
+        if (keys.kind === "field") {
+          return { kind: "values", act: name, keys };
+        }
+      } else {
+        const fields = yield* names({ kind: "list", values: rest });
+        const [first, ...others] = fields;
+        if (first !== undefined) {
+          return {
+            kind: "field-values",
+            act: name,
+            fields: [first, ...others],
+          };
+        }
       }
     }
     return yield* new NormDocumentError({ detail: "Invalid value source." });
+  });
+}
+
+/** Relations may read the same fields from alternative forms of a referenced exchange. */
+function compileActReference(
+  node?: SExpression,
+): Effect.Effect<
+  MessageForm["relations"][number]["source"]["act"],
+  NormDocumentError
+> {
+  return Effect.gen(function* () {
+    if (node?.kind === "list" && atom(node.values[0]) === "fact") {
+      const fact = atom(node.values[1]);
+      if (node.values.length !== 2 || fact === undefined) {
+        return yield* new NormDocumentError({
+          detail: "A fact source names one declared fact.",
+        });
+      }
+      return { fact };
+    }
+    const references = yield* names(node);
+    const [first, ...rest] = references;
+    if (first === undefined || new Set(references).size !== references.length) {
+      return yield* new NormDocumentError({
+        detail: "An act reference requires distinct, nonempty act names.",
+      });
+    }
+    return rest.length === 0 ? first : ([first, ...rest] as const);
   });
 }
 
@@ -323,11 +355,7 @@ function compileField(form: Declaration) {
       ":description",
       ...allowed,
     ]);
-    if (
-      form.children.length !== 0 ||
-      form.name === "ontology" ||
-      form.name === "in-reply-to"
-    ) {
+    if (form.children.length !== 0 || form.name === "ontology") {
       return yield* new NormDocumentError({
         detail:
           "A field cannot redefine envelope metadata or contain child declarations.",

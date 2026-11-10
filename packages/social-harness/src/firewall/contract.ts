@@ -9,6 +9,11 @@ const name = Schema.String.pipe(
   Schema.pattern(/^[a-zA-Z][a-zA-Z0-9-]{0,63}$/u),
 );
 const names = Schema.Array(name);
+const actReference = Schema.Union(
+  name,
+  Schema.NonEmptyArray(name),
+  exactStruct({ fact: name }),
+);
 const valueSchema = Schema.Union(
   Schema.String,
   Schema.Number.pipe(Schema.finite()),
@@ -18,7 +23,6 @@ const valueSchema = Schema.Union(
 const actSchema = exactStruct({
   name,
   norm: name,
-  inReplyTo: Schema.optional(Schema.String),
   fields: Schema.Record({ key: name, value: valueSchema }),
 });
 
@@ -27,13 +31,26 @@ export type StructuredAct = typeof actSchema.Type;
 
 const fieldSource = exactStruct({
   kind: Schema.Literal("field"),
-  act: name,
+  act: actReference,
   field: name,
 });
 const sourceSchema = Schema.Union(
   fieldSource,
-  exactStruct({ kind: Schema.Literal("present"), act: name, fields: names }),
-  exactStruct({ kind: Schema.Literal("values"), act: name, keys: fieldSource }),
+  exactStruct({
+    kind: Schema.Literal("present"),
+    act: actReference,
+    fields: names,
+  }),
+  exactStruct({
+    kind: Schema.Literal("values"),
+    act: actReference,
+    keys: fieldSource,
+  }),
+  exactStruct({
+    kind: Schema.Literal("field-values"),
+    act: actReference,
+    fields: Schema.NonEmptyArray(name),
+  }),
 );
 const relationSchema = exactStruct({
   operator: Schema.Literal("equals", "member", "subset"),
@@ -51,7 +68,6 @@ const formSchema = exactStruct({
   initiates: names,
   terminates: names,
   maximum: Schema.optional(Schema.Positive.pipe(Schema.int())),
-  replyTo: Schema.optional(name),
   delay: Schema.optional(
     exactStruct({
       fact: name,
@@ -62,7 +78,7 @@ const formSchema = exactStruct({
   relations: Schema.Array(relationSchema),
 });
 
-/** The same form supplies field errors, permitted-action descriptions and transition semantics. */
+/** Declares field constraints, role permissions and transition semantics. */
 export type MessageForm = typeof formSchema.Type;
 
 /** All routing metadata is declarative; selecting an English rule does not judge its content. */

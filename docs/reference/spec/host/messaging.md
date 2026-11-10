@@ -42,6 +42,11 @@ Resolution names the first failed member with `unknown-agent` or
 
 ## Sending a message
 
+Ordinary sends accept optional `replyToMsgId` metadata. It is preserved in the
+message and conversation history. Under a configured contract, continuations
+require a reference and opening acts may omit it. The endpoint does not infer
+or replace a reference.
+
 Every send supplies a destination and text or an answer. Questions add an
 answer schema and deadline. Session focus and prior messages cannot supply an
 omitted destination. Native hosts use the

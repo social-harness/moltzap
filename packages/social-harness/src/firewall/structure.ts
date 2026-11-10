@@ -11,7 +11,6 @@ import {
 import {
   type CompiledContract,
   ContractProblem,
-  type MessageForm,
   type StructuredAct,
 } from "./contract.js";
 
@@ -38,7 +37,7 @@ export function readAct(
     );
     if (form?.kind !== "list" || extra.length !== 0) {
       return yield* structuralProblem(
-        "A message contains exactly one parenthesized act.",
+        "Error: Reply does not contain exactly one parenthesized speech act.",
       );
     }
     const [head, ...parameters] = form.values;
@@ -59,14 +58,33 @@ export function readAct(
 export function checkStructure(contract: CompiledContract, act: StructuredAct) {
   return Effect.gen(function* () {
     const form = contract.forms.find((entry) => entry.act === act.name);
-    if (form === undefined || contract.name !== act.norm) {
+    if (contract.name !== act.norm) {
+      return yield* new ContractProblem({
+        stage: "protocol",
+        reason: "rule-violation",
+        detail: `Error: ${act.name} is not valid for the active norm ${contract.name}.`,
+      });
+    }
+    if (form === undefined) {
       return yield* structuralProblem(
-        "The act must have a declared form in its installed norm.",
+        `Error: ${act.name} is not a valid act in ${act.norm}.`,
       );
     }
     yield* validateAnswer(form.fields, act.fields).pipe(
       Effect.mapError((failures) =>
-        structuralProblem(JSON.stringify(failures)),
+        structuralProblem(
+          failures
+            .map((failure) => {
+              if (failure.reason === "unexpected") {
+                return `Error: ${failure.field} is not a valid field of ${act.name} in ${act.norm}.`;
+              }
+              if (failure.reason === "missing") {
+                return `Error: ${failure.field} is required for ${act.name} in ${act.norm}.`;
+              }
+              return `Error: ${failure.field} is not valid for ${act.name} in ${act.norm}.`;
+            })
+            .join(" "),
+        ),
       ),
     );
     return form;
@@ -80,26 +98,10 @@ export function formatAct(act: StructuredAct): string {
     { kind: "symbol", value: ":ontology" },
     { kind: "symbol", value: act.norm },
   ];
-  if (act.inReplyTo !== undefined) {
-    values.push(
-      { kind: "symbol", value: ":in-reply-to" },
-      { kind: "string", value: act.inReplyTo },
-    );
-  }
   for (const [name, value] of Object.entries(act.fields)) {
     values.push({ kind: "symbol", value: `:${name}` }, valueExpression(value));
   }
   return writeSExpression({ kind: "list", values });
-}
-
-/** Required fields and declared guards are safe, concrete correction guidance. */
-export function describeForm(form: MessageForm) {
-  return {
-    act: form.act,
-    by: form.by,
-    fields: form.fields,
-    ...(form.replyTo === undefined ? {} : { replyTo: form.replyTo }),
-  };
 }
 
 function readParameters(
@@ -123,33 +125,24 @@ function readParameters(
       const field = key.value.slice(1);
       if (fields.has(field)) {
         return yield* structuralProblem(
-          "Parameters must have distinct :names and one value each.",
+          `Error: ${field} appears more than once.`,
           field,
         );
       }
       fields.set(field, yield* readValue(value));
     }
     const norm = fields.get("ontology");
-    const inReplyTo = fields.get("in-reply-to");
     if (typeof norm !== "string") {
       return yield* structuralProblem(
         ":ontology must name an installed norm.",
         "ontology",
       );
     }
-    if (inReplyTo !== undefined && typeof inReplyTo !== "string") {
-      return yield* structuralProblem(
-        "Envelope references are strings.",
-        "in-reply-to",
-      );
-    }
     fields.delete("ontology");
-    fields.delete("in-reply-to");
     return {
       name,
       norm,
       fields: Object.fromEntries(fields),
-      ...(inReplyTo === undefined ? {} : { inReplyTo }),
     };
   });
 }

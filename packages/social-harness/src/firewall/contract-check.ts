@@ -16,7 +16,6 @@ import {
 import {
   checkProtocol,
   projectProtocol,
-  protocolGuidance,
   type ProtocolView,
 } from "./protocol.js";
 import { checkStructure, formatAct, readAct } from "./structure.js";
@@ -26,7 +25,6 @@ export type ContractCheck = {
   readonly view: ProtocolView;
   readonly contracts: readonly CompiledContract[];
   readonly selected?: CompiledContract;
-  readonly guidance: ReturnType<typeof protocolGuidance>;
 } & (
   | { readonly kind: "unconfigured" }
   | {
@@ -64,13 +62,11 @@ export function prepareContract(
         return yield* missing("The preceding protocol history is incomplete.");
       }
       const admitted = yield* admittedHistory(store, history);
-      view = {
-        ...(yield* projectProtocol(admitted)),
-        references: [
-          ...history.map((message) => message.msgId),
-          ...(evidence.references ?? []).map((reference) => reference.msgId),
-        ],
-      };
+      const now = yield* Clock.currentTimeMillis;
+      view = yield* projectProtocol([
+        ...admitted,
+        ...(evidence.references ?? []).map((message) => ({ message, at: now })),
+      ]);
       if (view.active === undefined && contracts.length === 0) {
         return { kind: "unconfigured" as const };
       }
@@ -89,9 +85,12 @@ export function prepareContract(
       selected = contract;
       const form = yield* checkStructure(contract, act);
       const record = yield* checkProtocol(view, contract, form, {
+        ...("replyToMsgId" in value
+          ? { replyToMsgId: value.replyToMsgId }
+          : {}),
         act,
         author: value.author.agentId,
-        now: yield* Clock.currentTimeMillis,
+        now,
       });
       return { kind: "ready" as const, contract, record };
     }).pipe(
@@ -104,7 +103,6 @@ export function prepareContract(
       view,
       contracts,
       ...(selected === undefined ? {} : { selected }),
-      guidance: protocolGuidance(view, contracts, value.author.agentId),
     };
   }).pipe(Effect.withSpan("prepareContract"));
 }
@@ -128,7 +126,6 @@ export function contractReply(
   return formatAct({
     name: act,
     norm: contract.name,
-    inReplyTo: value.msgId,
     fields: { reason: detail },
   });
 }

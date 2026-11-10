@@ -1,7 +1,6 @@
 /** @file Projects locally admitted conversations and checks declared transitions. */
 
 import { Effect, Either } from "effect";
-import { compareAscii } from "../encoding/identifier.js";
 import {
   type AdmittedAct,
   type CompiledContract,
@@ -10,20 +9,17 @@ import {
   type ProtocolRecord,
   type StructuredAct,
 } from "./contract.js";
-import { checkStructure, describeForm } from "./structure.js";
+import { checkStructure } from "./structure.js";
 
 interface Fact {
   readonly at: number;
   readonly act: StructuredAct;
+  readonly messageId: string;
 }
 
 /** The projection is local policy context, not shared delivery or agent execution state. */
 export interface ProtocolView {
-  readonly references?: readonly string[];
-  readonly conflicts?: ReadonlyArray<{
-    readonly message: string;
-    readonly explanation: string;
-  }>;
+  readonly referenceActs?: ReadonlyMap<string, string | undefined>;
   readonly active?: {
     readonly contract: CompiledContract;
     readonly initiator: string;
@@ -31,11 +27,13 @@ export interface ProtocolView {
     readonly facts: ReadonlyMap<string, Fact>;
     readonly counts: ReadonlyMap<string, number>;
     readonly acts: readonly AdmittedAct[];
+    readonly references: ReadonlyMap<string, string | undefined>;
   };
 }
 
 type Active = NonNullable<ProtocolView["active"]>;
 interface Candidate {
+  readonly replyToMsgId?: string;
   readonly act: StructuredAct;
   readonly author: string;
   readonly now: number;
@@ -56,9 +54,17 @@ export function projectProtocol(
       }
       seen.add(key);
       view = yield* replayRecord(view, contracts, entry);
+      view = retainInteractionReference(view, entry);
       view = {
         ...view,
-        references: [...(view.references ?? []), entry.message.msgId],
+        referenceActs: new Map([
+          ...(view.referenceActs ?? []),
+          [
+            entry.message.msgId,
+            entry.protocol?.act.name ??
+              view.referenceActs?.get(entry.message.msgId),
+          ],
+        ]),
       };
     }
     return view;
@@ -74,76 +80,84 @@ export function checkProtocol(
 ): Effect.Effect<ProtocolRecord, ContractProblem> {
   return Effect.gen(function* () {
     const { act, author, now } = candidate;
-    yield* checkReference(view, form, act);
+    const transitionError = () => invalidTransition(view, contract, candidate);
+    yield* checkReference(view, contract, form, candidate);
     const active = view.active;
     if (active === undefined) {
-      yield* checkOpening(contract, form);
+      yield* checkOpening(contract, form).pipe(
+        Effect.mapError((error) =>
+          error.reason === "rule-violation" ? transitionError() : error,
+        ),
+      );
       return { act, digest: contract.digest, opening: contract };
     }
     if (active.contract.digest !== contract.digest || form.starts) {
-      return yield* violation(
-        "The active interaction must finish before a new one starts.",
-      );
+      return yield* transitionError();
     }
     const role = roleOf(active, author);
-    if (
-      role === undefined ||
-      !form.by.includes(role) ||
-      !enabled(form, active)
-    ) {
+    if (role === undefined || !form.by.includes(role)) {
       return yield* violation(
-        "The sender role or current conversation state does not permit this act.",
+        `Error: ${act.name} is not permitted for ${contract.name} role ${role ?? "unassigned"}.`,
       );
     }
-    if (form.delay !== undefined) {
-      yield* checkDelay(active, form.delay, now);
+    const ancestry = referenceAncestry(active, candidate.replyToMsgId);
+    if (!enabled(form, active)) {
+      return yield* transitionError();
     }
-    yield* checkRelations(active, form, act);
+    if (form.delay !== undefined) {
+      yield* checkDelay(active, form.delay, now).pipe(
+        Effect.mapError((error) =>
+          error.reason === "rule-violation" ? transitionError() : error,
+        ),
+      );
+    }
+    yield* checkRelations(active, form, act, ancestry).pipe(
+      Effect.mapError((error) =>
+        error.reason === "rule-violation" ? transitionError() : error,
+      ),
+    );
     return { act, digest: contract.digest };
   }).pipe(Effect.withSpan("checkProtocol"));
 }
 
-/** Feedback names permitted forms without selecting a next speaker or triggering work. */
-export function protocolGuidance(
-  view: ProtocolView,
-  contracts: readonly CompiledContract[],
-  author: string,
-) {
+/** Withheld messages inherit their referenced interaction without advancing it. */
+function retainInteractionReference(view: ProtocolView, entry: AdmittedAct) {
   const active = view.active;
-  return {
-    state:
-      active === undefined
-        ? "idle"
-        : [...active.facts.keys()].sort(compareAscii),
-    ...(view.conflicts?.length
-      ? {
-          conflictCount: view.conflicts.length,
-          lastConflict: view.conflicts.at(-1),
-        }
-      : {}),
-    ...(active === undefined
-      ? {}
-      : {
-          norm: active.contract.name,
-          revision: active.contract.digest,
-          role: roleOf(active, author),
-        }),
-    permittedActs:
-      active === undefined
-        ? contracts.flatMap((contract) =>
-            contract.forms
-              .filter((form) => form.starts)
-              .map((form) => ({ norm: contract.name, ...describeForm(form) })),
-          )
-        : active.contract.forms
-            .filter(
-              (form) =>
-                !form.starts &&
-                form.by.includes(roleOf(active, author) ?? "") &&
-                enabled(form, active),
-            )
-            .map((form) => timedForm(active, form)),
-  };
+  if (active === undefined) {
+    return view;
+  }
+  const reference = entry.message.replyToMsgId;
+  const belongs =
+    active.acts[0]?.message.msgId === entry.message.msgId ||
+    (reference !== undefined && active.references.has(reference));
+  return belongs
+    ? {
+        ...view,
+        active: {
+          ...active,
+          references: new Map([
+            ...active.references,
+            [entry.message.msgId, reference],
+          ]),
+        },
+      }
+    : view;
+}
+
+/** Describes the supplied reference without selecting a replacement. */
+function invalidTransition(
+  view: ProtocolView,
+  contract: CompiledContract,
+  candidate: Candidate,
+) {
+  const preceding =
+    candidate.replyToMsgId === undefined
+      ? undefined
+      : view.referenceActs?.get(candidate.replyToMsgId);
+  const after = preceding === undefined ? "" : ` after ${preceding}`;
+  return violation(
+    `Error: ${candidate.act.name} is not valid${after} for ${contract.name}.`,
+  );
 }
 
 function replayRecord(
@@ -174,6 +188,9 @@ function replayRecord(
       Effect.flatMap((shape) =>
         checkProtocol(view, contract, shape, {
           act: protocol.act,
+          ...(entry.message.replyToMsgId === undefined
+            ? {}
+            : { replyToMsgId: entry.message.replyToMsgId }),
           author: entry.message.author.agentId,
           now: entry.at,
         }),
@@ -181,14 +198,7 @@ function replayRecord(
       Effect.either,
     );
     return yield* Either.match(checked, {
-      onLeft: (error) =>
-        Effect.succeed({
-          ...view,
-          conflicts: [
-            ...(view.conflicts ?? []),
-            { message: entry.message.msgId, explanation: error.detail },
-          ],
-        }),
+      onLeft: () => Effect.succeed(view),
       onRight: () => advance(view, contract, form, entry),
     });
   });
@@ -196,47 +206,53 @@ function replayRecord(
 
 function checkReference(
   view: ProtocolView,
+  contract: CompiledContract,
   form: MessageForm,
-  act: StructuredAct,
+  candidate: Candidate,
 ) {
   return Effect.gen(function* () {
     const active = view.active;
-    const known =
-      (view.references ?? []).includes(act.inReplyTo ?? "") ||
-      (active?.acts ?? []).some(
-        (entry) => entry.message.msgId === act.inReplyTo,
-      );
-    if (act.inReplyTo !== undefined && !known) {
-      return yield* violation(
-        "in-reply-to must identify a preceding message in this conversation.",
-        "in-reply-to",
-      );
-    }
-    if (form.replyTo !== undefined && active !== undefined) {
-      const reference = latest(active, form.replyTo);
-      if (reference === undefined) {
-        return yield* unavailable("The required preceding act is missing.");
-      }
-      if (act.inReplyTo !== reference.message.msgId) {
+    const { replyToMsgId } = candidate;
+    if (replyToMsgId === undefined) {
+      if (!form.starts) {
         return yield* violation(
-          "in-reply-to must identify the latest required act in this interaction.",
-          "in-reply-to",
+          "Error: replyToMsgId is required for a continuation act.",
+          "replyToMsgId",
         );
       }
+      return;
+    }
+    const known =
+      (view.referenceActs?.has(replyToMsgId) ?? false) ||
+      active?.references.has(replyToMsgId);
+    if (!known) {
+      return yield* violation(
+        "Error: replyToMsgId does not identify a preceding message in this conversation.",
+        "replyToMsgId",
+      );
+    }
+    if (
+      !form.starts &&
+      active !== undefined &&
+      !active.references.has(replyToMsgId)
+    ) {
+      return yield* invalidTransition(view, contract, candidate);
     }
   });
 }
 
-function checkOpening(contract: CompiledContract, form: MessageForm) {
+function checkOpening(
+  contract: CompiledContract,
+  form: MessageForm,
+): Effect.Effect<void, ContractProblem> {
   if (!form.starts || !form.by.includes(contract.roles.initiator)) {
     return Effect.fail(
-      violation("No interaction is active. Use a declared opening act."),
+      violation(`Error: ${form.act} is not valid for ${contract.name}.`),
     );
   }
   const needsHistory =
     form.when.length !== 0 ||
     form.delay !== undefined ||
-    form.replyTo !== undefined ||
     form.relations.length !== 0;
   return needsHistory
     ? Effect.fail(
@@ -249,7 +265,7 @@ function checkDelay(
   active: Active,
   delay: NonNullable<MessageForm["delay"]>,
   now: number,
-) {
+): Effect.Effect<void, ContractProblem> {
   const permittedAt = permittedTime(active, delay);
   if (permittedAt === undefined) {
     return Effect.fail(
@@ -265,10 +281,15 @@ function checkDelay(
     : Effect.void;
 }
 
-function checkRelations(active: Active, form: MessageForm, act: StructuredAct) {
+function checkRelations(
+  active: Active,
+  form: MessageForm,
+  act: StructuredAct,
+  ancestry: ReadonlySet<string>,
+) {
   return Effect.gen(function* () {
     for (const relation of form.relations) {
-      const expected = yield* sourceValue(active, relation.source);
+      const expected = yield* sourceValue(active, relation.source, ancestry);
       const actual = act.fields[relation.field];
       if (
         actual === undefined ||
@@ -281,15 +302,6 @@ function checkRelations(active: Active, form: MessageForm, act: StructuredAct) {
       }
     }
   });
-}
-
-function timedForm(active: Active, form: MessageForm) {
-  const notBefore =
-    form.delay === undefined ? undefined : permittedTime(active, form.delay);
-  return {
-    ...describeForm(form),
-    ...(notBefore === undefined ? {} : { notBefore }),
-  };
 }
 
 function advance(
@@ -319,6 +331,7 @@ function advance(
     facts: new Map(),
     counts: new Map(),
     acts: [],
+    references: new Map(),
   };
   const facts = new Map(prior.facts);
   const counts = new Map(prior.counts);
@@ -326,7 +339,7 @@ function advance(
     facts.delete(fact);
   }
   for (const fact of form.initiates) {
-    facts.set(fact, { at: entry.at, act });
+    facts.set(fact, { at: entry.at, act, messageId: entry.message.msgId });
   }
   counts.set(form.act, (counts.get(form.act) ?? 0) + 1);
   return Effect.succeed({
@@ -354,10 +367,41 @@ function enabled(form: MessageForm, active: Active) {
   return facts && count;
 }
 
-function latest(active: Active, act: string) {
+/** The supplied reply determines the exchange; no conversation-wide parent is selected. */
+function referenceAncestry(active: Active, reference?: string) {
+  const ancestry = new Set<string>();
+  let current = reference;
+  while (
+    current !== undefined &&
+    !ancestry.has(current) &&
+    active.references.has(current)
+  ) {
+    ancestry.add(current);
+    current = active.references.get(current);
+  }
+  return ancestry;
+}
+
+function referencedAct(
+  active: Active,
+  act: MessageForm["relations"][number]["source"]["act"],
+  ancestry: ReadonlySet<string>,
+) {
+  if (typeof act !== "string" && "fact" in act) {
+    const anchor = active.facts.get(act.fact);
+    return anchor === undefined || !ancestry.has(anchor.messageId)
+      ? undefined
+      : active.acts.find((entry) => entry.message.msgId === anchor.messageId);
+  }
+  const acts = typeof act === "string" ? [act] : act;
   return [...active.acts]
     .reverse()
-    .find((entry) => entry.protocol?.act.name === act);
+    .find(
+      (entry) =>
+        entry.protocol !== undefined &&
+        ancestry.has(entry.message.msgId) &&
+        acts.includes(entry.protocol.act.name),
+    );
 }
 
 function permittedTime(
@@ -399,12 +443,14 @@ function related(
 function sourceValue(
   active: Active,
   source: MessageForm["relations"][number]["source"],
+  ancestry: ReadonlySet<string>,
 ): Effect.Effect<StructuredAct["fields"][string], ContractProblem> {
   return Effect.gen(function* () {
-    const fields = latest(active, source.act)?.protocol?.act.fields;
+    const fields = referencedAct(active, source.act, ancestry)?.protocol?.act
+      .fields;
     if (fields === undefined) {
-      return yield* unavailable(
-        "A declared relation needs an earlier act that is missing.",
+      return yield* violation(
+        "The referenced exchange does not contain the declared source act.",
       );
     }
     if (source.kind === "field") {
@@ -419,7 +465,10 @@ function sourceValue(
     if (source.kind === "present") {
       return source.fields.filter((field) => Object.hasOwn(fields, field));
     }
-    const keys = yield* sourceValue(active, source.keys);
+    const keys =
+      source.kind === "field-values"
+        ? source.fields.filter((field) => Object.hasOwn(fields, field))
+        : yield* sourceValue(active, source.keys, ancestry);
     if (
       typeof keys === "string" ||
       typeof keys === "number" ||

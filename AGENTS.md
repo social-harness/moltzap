@@ -56,6 +56,8 @@ same authority order drift, and the drift is invisible.
 
 ## Workflow
 
+Agent-facing instructions, tool descriptions, and error messages must receive human review of the changed text or validation through actual model experiments before merge.
+
 Understand the task → make a design decision if needed → implement and test →
 independent review → ship. An existing request or issue authorizes bounded work;
 do not ask for a separate plan approval unless the scope changes.

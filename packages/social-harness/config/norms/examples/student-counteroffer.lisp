@@ -7,14 +7,14 @@
   (field availability :type string :min-length 1 :max-length 600))
 (content propose :by Professor :when offer-due :terminates offer-due :initiates offered
   (field slot :type string :min-length 1 :max-length 120))
-(content reject-proposal :by Student :when offered :reply-to propose
+(content reject-proposal :by Student :when offered
   :terminates offered :initiates offer-due
   (field availability :type string :min-length 1 :max-length 600))
-(content accept-proposal :by Student :when offered :reply-to propose
+(content accept-proposal :by Student :when offered
   :terminates offered :initiates selected
   (field slot :type string :max-length 120)
   (relation equals slot (previous propose slot)))
-(content confirm :by Professor :when selected :reply-to accept-proposal :ends true
+(content confirm :by Professor :when selected :ends true
   (field slot :type string :max-length 120 :description "Copy the accepted slot exactly, after booking it.")
   (relation equals slot (previous accept-proposal slot)))
 (content failure :by Professor :when open :ends true

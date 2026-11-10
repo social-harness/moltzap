@@ -968,7 +968,9 @@ const MessageParticipants = exactStruct({
 
 /** Adds the author-scoped identity to the captured participants. */
 const MessageHeader = MessageParticipants.pipe(
-  Schema.extend(exactStruct({ msgId: MsgId })),
+  Schema.extend(
+    exactStruct({ msgId: MsgId, replyToMsgId: Schema.optional(MsgId) }),
+  ),
 );
 
 /** Decoded request and reply meaning stays outside signed content bytes. */
@@ -1046,17 +1048,25 @@ const messageSchema = Schema.transformOrFail(
         recipients: message.recipients,
         msgId: message.msgId,
         content: message.content,
+        ...(message.replyToMsgId === undefined
+          ? {}
+          : { replyToMsgId: message.replyToMsgId }),
       }),
   },
 ).annotations({ identifier: "Message" });
 
 /** Owns construction and the one decoded interpretation of reserved content. */
 export const Message = Object.assign(messageSchema, {
-  create(input: Pick<Message, "author" | "recipients" | "content">) {
+  create(
+    input: Pick<Message, "author" | "recipients" | "content" | "replyToMsgId">,
+  ) {
     return Effect.gen(function* () {
       return yield* messageFromParticipants(input.author, input.recipients, {
         msgId: yield* mintMsgId(),
         content: input.content,
+        ...(input.replyToMsgId === undefined
+          ? {}
+          : { replyToMsgId: input.replyToMsgId }),
       });
     }).pipe(
       Effect.withSpan("Message.create"),
@@ -1462,7 +1472,7 @@ export function readCollectiveValue(
 export function messageFromParticipants(
   author: Message["author"],
   recipients: ReadonlyArray<Message["author"]>,
-  intent: Pick<Message, "msgId" | "content">,
+  intent: Pick<Message, "msgId" | "content" | "replyToMsgId">,
 ) {
   return Effect.try({
     try: () =>
@@ -1492,6 +1502,7 @@ export function messageFromIntent(
   intent: {
     readonly authorAgentId: AgentId;
     readonly msgId: MsgId;
+    readonly replyToMsgId?: MsgId;
     readonly content: Content;
   },
 ) {
@@ -1502,6 +1513,9 @@ export function messageFromIntent(
       .filter((member) => member.agentId !== intent.authorAgentId)
       .sort((left, right) => compareAscii(left.agentName, right.agentName)),
     content: intent.content,
+    ...(intent.replyToMsgId === undefined
+      ? {}
+      : { replyToMsgId: intent.replyToMsgId }),
   });
 }
 

@@ -27,8 +27,6 @@ import type {
 } from "./inbox-item.js";
 import { SendError } from "../communication/errors.js";
 import {
-  AgentAddress,
-  GroupAddress,
   type MessageAddressInput,
   messageFromParticipants,
   MsgId,
@@ -77,6 +75,7 @@ import {
   type PendingItem,
 } from "./inbox.js";
 import {
+  addressOf,
   canonicalMessageAddress,
   type SendRequest,
   type SendResult,
@@ -445,6 +444,10 @@ function makeHarness<R>(
                       author,
                       recipients: [first, ...rest],
                       content: [{ type: "text", text: request.text }],
+                      replyToMsgId:
+                        "replyToMsgId" in request
+                          ? request.replyToMsgId
+                          : undefined,
                     }).pipe(Effect.mapError(sendFailure));
             }
             const context = yield* evidenceFor(
@@ -774,12 +777,7 @@ function checkIncoming(
         : { history: [], earlierHistoryOmitted: false, gaps: [] }),
       references:
         value.kind === "message" || value.kind === "request"
-          ? [
-              {
-                authorAgentId: value.message.author.agentId,
-                msgId: value.message.msgId,
-              },
-            ]
+          ? [value.message]
           : [],
     };
     const replyDecision =
@@ -812,13 +810,7 @@ function checkIncoming(
   });
 }
 
-/**
- * The firewall's reply to a message it withheld, when a rule asked for one: an
- * ordinary message from this agent to the same conversation. Its id derives
- * from the withheld message, so checking that message again sends at most one
- * reply. A reply that is not a valid message is not sent, and the message
- * stays withheld.
- */
+/** Derives one policy-reply identity per withheld message; invalid replies remain unsent. */
 function replyTo(value: Incoming, decision: IncomingDecision, self: AgentCard) {
   if (
     decision.kind !== "withheld" ||
@@ -840,7 +832,11 @@ function replyTo(value: Incoming, decision: IncomingDecision, self: AgentCard) {
         [withheld.author, ...withheld.recipients].filter(
           (member) => member.agentId !== self.agentId,
         ),
-        { msgId, content: [{ type: "text", text }] },
+        {
+          msgId,
+          replyToMsgId: withheld.msgId,
+          content: [{ type: "text", text }],
+        },
       ),
     ),
     Effect.orElseSucceed(() => undefined),
@@ -921,21 +917,6 @@ function incomingParticipants(incoming: Incoming): readonly AgentCard[] {
   }
 }
 
-function addressOf(
-  members: readonly AgentCard[],
-  localAgentId: AgentCard["agentId"],
-): MessageAddress {
-  const others = members.filter((member) => member.agentId !== localAgentId);
-  return others.length === 1
-    ? AgentAddress.make(`agent:${others[0]?.agentName}`)
-    : GroupAddress.make(
-        `group:${members
-          .map((member) => member.agentName)
-          .sort(compareAscii)
-          .join(",")}`,
-      );
-}
-
 function sendFailure(error: CommunicationError): SendError {
   switch (error.reason) {
     case "membership-invalid":
@@ -982,10 +963,12 @@ function historyFailure(error: unknown): HistoryError {
     return new HistoryError({ reason: "not-registered" });
   }
   if (error instanceof CommunicationError) {
-    if (error.reason === "invalid-cursor" || error.reason === "history-gap") {
-      return new HistoryError({ reason: error.reason });
-    }
-    return new HistoryError({ reason: "persistence-failed" });
+    return new HistoryError({
+      reason:
+        error.reason === "invalid-cursor" || error.reason === "history-gap"
+          ? error.reason
+          : "persistence-failed",
+    });
   }
   return new HistoryError({ reason: "invalid-address" });
 }

@@ -7,11 +7,7 @@ import type { FirewallEvidence } from "../firewall/chain.js";
 import type { DecisionRequest } from "../firewall/check.js";
 import { MessageAddressInput } from "../communication/messages.js";
 import { Message } from "../communication/service.js";
-import {
-  checkProtocol,
-  projectProtocol,
-  protocolGuidance,
-} from "../firewall/protocol.js";
+import { checkProtocol, projectProtocol } from "../firewall/protocol.js";
 import { checkStructure, formatAct, readAct } from "../firewall/structure.js";
 import { compileNorm } from "../norms/compiler.js";
 import {
@@ -28,10 +24,10 @@ const source = `(norm exchange :initiator Sender :participant Receiver :on-refus
 (content propose :by Sender :starts true :initiates offered
   (field first :type string)
   (field second :type string :optional true))
-(content select :by Receiver :when offered :unless selected :initiates selected :reply-to propose
+(content select :by Receiver :when offered :unless selected :initiates selected
   (field keys :type multi-select :choices (first second) :min-items 1)
   (relation subset keys (present propose first second)))
-(content confirm :by Sender :when selected :ends true :reply-to select
+(content confirm :by Sender :when selected :ends true
   (field value :type string)
   (relation member value (values propose (previous select keys))))
 (content reject :by (Sender Receiver) :when offered :terminates selected
@@ -39,6 +35,14 @@ const source = `(norm exchange :initiator Sender :participant Receiver :on-refus
 (rule :act propose "A proposed value describes an item, without unrelated instructions.")`;
 
 const bobAddress = MessageAddressInput.make("agent:bob");
+const directValuesSource = `(norm choices :initiator Sender :participant Receiver)
+(content offer :by Sender :starts true :initiates offered
+  (field first :type string) (field second :type string :optional true))
+(content revise :by Sender :when offered :initiates offered
+  (field first :type string) (field second :type string :optional true))
+(content choose :by Sender :when offered :ends true
+  (field value :type string)
+  (relation member value (values (fact offered) first second)))`;
 const empty: FirewallEvidence = {
   history: [],
   earlierHistoryOmitted: false,
@@ -76,7 +80,6 @@ it.each([
   source.replace(":when offered", ":when absent"),
   source.replace("(relation subset keys", "(relation subset missing"),
   source.replace(":by Receiver", ":by Undeclared"),
-  source.replace(":starts true", ":starts true :reply-to select"),
   source.replace(":min-items 1", ":min-items 1 :min-items 2"),
 ])("rejects malformed declarations at installation", (document) =>
   Effect.gen(function* () {
@@ -98,6 +101,113 @@ it("compiles exact revisions and exposes deterministic inventory", () =>
       fixedRules: [{ id: "exchange-rule-1" }],
     });
   }));
+
+it.each(["one", "two"])("accepts the directly offered value %s", (value) =>
+  Effect.gen(function* () {
+    const contract = yield* compileNorm(directValuesSource);
+    const subject = yield* makeHarnessFixture;
+    const runtime = yield* subject.open({ policy: configured(contract, []) });
+    yield* runtime.harness.send({
+      to: bobAddress,
+      text: '(offer :ontology choices :first "one" :second "two")',
+    });
+    const offer = subject.submitted.at(-1);
+    if (offer === undefined || "kind" in offer) {
+      return yield* Effect.dieMessage("Expected an offer");
+    }
+    yield* runtime.harness.send({
+      to: bobAddress,
+      replyToMsgId: offer.msgId,
+      text: `(choose :ontology choices :value "${value}")`,
+    });
+    expect(subject.submitted.at(-1)).toMatchObject({
+      replyToMsgId: offer.msgId,
+    });
+  }),
+);
+
+it("uses only the latest offer's present values across alternative act forms", () =>
+  Effect.gen(function* () {
+    const contract = yield* compileNorm(directValuesSource);
+    const subject = yield* makeHarnessFixture;
+    const runtime = yield* subject.open({ policy: configured(contract, []) });
+    yield* runtime.harness.send({
+      to: bobAddress,
+      text: '(offer :ontology choices :first "old" :second "removed")',
+    });
+    const old = subject.submitted.at(-1);
+    if (old === undefined || "kind" in old) {
+      return yield* Effect.dieMessage("Expected an offer");
+    }
+    yield* runtime.harness.send({
+      to: bobAddress,
+      replyToMsgId: old.msgId,
+      text: '(revise :ontology choices :first "current")',
+    });
+    const current = subject.submitted.at(-1);
+    if (current === undefined || "kind" in current) {
+      return yield* Effect.dieMessage("Expected a revised offer");
+    }
+    const stale = yield* runtime.harness
+      .send({
+        to: bobAddress,
+        replyToMsgId: old.msgId,
+        text: '(choose :ontology choices :value "current")',
+      })
+      .pipe(Effect.flip);
+    expect(stale).toMatchObject({ detail: { stage: "protocol" } });
+    const superseded = yield* runtime.harness
+      .send({
+        to: bobAddress,
+        replyToMsgId: old.msgId,
+        text: '(choose :ontology choices :value "old")',
+      })
+      .pipe(Effect.flip);
+    expect(superseded).toMatchObject({ detail: { stage: "protocol" } });
+    for (const value of ["old", "removed", "first", "unoffered"]) {
+      const failure = yield* runtime.harness
+        .send({
+          to: bobAddress,
+          replyToMsgId: current.msgId,
+          text: `(choose :ontology choices :value "${value}")`,
+        })
+        .pipe(Effect.flip);
+      expect(failure).toMatchObject({ detail: { stage: "protocol" } });
+    }
+    yield* runtime.harness.send({
+      to: bobAddress,
+      replyToMsgId: current.msgId,
+      text: '(choose :ontology choices :value "current")',
+    });
+    expect(subject.submitted.at(-1)).toMatchObject({
+      replyToMsgId: current.msgId,
+    });
+  }));
+
+it.each([
+  directValuesSource.replace(
+    "(fact offered) first second",
+    "(offer absent) first second",
+  ),
+  directValuesSource.replace(
+    "(fact offered) first second",
+    "(offer revise) missing",
+  ),
+  directValuesSource.replace(
+    "(values (fact offered) first second)",
+    "(values (fact offered))",
+  ),
+  directValuesSource.replace(
+    "(field first :type string)",
+    "(field first :type number)",
+  ),
+])("rejects invalid direct-value declarations", (document) =>
+  Effect.gen(function* () {
+    expect((yield* compileNorm(document).pipe(Effect.flip))._tag).toBe(
+      "NormDocumentError",
+    );
+  }),
+);
 
 it.each([
   'Hello (propose :ontology exchange :first "one")',
@@ -165,29 +275,34 @@ it("projects the retained exchange, enforces references and relations, and close
     const wrongRole = yield* runtime.harness
       .send({
         to: bobAddress,
-        text: `(select :ontology exchange :in-reply-to "${proposal.msgId}" :keys (first))`,
+        replyToMsgId: proposal.msgId,
+        text: `(select :ontology exchange :keys (first))`,
       })
       .pipe(Effect.flip);
     expect(wrongRole).toMatchObject({
-      detail: { stage: "protocol", state: ["offered"] },
+      detail: { stage: "protocol" },
     });
-    const selected = yield* subject.message(
-      `(select :ontology exchange :in-reply-to "${proposal.msgId}" :keys (first second))`,
-    );
+    const selected = yield* subject
+      .message(`(select :ontology exchange :keys (first second))`)
+      .pipe(
+        Effect.map((message) => ({ ...message, replyToMsgId: proposal.msgId })),
+      );
     yield* subject.deliver({ kind: "message", message: selected });
     yield* waitForInbox(runtime);
     const invalid = yield* runtime.harness
       .send({
         to: bobAddress,
-        text: `(confirm :ontology exchange :in-reply-to "${selected.msgId}" :value "three")`,
+        replyToMsgId: selected.msgId,
+        text: `(confirm :ontology exchange :value "three")`,
       })
       .pipe(Effect.flip);
     expect(invalid).toMatchObject({
-      detail: { stage: "protocol", field: "value" },
+      detail: { stage: "protocol" },
     });
     yield* runtime.harness.send({
       to: bobAddress,
-      text: `(confirm :ontology exchange :in-reply-to "${selected.msgId}" :value "two")`,
+      replyToMsgId: selected.msgId,
+      text: `(confirm :ontology exchange :value "two")`,
     });
     yield* runtime.harness.send({
       to: bobAddress,
@@ -219,14 +334,17 @@ it("pins the active source across removal and admits the next interaction under 
       remove: [{ norm: contract.name }],
       add: [{ contract: replacement }],
     });
-    const selected = yield* subject.message(
-      `(select :ontology exchange :in-reply-to "${proposal.msgId}" :keys (first))`,
-    );
+    const selected = yield* subject
+      .message(`(select :ontology exchange :keys (first))`)
+      .pipe(
+        Effect.map((message) => ({ ...message, replyToMsgId: proposal.msgId })),
+      );
     yield* subject.deliver({ kind: "message", message: selected });
     yield* waitForInbox(runtime);
     yield* runtime.harness.send({
       to: bobAddress,
-      text: `(confirm :ontology exchange :in-reply-to "${selected.msgId}" :value "one")`,
+      replyToMsgId: selected.msgId,
+      text: `(confirm :ontology exchange :value "one")`,
     });
     const error = yield* runtime.harness
       .send({
@@ -238,6 +356,113 @@ it("pins the active source across removal and admits the next interaction under 
     yield* runtime.harness.send({
       to: bobAddress,
       text: '(propose :ontology exchange :first "next" :code "new")',
+    });
+  }));
+
+it.each(["finish", "reject"])(
+  "refuses %s from an ended interaction without changing the current interaction",
+  (act) =>
+    Effect.gen(function* () {
+      const contract = yield* compileNorm(
+        `${source}\n(content finish :by (Sender Receiver) :ends true)`,
+      );
+      const subject = yield* makeHarnessFixture;
+      const runtime = yield* subject.open({ policy: configured(contract, []) });
+      yield* runtime.harness.send({
+        to: bobAddress,
+        text: '(propose :ontology exchange :first "old")',
+      });
+      const old = subject.submitted.at(-1);
+      if (old === undefined || "kind" in old) {
+        return yield* Effect.dieMessage("Expected an opening message");
+      }
+      yield* runtime.harness.send({
+        to: bobAddress,
+        replyToMsgId: old.msgId,
+        text: "(finish :ontology exchange)",
+      });
+      yield* runtime.harness.send({
+        to: bobAddress,
+        text: '(propose :ontology exchange :first "current")',
+      });
+      const current = subject.submitted.at(-1);
+      if (current === undefined || "kind" in current) {
+        return yield* Effect.dieMessage("Expected the current opening");
+      }
+      const selected = yield* subject
+        .message("(select :ontology exchange :keys (first))")
+        .pipe(
+          Effect.map((message) => ({
+            ...message,
+            replyToMsgId: current.msgId,
+          })),
+        );
+      yield* subject.deliver({ kind: "message", message: selected });
+      yield* waitForInbox(runtime);
+      const text =
+        act === "finish"
+          ? "(finish :ontology exchange)"
+          : '(reject :ontology exchange :reason "Declined")';
+      const failure = yield* runtime.harness
+        .send({ to: bobAddress, replyToMsgId: old.msgId, text })
+        .pipe(Effect.flip);
+      expect(failure).toMatchObject({
+        reason: "firewall-refused",
+        detail: { stage: "protocol" },
+      });
+      yield* runtime.harness.send({
+        to: bobAddress,
+        replyToMsgId: selected.msgId,
+        text: '(confirm :ontology exchange :value "current")',
+      });
+      expect(subject.submitted.at(-1)).toMatchObject({
+        content: [
+          {
+            type: "text",
+            text: '(confirm :ontology exchange :value "current")',
+          },
+        ],
+      });
+    }),
+);
+
+it("does not attach an unreferenced withheld opening to the current interaction", () =>
+  Effect.gen(function* () {
+    const contract = yield* compileNorm(
+      `${source}\n(content finish :by (Sender Receiver) :ends true)`,
+    );
+    const subject = yield* makeHarnessFixture;
+    const runtime = yield* subject.open({ policy: configured(contract, []) });
+    yield* runtime.harness.send({
+      to: bobAddress,
+      text: '(propose :ontology exchange :first "current")',
+    });
+    const current = subject.submitted.at(-1);
+    if (current === undefined || "kind" in current) {
+      return yield* Effect.dieMessage("Expected the current opening");
+    }
+    const unrelated = yield* subject.message(
+      '(propose :ontology exchange :first "unrelated")',
+    );
+    const ending = yield* Message.create({
+      author: subject.self,
+      recipients: [subject.bob],
+      replyToMsgId: unrelated.msgId,
+      content: [{ type: "text", text: "(finish :ontology exchange)" }],
+    });
+    const decision = yield* runtime.firewall.checkOutgoing(ending, {
+      ...empty,
+      protocolHistory: { messages: [current], complete: true },
+      references: [unrelated],
+    });
+    expect(decision.kind).toBe("refused");
+    yield* runtime.harness.send({
+      to: bobAddress,
+      replyToMsgId: current.msgId,
+      text: "(finish :ontology exchange)",
+    });
+    expect(subject.submitted.at(-1)).toMatchObject({
+      replyToMsgId: current.msgId,
     });
   }));
 
@@ -254,9 +479,11 @@ it("does not advance on a withheld incoming act and checks configured feedback a
     if (proposal === undefined || "kind" in proposal) {
       return yield* Effect.dieMessage("Expected a proposal");
     }
-    const bad = yield* subject.message(
-      `(select :ontology exchange :in-reply-to "${proposal.msgId}" :keys (second))`,
-    );
+    const bad = yield* subject
+      .message(`(select :ontology exchange :keys (second))`)
+      .pipe(
+        Effect.map((message) => ({ ...message, replyToMsgId: proposal.msgId })),
+      );
     yield* subject.deliver({ kind: "message", message: bad });
     yield* runtime.firewall.readDecisions({}).pipe(
       Effect.repeat({
@@ -277,22 +504,26 @@ it("does not advance on a withheld incoming act and checks configured feedback a
     const tooSoon = yield* runtime.harness
       .send({
         to: bobAddress,
-        text: `(confirm :ontology exchange :in-reply-to "${bad.msgId}" :value "one")`,
+        replyToMsgId: bad.msgId,
+        text: `(confirm :ontology exchange :value "one")`,
       })
       .pipe(Effect.flip);
-    expect(tooSoon).toMatchObject({ detail: { state: ["offered"] } });
-    const good = yield* subject.message(
-      `(select :ontology exchange :in-reply-to "${proposal.msgId}" :keys (first))`,
-    );
+    expect(tooSoon).toMatchObject({ detail: { stage: "protocol" } });
+    const good = yield* subject
+      .message(`(select :ontology exchange :keys (first))`)
+      .pipe(
+        Effect.map((message) => ({ ...message, replyToMsgId: proposal.msgId })),
+      );
     yield* subject.deliver({ kind: "message", message: good });
     yield* waitForInbox(runtime);
     yield* runtime.harness.send({
       to: bobAddress,
-      text: `(confirm :ontology exchange :in-reply-to "${good.msgId}" :value "one")`,
+      replyToMsgId: good.msgId,
+      text: `(confirm :ontology exchange :value "one")`,
     });
   }));
 
-it("uses original admission time for a delay and exposes the next permitted timestamp", () =>
+it("uses original admission time to enforce a declared delay", () =>
   Effect.gen(function* () {
     const contract =
       yield* compileNorm(`(norm delayed :initiator Sender :participant Receiver)
@@ -317,17 +548,16 @@ it("uses original admission time for a delay and exposes the next permitted time
     const response = { name: "inform", norm: "delayed", fields: {} };
     const replyForm = yield* checkStructure(contract, response);
     expect(
-      protocolGuidance(view, [contract], subject.bob.agentId).permittedActs,
-    ).toMatchObject([{ notBefore: 6000 }]);
-    expect(
       (yield* checkProtocol(view, contract, replyForm, {
         act: response,
+        replyToMsgId: request.msgId,
         author: subject.bob.agentId,
         now: 5999,
       }).pipe(Effect.flip)).stage,
     ).toBe("protocol");
     yield* checkProtocol(view, contract, replyForm, {
       act: response,
+      replyToMsgId: request.msgId,
       author: subject.bob.agentId,
       now: 6000,
     });
@@ -388,13 +618,19 @@ it("binds retained history to exact assessed content even when an unsent draft s
     } satisfies Message;
     yield* (yield* runtime.firewall.checkOutgoing(sent, empty)).save;
     yield* subject.retain(sent);
-    const selected = yield* subject.message(
-      `(select :ontology exchange :in-reply-to "${sent.msgId}" :keys (first))`,
-    );
+    const selected = yield* subject
+      .message(`(select :ontology exchange :keys (first))`)
+      .pipe(
+        Effect.map((message) => ({ ...message, replyToMsgId: sent.msgId })),
+      );
     yield* subject.deliver({ kind: "message", message: selected });
     yield* waitForInbox(runtime);
-    const confirmation = `(confirm :ontology exchange :in-reply-to "${selected.msgId}" :value "sent")`;
-    yield* runtime.harness.send({ to: bobAddress, text: confirmation });
+    const confirmation = `(confirm :ontology exchange :value "sent")`;
+    yield* runtime.harness.send({
+      to: bobAddress,
+      text: confirmation,
+      replyToMsgId: selected.msgId,
+    });
     expect(subject.submitted.at(-1)).toMatchObject({
       content: [{ type: "text", text: confirmation }],
     });

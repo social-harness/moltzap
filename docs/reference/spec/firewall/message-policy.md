@@ -29,6 +29,12 @@ applicable English rules. A chain `allow` skips ordinary owner text rules but
 preserves the contract's required semantic checks. A chain refusal still
 withholds the candidate.
 
+A continuation's reply reference must belong to the active interaction. A
+reference from an ended interaction cannot change or end a later interaction
+in the same conversation. Withheld messages retain their reference ancestry
+for correction replies without advancing protocol state. An unreferenced
+withheld message does not establish membership in the active interaction.
+
 ## Rule chain
 
 The rule chain applies before the text rules. Like a Google Cloud firewall
