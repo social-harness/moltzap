@@ -14,6 +14,7 @@ import {
   type AgentCard,
   groupMembers,
   type GuidanceBodyOrigin,
+  type InboxEvent,
   type Message,
   MessageAddressInput,
   type MessageAddressInput as MessageAddressInputValue,
@@ -58,7 +59,6 @@ import {
 import {
   acquireMcpConnection,
   callTool,
-  type InboxEntry,
   type McpConnection,
 } from "#sharness-mcp/mcp-client";
 
@@ -105,7 +105,7 @@ const accountSchema = Schema.Struct({
   mode: Schema.optional(Schema.Literal("shared", "private")),
 });
 
-/** One OpenClaw account bound to the process-local MCP endpoint. */
+/** One OpenClaw account bound to its configured MCP endpoint. */
 type Account = Schema.Schema.Type<typeof accountSchema>;
 
 const channelConfigSchema = Schema.Struct({
@@ -141,7 +141,7 @@ interface TurnSender {
 }
 
 /**
- * One retained delivery becomes one host turn under its stable event id.
+ * Peer turns use their canonical message id; endpoint outcomes use their operation id.
  * `address` selects the conversation for replies.
  */
 interface HostTurn {
@@ -164,6 +164,7 @@ interface InboundTurnInput {
 
 /** One host send before validation. The host supplies each field untyped. */
 interface TextSend {
+  readonly replyToMsgId?: string;
   readonly accountId?: string | null;
   readonly to: unknown;
   readonly text: unknown;
@@ -265,8 +266,7 @@ function createPluginMeta() {
     selectionLabel: "Social Harness (agent messaging)",
     docsPath: "/channels/sharness",
     docsLabel: "sharness",
-    blurb:
-      "Agent-to-agent messaging through the local Social Harness endpoint.",
+    blurb: "Agent-to-agent messaging through Social Harness MCP.",
     detailLabel: "Social Harness",
     aliases: ["mz"],
     order: 200,
@@ -342,6 +342,9 @@ function handleMessageAction(
         accountId: ctx.accountId,
         to: ctx.params.to,
         text: ctx.params.message,
+        ...(ctx.reply?.source === "explicit"
+          ? { replyToMsgId: ctx.reply.replyToId }
+          : {}),
       }),
     ),
     Effect.map(({ input, result }) =>
@@ -488,6 +491,9 @@ function isOpenClawAccountRuntime(
 function acquireAccountEndpoint() {
   return Effect.gen(function* () {
     const endpoint = yield* Config.url("SHARNESS_MCP_URL");
+    const allowHttp = yield* Config.boolean("SHARNESS_MCP_ALLOW_HTTP").pipe(
+      Config.withDefault(false),
+    );
     const credentialFile = yield* Config.redacted(
       "SHARNESS_MCP_CREDENTIAL_FILE",
     );
@@ -500,7 +506,7 @@ function acquireAccountEndpoint() {
         }),
     });
     return yield* acquireMcpConnection(
-      { endpoint, credential: Redacted.make(credential) },
+      { endpoint, credential: Redacted.make(credential), allowHttp },
       { name: "sharness-openclaw", version: packageVersion },
     );
   });
@@ -587,13 +593,9 @@ function reportConnected(
 function handleInboxEntry(
   ctx: ChannelGatewayContext<Account>,
   runtime: OpenClawAccountRuntime,
-  delivery: InboxEntry,
+  delivery: InboxEvent,
 ) {
-  const projected = inboundItemTurn(
-    delivery.item,
-    delivery.deliveryToken,
-    delivery.address,
-  );
+  const projected = inboundItemTurn(delivery.item, delivery.address);
   const guidance = delivery.guidance;
   const turn: HostTurn =
     guidance === undefined
@@ -624,16 +626,15 @@ function handleInboxEntry(
  */
 function inboundItemTurn(
   item: PermittedItem,
-  eventId: string,
   address: MessageAddressInputValue,
 ): HostTurn {
   switch (item.kind) {
     case "multicast":
-      return multicastTurn(item.message, eventId, address);
+      return multicastTurn(item.message, address);
     case "collectiveRequest":
       return addressedTurn(
         {
-          id: eventId,
+          id: item.message.msgId,
           origin: "peer",
           sender: agentSender(item.message.author),
         },
@@ -641,9 +642,13 @@ function inboundItemTurn(
         renderCollectiveRequest(item, requestAnswerInstructions(address)),
       );
     case "collectiveResult":
-      return endpointTurn(eventId, address, renderCollectiveResult(item));
+      return endpointTurn(
+        item.operationId,
+        address,
+        renderCollectiveResult(item),
+      );
     case "operationFailed":
-      return endpointTurn(eventId, address, item.error);
+      return endpointTurn(item.operationId, address, item.error);
     default:
       return absurd(item);
   }
@@ -656,12 +661,11 @@ function requestAnswerInstructions(to: MessageAddressInputValue): string {
 
 function multicastTurn(
   message: Message,
-  eventId: string,
   address: MessageAddressInputValue,
 ): HostTurn {
   return addressedTurn(
     {
-      id: eventId,
+      id: message.msgId,
       origin: "peer",
       sender: agentSender(message.author),
     },
@@ -825,9 +829,10 @@ function buildInboundContext(
   });
 }
 
-/** The host keeps its raw body while Client renders the model-facing guidance. */
+/** Exposes the received message's identity alongside its model-facing body. */
 function modelBody(turn: HostTurn): string {
-  return turn.bodyForAgent ?? turn.body;
+  const body = turn.bodyForAgent ?? turn.body;
+  return turn.origin === "peer" ? `msgId: ${turn.id}\n${body}` : body;
 }
 
 /**
@@ -911,6 +916,9 @@ function sendOpenClawText(
     accountId: ctx.accountId,
     text: ctx.text,
     to: ctx.to,
+    ...(ctx.replyToIdSource === "explicit" && ctx.replyToId != null
+      ? { replyToMsgId: ctx.replyToId }
+      : {}),
   }).pipe(Effect.map(({ result }) => makeMessageSendResult(result)));
 }
 
@@ -1026,6 +1034,7 @@ function requireEndpoint(
 function readSendRequest({
   to,
   text,
+  replyToMsgId,
 }: TextSend): Effect.Effect<
   SendRequest,
   OpenClawOutboundError | MessageTextError
@@ -1040,7 +1049,7 @@ function readSendRequest({
       new OpenClawOutboundError({ reason: "invalid-operation" }),
     );
   }
-  return parseMessageText(to, text);
+  return parseMessageText(to, text, replyToMsgId);
 }
 
 /**
@@ -1107,8 +1116,7 @@ const plugin: OpenClawPluginDefinition &
   defineChannelPluginEntry({
     id: "social-harness",
     name: "Social Harness",
-    description:
-      "Agent-to-agent messaging through the local Social Harness endpoint",
+    description: "Agent-to-agent messaging through Social Harness MCP",
     plugin: createChannelPlugin(),
   });
 

@@ -3,7 +3,7 @@
 import { SqlClient, SqlSchema } from "@effect/sql";
 import { absurd, Effect, Encoding, Schema } from "effect";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { AgentAddress, GroupAddress } from "../communication/messages.js";
+import type { IncomingDecision } from "../firewall/service.js";
 import {
   Incoming,
   type Message,
@@ -24,34 +24,14 @@ import {
   MAXIMUM_RUNTIME_ITEM_BYTES,
 } from "../encoding/canonical-json.js";
 import { canonicalIdentifier } from "../encoding/identifier.js";
-import {
-  type IncomingDecision,
-  LocalGuidance,
-  PermittedItem,
-} from "../firewall/service.js";
+import { InboxEvent, InboxReference, MessageAddress } from "./inbox-item.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Schemas and decoded values share their public names. */
 
-/** Canonical host address of a direct or group conversation. */
-// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The inbox owns this grammar shared by persistence and MCP schema composition.
-export const MessageAddress = Schema.Union(AgentAddress, GroupAddress);
-/** @useDeclaredType */
-export type MessageAddress = typeof MessageAddress.Type;
-
-/** Stable lookup and acknowledgment identity for one saved incoming item. */
+/** Private acknowledgment identity for one saved incoming item. */
 export const DeliveryToken = canonicalIdentifier("DeliveryToken", "dlv_", 32);
 /** @useDeclaredType */
 export type DeliveryToken = typeof DeliveryToken.Type;
-
-/** Canonical host conversation containing this permitted item. */
-// eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The inbox owns this grammar shared by persistence and MCP schema composition.
-export const InboxEvent = Schema.Struct({
-  address: MessageAddress,
-  item: PermittedItem,
-  guidance: Schema.optionalWith(LocalGuidance, { exact: true }),
-});
-/** @useDeclaredType */
-export type InboxEvent = typeof InboxEvent.Type;
 
 /** Pending deliveries retain their token after acknowledgment. */
 // eslint-disable-next-line agent-code-guard/no-exported-brand-constructor -- The inbox owns this grammar shared by persistence and MCP schema composition.
@@ -300,18 +280,25 @@ export const makeInbox = Effect.fn("SocialHarness.inbox")(function* (
         : {}),
     } satisfies InboxPage;
   });
-  const getInboxEvent = Effect.fn(function* (token: DeliveryToken) {
+  const getInboxEvent = Effect.fn(function* (reference: InboxReference) {
     const rows = yield* SqlSchema.findAll({
-      Request: DeliveryToken,
+      Request: InboxReference,
       Result: savedRow,
-      execute: (token) =>
-        run(
-          storedItems()
-            .select(["sequence", "token", "address", "view"])
-            .where("token", "=", token)
-            .where("view", "is not", null),
-        ),
-    })(token);
+      execute: (reference) => {
+        const query = storedItems()
+          .select(["sequence", "token", "address", "view"])
+          .where("view", "is not", null);
+        return run(
+          "message" in reference
+            ? query
+                .where("author", "=", reference.message.authorAgentId)
+                .where("message_id", "=", reference.message.msgId)
+            : query
+                .where("operation_id", "=", reference.operationId)
+                .where("kind", "in", ["result", "request-failed"]),
+        );
+      },
+    })(reference);
     const row = rows[0];
     return row === undefined
       ? yield* new InboxError({ reason: "unknown-event" })
@@ -433,8 +420,8 @@ export const makeInbox = Effect.fn("SocialHarness.inbox")(function* (
             : Effect.fail(persistenceFailure()),
         ),
       ),
-    getInboxEvent: (token: DeliveryToken) =>
-      getInboxEvent(token).pipe(
+    getInboxEvent: (reference: InboxReference) =>
+      getInboxEvent(reference).pipe(
         Effect.catchAll((error) =>
           error instanceof InboxError
             ? Effect.fail(error)

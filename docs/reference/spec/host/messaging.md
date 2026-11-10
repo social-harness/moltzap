@@ -42,6 +42,11 @@ Resolution names the first failed member with `unknown-agent` or
 
 ## Sending a message
 
+Ordinary sends accept optional `replyToMsgId` metadata. It is preserved in the
+message and conversation history. Under a configured contract, continuations
+require a reference and opening acts may omit it. The endpoint does not infer
+or replace a reference.
+
 Every send supplies a destination and text or an answer. Questions add an
 answer schema and deadline. Session focus and prior messages cannot supply an
 omitted destination. Native hosts use the
@@ -141,8 +146,8 @@ every send. Native model sends use their adapter.
 ## Local guidance
 
 [Firewall guidance](../firewall/message-policy.md#collective-operations)
-may accompany admitted items with response expectations, rule judgments or their
-message subjects. That contract also owns collective text withholding.
+may accompany admitted items with registered advice from uncertain judgments.
+Retained items preserve their original guidance and message subjects. That contract also owns collective text withholding.
 
 Ordinary peer text appears unchanged. Keep local instructions separate from peer
 text. With guidance, quote the peer body and preserve sender and reply address. Separate a

@@ -48,6 +48,7 @@ export const mcpFixture = Effect.fn("mcpFixture")(function* (
     readonly registered?: boolean;
     readonly authentication?: McpAuthentication;
     readonly harness?: Partial<Context.Tag.Service<typeof SocialHarness>>;
+    readonly firewall?: Partial<Context.Tag.Service<typeof Firewall>>;
   } = {},
 ) {
   const database = yield* openTestDatabase();
@@ -86,12 +87,14 @@ export const mcpFixture = Effect.fn("mcpFixture")(function* (
   });
   const unused = () => Effect.dieMessage("Unexpected firewall assessment");
   const firewall = Firewall.of({
+    requiresProtocolHistory: () => false,
     checkIncoming: unused,
     checkOutgoing: unused,
     readPolicy: () =>
       Effect.fail(new FirewallPolicyError({ reason: "not-configured" })),
     updatePolicy: unused,
     readDecisions: unused,
+    ...options.firewall,
   });
   const callbackClient = yield* Layer.build(webhookHttpClientLayer);
   const webhook = yield* makeWebhookEvents(

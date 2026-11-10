@@ -19,6 +19,13 @@ type RefusalReason = typeof firewallRefusalReasonSchema.Type;
 
 /** Carries bounded preceding history and each message's visibility to the agent. */
 export interface FirewallEvidence {
+  /** Incoming messages awaiting persistence retain reference ancestry for refusal replies. */
+  readonly references?: readonly Message[];
+  /** Complete preceding application history for a contract, separate from the bounded text window. */
+  readonly protocolHistory?: {
+    readonly messages: readonly Message[];
+    readonly complete: boolean;
+  };
   readonly history: ReadonlyArray<{
     readonly message: Message;
     readonly visibleToAgent: boolean;

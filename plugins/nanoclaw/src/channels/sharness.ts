@@ -1,9 +1,9 @@
 /** @file Projects the public Social Harness endpoint capability into NanoClaw. */
 import {
-  type DeliveryAcknowledgeError,
   type FirewallRefusal,
   groupMembers,
   type GuidanceBodyOrigin,
+  type InboxEvent,
   MessageAddressInput,
   packageVersion,
   parseMessageText,
@@ -34,7 +34,6 @@ import { readFile } from "node:fs/promises";
 import {
   acquireMcpConnection,
   callTool,
-  type InboxEntry,
   type McpConnectError,
   type McpConnection,
 } from "#sharness-mcp/mcp-client";
@@ -80,6 +79,9 @@ const INBOUND_TIMESTAMP = "1970-01-01T00:00:00.000Z";
 const channelEnv = Config.all({
   mcpEndpoint: Config.option(Config.string("SHARNESS_MCP_URL")).pipe(
     Config.map(Option.getOrNull),
+  ),
+  allowHttp: Config.boolean("SHARNESS_MCP_ALLOW_HTTP").pipe(
+    Config.withDefault(false),
   ),
 });
 
@@ -256,11 +258,13 @@ class HarnessChannelAdapter {
 
   private readonly lifecycleGate = Effect.runSync(Effect.makeSemaphore(1));
   private readonly mcpEndpoint: string;
+  private readonly allowHttp: boolean;
   private activation: Activation | null = null;
   private setupConfig: ChannelSetup | null = null;
 
-  constructor(mcpEndpoint: string) {
+  constructor(mcpEndpoint: string, allowHttp: boolean) {
     this.mcpEndpoint = mcpEndpoint;
+    this.allowHttp = allowHttp;
   }
 
   setup(config: ChannelSetup): Promise<void> {
@@ -367,6 +371,7 @@ class HarnessChannelAdapter {
   private acquireEndpoint(
     scope: Scope.CloseableScope,
   ): Effect.Effect<McpConnection, McpConnectError | ChannelError> {
+    const allowHttp = this.allowHttp;
     return Effect.try({
       try: () => new URL(this.mcpEndpoint),
       catch: () =>
@@ -397,7 +402,7 @@ class HarnessChannelAdapter {
               }),
           });
           return yield* acquireMcpConnection(
-            { endpoint, credential: Redacted.make(credential) },
+            { endpoint, credential: Redacted.make(credential), allowHttp },
             { name: "sharness-nanoclaw", version: packageVersion },
           );
         }),
@@ -493,17 +498,13 @@ class HarnessChannelAdapter {
   }
 
   private handleDelivery(
-    delivery: InboxEntry,
-  ): Effect.Effect<void, ChannelError | DeliveryAcknowledgeError> {
+    delivery: InboxEvent,
+  ): Effect.Effect<void, ChannelError> {
     const config = this.setupConfig;
     if (config === null) {
       return Effect.void;
     }
-    const projected = projectItem(
-      delivery.item,
-      delivery.deliveryToken,
-      delivery.address,
-    );
+    const projected = projectItem(delivery.item, delivery.address);
     let text = projected.text;
     if (delivery.guidance !== undefined) {
       text =
@@ -578,14 +579,13 @@ class HarnessChannelAdapter {
 /** Each item keeps its canonical attribution and conversation before guidance is added. */
 function projectItem(
   item: PermittedItem,
-  eventId: string,
   address: MessageAddressInput,
 ): ProjectedItem {
   switch (item.kind) {
     case "multicast":
       return {
         origin: "peer",
-        id: eventId,
+        id: item.message.msgId,
         address: address,
         sender: `agent:${item.message.author.agentName}`,
         text: renderContent(item.message.content),
@@ -593,7 +593,7 @@ function projectItem(
     case "collectiveRequest":
       return {
         origin: "peer",
-        id: eventId,
+        id: item.message.msgId,
         address: address,
         sender: `agent:${item.message.author.agentName}`,
         text: renderCollectiveRequest(
@@ -604,7 +604,7 @@ function projectItem(
     case "collectiveResult":
       return {
         origin: "endpoint",
-        id: eventId,
+        id: item.operationId,
         address,
         sender: ENDPOINT_SENDER,
         text: renderCollectiveResult(item),
@@ -612,7 +612,7 @@ function projectItem(
     case "operationFailed":
       return {
         origin: "endpoint",
-        id: eventId,
+        id: item.operationId,
         address,
         sender: ENDPOINT_SENDER,
         text: item.error,
@@ -623,10 +623,12 @@ function projectItem(
 }
 
 function makeHarnessChannelAdapter(): HarnessChannelAdapter | null {
-  const { mcpEndpoint } = Effect.runSync(
+  const { mcpEndpoint, allowHttp } = Effect.runSync(
     channelEnv.pipe(Effect.withConfigProvider(ConfigProvider.fromEnv())),
   );
-  return mcpEndpoint === null ? null : new HarnessChannelAdapter(mcpEndpoint);
+  return mcpEndpoint === null
+    ? null
+    : new HarnessChannelAdapter(mcpEndpoint, allowHttp);
 }
 
 registerChannelAdapter(CHANNEL_ID, {

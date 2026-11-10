@@ -16,25 +16,21 @@ import {
   loopbackMcpEndpoint,
   mcpTestCredential,
 } from "../../packages/social-harness/src/harness/__tests__/mcp-fixtures.js";
-import { toolDefinitions } from "@moltzap/social-harness";
+import { inboxReference, toolDefinitions } from "@moltzap/social-harness";
+import { InboxEntry } from "../../packages/social-harness/src/harness/inbox.js";
 import { acquireMcpConnection, callTool } from "./mcp-client.js";
 
 const implementation = { name: "shared-mcp-test", version: "1" };
 const credential = Redacted.make("private-fixture-credential");
-const entry = Schema.decodeUnknownSync(toolDefinitions.read_inbox.output)({
-  items: [
-    {
-      deliveryToken: `dlv_${"A".repeat(43)}`,
-      address: "agent:bob",
-      item: {
-        kind: "operationFailed",
-        operationId: `col_${"A".repeat(64)}`,
-        error: "request failed",
-      },
-    },
-  ],
-}).items[0];
-if (entry === undefined) throw new Error("Fixture has no inbox entry");
+const entry = Schema.decodeUnknownSync(InboxEntry)({
+  deliveryToken: `dlv_${"A".repeat(43)}`,
+  address: "agent:bob",
+  item: {
+    kind: "operationFailed",
+    operationId: `col_${"A".repeat(64)}`,
+    error: "request failed",
+  },
+});
 afterEach(() => vi.restoreAllMocks());
 
 const inboxFixture = Effect.gen(function* () {
@@ -72,7 +68,10 @@ describe("shared inbox reception", () => {
         const consume = connection.consumeInbox;
         const options = { onReady: Effect.void, receiveMode };
         const receiver = yield* consume(options, (received) => {
-          expect(received).toEqual(entry);
+          expect(received).toEqual({
+            address: entry.address,
+            item: entry.item,
+          });
           return Deferred.succeed(entered, undefined).pipe(
             Effect.zipRight(Deferred.await(accepted)),
           );
@@ -129,23 +128,61 @@ describe("shared inbox reception", () => {
 
 describe("credential transport", () => {
   it.each([
-    "http://remote.example/mcp",
-    "http://localhost/mcp",
-    "https://user:password@remote.example/mcp",
-    "https://remote.example/mcp#fragment",
-    "ftp://remote.example/mcp",
-  ])("refuses %s before sending a bearer", (url) => {
-    const fetch = vi.spyOn(globalThis, "fetch");
+    { url: "http://remote.example/mcp", allowHttp: undefined },
+    { url: "http://remote.example/mcp", allowHttp: false },
+    { url: "http://localhost/mcp", allowHttp: undefined },
+    { url: "https://user:password@remote.example/mcp", allowHttp: true },
+    { url: "https://remote.example/mcp#fragment", allowHttp: true },
+    { url: "http://user:password@remote.example/mcp", allowHttp: true },
+    { url: "http://remote.example/mcp#fragment", allowHttp: true },
+    { url: "ftp://remote.example/mcp", allowHttp: true },
+  ])(
+    "refuses $url with allowHttp=$allowHttp before sending a bearer",
+    ({ url, allowHttp }) => {
+      const fetch = vi.spyOn(globalThis, "fetch");
+      return acquireMcpConnection(
+        {
+          endpoint: new URL(url),
+          credential,
+          ...(allowHttp === undefined ? {} : { allowHttp }),
+        },
+        implementation,
+      ).pipe(
+        Effect.scoped,
+        Effect.flip,
+        Effect.tap((error) =>
+          Effect.sync(() => {
+            expect(error.reason).toBe("transport-failed");
+            expect(fetch).not.toHaveBeenCalled();
+          }),
+        ),
+        Effect.asVoid,
+        Effect.runPromise,
+      );
+    },
+  );
+  it("sends the bearer to host-approved HTTP without following redirects", () => {
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 401 }));
+    const endpoint = new URL("http://internal.example/mcp");
     return acquireMcpConnection(
-      { endpoint: new URL(url), credential },
+      { endpoint, credential, allowHttp: true },
       implementation,
     ).pipe(
       Effect.scoped,
       Effect.flip,
-      Effect.tap((error) =>
+      Effect.tap(() =>
         Effect.sync(() => {
-          expect(error.reason).toBe("transport-failed");
-          expect(fetch).not.toHaveBeenCalled();
+          const call = fetch.mock.calls[0];
+          if (call === undefined)
+            return expect.unreachable("MCP did not connect");
+          const request = new Request(...call);
+          expect(request.url).toBe(endpoint.href);
+          expect(request.headers.get("Authorization")).toBe(
+            `Bearer ${Redacted.value(credential)}`,
+          );
+          expect(request.redirect).toBe("error");
         }),
       ),
       Effect.asVoid,
@@ -236,7 +273,7 @@ describe("management failures", () => {
     {
       request: {
         name: "read_event",
-        arguments: { eventId: entry.deliveryToken },
+        arguments: inboxReference(entry),
       },
       data: { reason: "unknown-event" },
       tag: "InboxError",

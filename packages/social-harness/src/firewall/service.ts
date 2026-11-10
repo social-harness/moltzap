@@ -10,7 +10,7 @@ import {
   Schema,
   Struct,
 } from "effect";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
   AnswerOutcome,
   CollectiveId,
@@ -58,6 +58,16 @@ import {
   textQuestionEdition,
   validateChecks,
 } from "./check.js";
+import { assessmentKey, prepareContract } from "./contract-check.js";
+import { type CompiledContract, compiledContractSchema } from "./contract.js";
+import {
+  attachContract,
+  type Candidate,
+  contractRefusal,
+  type Decision,
+  defaultDecision,
+  mintCheckId,
+} from "./decision.js";
 import { makeJevDecisionProvider } from "./jev.js";
 import {
   decodeBehavior,
@@ -75,7 +85,6 @@ import {
   type PolicyProblem,
   type policyReadSchema,
   type policyUpdateResultSchema,
-  type policyUpdateSchema,
   TextPolicySettings,
   TextRule,
 } from "./rules.js";
@@ -93,13 +102,14 @@ import {
  * withhold incoming messages.
  */
 export interface FirewallOptions {
+  readonly contracts?: readonly CompiledContract[];
   readonly settings: FirewallSettings;
   readonly facts: MessageContext["facts"];
   readonly maximumHistoryRecords?: number;
   readonly maximumConcurrentChecks?: number;
   /** Host approval completes before an edit can replace the active policy. */
   readonly approvePolicyUpdate?: (
-    request: typeof policyUpdateSchema.Type,
+    request: PolicyEdit,
   ) => Effect.Effect<void, FirewallPolicyError>;
   readonly text?: {
     readonly fixedRules?: readonly TextRule[];
@@ -107,6 +117,16 @@ export interface FirewallOptions {
     readonly provider: DecisionProvider;
     readonly settings: TextPolicySettings;
   };
+}
+
+/** The management adapter compiles source documents before policy ownership changes. */
+export interface PolicyEdit {
+  readonly add?: ReadonlyArray<
+    | TextRule
+    | { readonly behavior: string }
+    | { readonly contract: CompiledContract }
+  >;
+  readonly remove?: ReadonlyArray<string | { readonly norm: string }>;
 }
 
 type Policy = Effect.Effect.Success<ReturnType<typeof initialPolicy>>;
@@ -214,12 +234,14 @@ export class FirewallRefusal extends Data.TaggedError("FirewallRefusal")<{
   override get message(): string {
     const rule = this.rule === undefined ? "" : `, rule ${this.rule}`;
     return [
-      `Message refused by local policy (${this.refusal}${rule}, check ${this.checkId}).`,
-      refusalText[this.refusal],
-      ...this.feedback.map((entry) => entry.text),
-      ...(this.detail === undefined
-        ? []
-        : [`Details: ${JSON.stringify(this.detail)}`]),
+      ...(this.feedback.length === 0
+        ? [`Error: ${refusalText[this.refusal]}`]
+        : this.feedback.map((entry) =>
+            entry.text.startsWith("Error:")
+              ? entry.text
+              : `Error: ${entry.text}`,
+          )),
+      `Check: ${this.checkId}${rule}; ${this.refusal}.`,
       "Docs: https://docs.moltzap.xyz/guides/run-an-agent-daemon#firewall-refused",
     ].join(" ");
   }
@@ -257,6 +279,8 @@ export type IncomingDecision = {
 );
 /** Message assessment, policy edits and saved decision summaries. */
 interface FirewallService {
+  /** Context assembly needs complete protocol history after a contract has been installed. */
+  readonly requiresProtocolHistory: () => boolean;
   /** Assesses without saving. Refusals expose feedback. Allowed work may carry guidance. */
   readonly checkOutgoing: (
     value: Outgoing,
@@ -279,7 +303,7 @@ interface FirewallService {
    * Retries validate again and may repeat approval.
    */
   readonly updatePolicy: (
-    request: typeof policyUpdateSchema.Type,
+    request: PolicyEdit,
   ) => Effect.Effect<typeof policyUpdateResultSchema.Type, FirewallPolicyError>;
   readonly readDecisions: (request: {
     readonly since?: number;
@@ -332,6 +356,7 @@ export class Firewall extends Context.Tag("SocialHarness/Firewall")<
               : policy.active.configurationDigest,
         };
         return Firewall.of({
+          requiresProtocolHistory: () => policy?.active.contractsUsed ?? false,
           readPolicy: () =>
             policy === undefined
               ? Effect.fail(
@@ -339,7 +364,12 @@ export class Firewall extends Context.Tag("SocialHarness/Firewall")<
                 )
               : Effect.sync(() => ({
                   rules: policy.active.editableRules,
-                  fixedRules: policy.options.text?.fixedRules ?? [],
+                  fixedRules: policy.active.rules.filter((rule) =>
+                    policy.active.fixedRuleIds.includes(rule.id),
+                  ),
+                  norms: policy.active.contracts.map(
+                    (contract) => contract.name,
+                  ),
                   activeRevision: policy.active.configurationDigest,
                 })),
           updatePolicy: (request) =>
@@ -449,45 +479,14 @@ export class Firewall extends Context.Tag("SocialHarness/Firewall")<
     );
 }
 
-interface Candidate {
-  readonly value: Outgoing;
-  readonly evidence: FirewallEvidence;
-  readonly text?: string;
-}
-
 interface RuleCheckInput {
+  readonly messageKey: string;
   readonly direction: "incoming" | "outgoing";
   readonly canonicalCandidate: Uint8Array;
   readonly message: AssessmentText;
   readonly context: MessageContext;
   readonly agents: readonly AgentCard[];
 }
-
-/** A refused message's reason, the chain rule that decided, and what its sender is told. */
-interface Refusal {
-  readonly reason: RefusalReason;
-  readonly rule?: string;
-  readonly feedback: ReadonlyArray<{ readonly text: string }>;
-  readonly detail?: unknown;
-  readonly reply?: string;
-}
-
-/**
- * One candidate's decision and the record that saves it. A message nothing
- * checked, because no chain rule matched and no text policy is installed, has
- * no record.
- */
-type Decision =
-  | {
-      readonly kind: "admitted";
-      readonly completion?: FirewallCompletion;
-      readonly guidance?: CheckedGuidance;
-    }
-  | {
-      readonly kind: "refused";
-      readonly completion: FirewallCompletion;
-      readonly refusal: Refusal;
-    };
 
 /** The chain and text policy one firewall applies, and the revision its records name. */
 interface Installation {
@@ -503,6 +502,8 @@ const storedPolicyFormat = "org.social-harness/text-rules/v1";
 const storedPolicySchema = exactStruct({
   format: Schema.Literal(storedPolicyFormat),
   rules: editableDocumentSchema,
+  contracts: Schema.optional(Schema.Array(compiledContractSchema)),
+  contractsUsed: Schema.optional(Schema.Boolean),
 });
 
 type PolicyEditPath = NonNullable<FirewallPolicyError["path"]>;
@@ -662,34 +663,130 @@ function decide(
   installed: Installation,
   candidates: readonly Candidate[],
   direction: Direction,
-) {
+): Effect.Effect<readonly Decision[], CheckInputError> {
   return Effect.gen(function* () {
-    const chained = yield* Effect.forEach(
-      candidates,
+    const captured = yield* Effect.try({
+      try: () => structuredClone(candidates),
+      catch: () => new CheckInputError({ reason: "message" }),
+    });
+    freezeData(captured);
+    const policy =
+      installed.policy === undefined
+        ? undefined
+        : { ...installed.policy, active: installed.policy.active };
+    const revision = installed.revision();
+    const snapshot = { ...installed, revision: () => revision };
+    return yield* Effect.forEach(
+      captured,
       (candidate) =>
-        chainDecision(installed, candidate, direction).pipe(
-          Effect.map((decision) => ({ candidate, decision })),
-        ),
+        Effect.gen(function* () {
+          const direct =
+            !("kind" in candidate.value) &&
+            candidate.value.operation === undefined &&
+            candidate.value.recipients.length === 1;
+          const contract =
+            direct && policy?.active.contractsUsed === true
+              ? yield* prepareContract(
+                  policy.active.contracts,
+                  installed.store,
+                  candidate.value,
+                  candidate.evidence,
+                )
+              : undefined;
+          if (contract?.kind === "refused") {
+            return yield* contractRefusal(
+              revision,
+              candidate,
+              direction,
+              contract,
+            );
+          }
+          const chained = yield* chainDecision(snapshot, candidate, direction);
+          let decision: Decision | undefined = chained;
+          if (chained?.kind !== "refused" && policy !== undefined) {
+            const normRuleIds = new Set(
+              policy.active.contracts.flatMap((item) =>
+                item.semanticRules.map((rule) => rule.id),
+              ),
+            );
+            const ownerRules =
+              chained?.kind === "admitted"
+                ? []
+                : policy.active.rules.filter(
+                    (rule) => !normRuleIds.has(rule.id),
+                  );
+            const normRules =
+              contract?.kind === "ready"
+                ? contract.contract.semanticRules
+                    .filter(
+                      (rule) =>
+                        rule.act === undefined ||
+                        rule.act === contract.record.act.name,
+                    )
+                    .map((rule) => Struct.omit(rule, "act"))
+                : [];
+            if (chained === undefined || normRules.length !== 0) {
+              const selected = {
+                ...policy,
+                active: {
+                  ...policy.active,
+                  rules: [...ownerRules, ...normRules],
+                  fixedRuleIds: [
+                    ...policy.active.fixedRuleIds,
+                    ...normRules.map((rule) => rule.id),
+                  ],
+                },
+              };
+              const form =
+                contract?.kind === "ready"
+                  ? contract.contract.forms.find(
+                      (item) => item.act === contract.record.act.name,
+                    )
+                  : undefined;
+              const prepared =
+                contract?.kind === "ready" && form !== undefined
+                  ? {
+                      ...candidate,
+                      protocolContext: {
+                        norm: contract.contract.name,
+                        revision: contract.contract.digest,
+                        act: contract.record.act.name,
+                        description: contract.contract.description,
+                        state: [...(contract.view.active?.facts.keys() ?? [])],
+                        form: form.fields,
+                      },
+                    }
+                  : candidate;
+              [decision] = yield* assess(
+                selected,
+                yield* installed.localAgent,
+                [prepared],
+                direction,
+              );
+            }
+          }
+          const completed: Decision =
+            decision ??
+            (yield* defaultDecision(revision, candidate, direction));
+          return contract === undefined || contract.kind === "unconfigured"
+            ? completed
+            : yield* attachContract(
+                completed,
+                contract,
+                candidate.value,
+                direction,
+              );
+        }),
       { concurrency: 1 },
     );
-    const unmatched = chained.flatMap(({ candidate, decision }) =>
-      decision === undefined ? [candidate] : [],
-    );
-    const assessed =
-      installed.policy === undefined || unmatched.length === 0
-        ? []
-        : yield* assess(
-            installed.policy,
-            yield* installed.localAgent,
-            unmatched,
-            direction,
-          );
-    const text = assessed.values();
-    return chained.map(
-      ({ decision }): Decision =>
-        decision ?? text.next().value ?? { kind: "admitted" },
-    );
-  });
+  }).pipe(
+    Effect.catchTags({
+      CanonicalJsonError: () =>
+        Effect.fail(new CheckInputError({ reason: "context" })),
+      ClientRepresentationError: () =>
+        Effect.fail(new CheckInputError({ reason: "context" })),
+    }),
+  );
 }
 
 /** Records the chain rule that decided a candidate, or returns nothing when none matched. */
@@ -713,11 +810,13 @@ function chainDecision(
     const activeRevision = installed.revision();
     const completion: FirewallCompletion = {
       checkId: mintCheckId(),
+      messageKey: assessmentKey(candidate.value),
       direction,
       canonicalCandidate: yield* encodeCanonicalJson(candidate.value),
       canonicalInput: yield* canonicalBytes({
         activeRevision,
         rule: outcome.rule,
+        evidence: candidate.evidence,
       }),
       canonicalResult: yield* canonicalBytes({
         result: {
@@ -835,8 +934,12 @@ function assess(
         now,
         facts: policy?.options.configuration.facts ?? [],
         gaps: candidate.evidence.gaps,
+        ...(candidate.protocolContext === undefined
+          ? {}
+          : { protocol: candidate.protocolContext }),
       };
       inputs.push({
+        messageKey: assessmentKey(candidate.value),
         direction,
         canonicalCandidate: yield* encodeCanonicalJson(candidate.value),
         message: {
@@ -1033,14 +1136,22 @@ function initialPolicy(
       ),
     );
     const fixed = captured.text?.fixedRules ?? [];
-    const { stored, rules } = yield* loadRules(store, captured);
+    const { stored, rules, contracts, contractsUsed } = yield* loadRules(
+      store,
+      captured,
+    );
     yield* validateIds(
       rules,
       fixed.map((rule) => rule.id),
     );
-    const active = yield* buildPolicy(captured, rules);
+    const active = yield* buildPolicy(
+      captured,
+      rules,
+      contracts,
+      contractsUsed,
+    );
     if (stored === undefined) {
-      yield* persistRules(store, rules);
+      yield* persistRules(store, active);
     }
     return {
       store,
@@ -1057,14 +1168,18 @@ function initialPolicy(
 function loadRules(store: FirewallStore, options: CapturedOptions) {
   return Effect.gen(function* () {
     const stored = yield* store.readPolicy();
-    const rules =
+    const saved =
       stored === undefined
-        ? (options.text?.initialRules ?? [])
-        : (yield* decodeCanonical(storedPolicySchema, stored).pipe(
+        ? undefined
+        : yield* decodeCanonical(storedPolicySchema, stored).pipe(
             Effect.mapError(persistenceFailure),
-          )).rules;
+          );
+    const rules = saved?.rules ?? options.text?.initialRules ?? [];
+    const contracts = saved?.contracts ?? options.contracts;
+    const contractsUsed =
+      saved?.contractsUsed === true || contracts.length !== 0;
     freezeData(rules);
-    return { stored, rules };
+    return { stored, rules, contracts, contractsUsed };
   });
 }
 
@@ -1101,11 +1216,22 @@ function captureOptions(options: FirewallOptions, chain: Chain["rules"]) {
       maximumConcurrentChecks: options.maximumConcurrentChecks ?? 4,
     });
     const settings = yield* decodeFrozen(FirewallSettings, options.settings);
+    const contracts = yield* decodeFrozen(
+      Schema.Array(compiledContractSchema),
+      options.contracts ?? [],
+    );
     const text =
       options.text === undefined ? undefined : yield* captureText(options.text);
     const approvePolicyUpdate =
       options.approvePolicyUpdate?.bind(options) ?? (() => Effect.void);
-    return { configuration, settings, text, approvePolicyUpdate, chain };
+    return {
+      configuration,
+      settings,
+      text,
+      approvePolicyUpdate,
+      chain,
+      contracts,
+    };
   });
 }
 
@@ -1229,12 +1355,13 @@ function assessRule(
     const admit = result.judgment === "allow";
     const completion: FirewallCompletion = {
       checkId,
+      messageKey: input.messageKey,
       direction: input.direction,
       canonicalCandidate: input.canonicalCandidate,
       canonicalInput: yield* retainedInput(active, input),
       admit,
       canonicalResult: yield* canonicalBytes({
-        result: Struct.omit(result, "trace"),
+        result,
         summaries: yield* decisionSummaries(active, input, result),
       }),
     };
@@ -1299,6 +1426,7 @@ function capturePrepared(
     const captured = yield* Effect.try({
       try: () =>
         structuredClone({
+          messageKey: input.messageKey,
           direction: input.direction,
           canonicalCandidate: input.canonicalCandidate,
           evidence: {
@@ -1392,11 +1520,6 @@ function decisionSummaries(
   );
 }
 
-/** A local reference correlates an assessment without granting lookup authority. */
-function mintCheckId() {
-  return `chk_${randomBytes(32).toString("hex")}`;
-}
-
 /**
  * Registered advice includes only the message references already visible to
  * this agent. An allowed draft carries only its uncertain findings.
@@ -1414,25 +1537,14 @@ function guidanceProjection(
     if (instructions.length === 0) {
       return { result };
     }
-    const selected = new Set(
-      instructions.flatMap((entry) =>
-        "subjects" in entry ? entry.subjects : [],
-      ),
-    );
-    const subjects = guidanceSubjects(selected, input);
-    const guidance: CheckedGuidance = {
-      checkId,
-      instructions,
-      subjects,
-    };
+    const guidance: CheckedGuidance = { checkId, instructions, subjects: [] };
     const bytes = yield* canonicalBytes(guidance);
-    return subjects.length !== selected.size ||
-      bytes.byteLength > MAXIMUM_RUNTIME_ITEM_BYTES
+    return bytes.byteLength > MAXIMUM_RUNTIME_ITEM_BYTES
       ? {
           result: {
             ...unavailable(),
             findings: result.findings,
-            expectations: result.expectations,
+            ...(result.trace === undefined ? {} : { trace: result.trace }),
           },
         }
       : { result, guidance };
@@ -1447,60 +1559,59 @@ function unavailable(): FirewallCheck {
     feedback: [],
     guidance: [],
     findings: [],
-    expectations: [],
   };
 }
 
-function guidanceSubjects(
-  selected: ReadonlySet<string>,
-  input: CapturedCheck,
-): CheckedGuidance["subjects"] {
-  const agents = new Map<string, AgentCard>(
-    input.agents.map((agent) => [agent.agentId, agent]),
-  );
-  const available = input.evidence.context.history.filter(
-    (entry) => entry.visibleToAgent,
-  );
-  const message = input.evidence.event.message;
-  const subjects = new Map(
-    [...available, ...(message === undefined ? [] : [message])].map((entry) => [
-      entry.id,
-      entry,
-    ]),
-  );
-  return [...subjects.values()]
-    .filter((entry) => selected.has(entry.id))
-    .flatMap((entry) => {
-      const sender = agents.get(entry.sender);
-      const recipients = entry.recipients.flatMap((identity) => {
-        const agent = agents.get(identity);
-        return agent === undefined ? [] : [agent];
-      });
-      return sender === undefined ||
-        recipients.length !== entry.recipients.length
-        ? []
-        : [{ id: entry.id, sender, recipients, text: entry.text }];
-    });
-}
-
-function updatePolicy(policy: Policy, request: typeof policyUpdateSchema.Type) {
+function updatePolicy(policy: Policy, request: PolicyEdit) {
   return policy.edits.withPermits(1)(
     Effect.gen(function* () {
-      const { request: captured, change } = yield* resolvedChange(request);
+      const { request: captured, change, contractAdd, contractRemove } =
+        yield* resolvedChange(request);
       const next = yield* editedRules(
         policy.active.editableRules,
         policy.active.fixedRuleIds,
         change,
       );
-      const replacement = yield* buildPolicy(policy.options, next);
+      const contracts = new Map(
+        policy.active.contracts.map((contract) => [contract.name, contract]),
+      );
+      for (const name of contractRemove) {
+        if (!contracts.delete(name)) {
+          return yield* invalidRule("unknown-id", { ruleId: name });
+        }
+      }
+      for (const contract of contractAdd) {
+        if (contracts.has(contract.name)) {
+          return yield* invalidRule("duplicate-id", { ruleId: contract.name });
+        }
+        contracts.set(contract.name, contract);
+      }
+      const replacement = yield* buildPolicy(
+        policy.options,
+        next,
+        [...contracts.values()],
+        policy.active.contractsUsed,
+      );
       yield* policy.options.approvePolicyUpdate(captured);
       return yield* Effect.uninterruptible(
         Effect.gen(function* () {
-          yield* persistRules(policy.store, next, {
+          yield* persistRules(policy.store, replacement, {
             time: yield* Clock.currentTimeMillis,
             activeRevision: replacement.configurationDigest,
-            addedRuleIds: change.add.map((rule) => rule.id),
-            removedRuleIds: change.remove,
+            addedRuleIds: [
+              ...change.add.map((rule) => rule.id),
+              ...contractAdd.flatMap((contract) =>
+                contract.semanticRules.map((rule) => rule.id),
+              ),
+            ],
+            removedRuleIds: [
+              ...change.remove,
+              ...policy.active.contracts
+                .filter((contract) => contractRemove.includes(contract.name))
+                .flatMap((contract) =>
+                  contract.semanticRules.map((rule) => rule.id),
+                ),
+            ],
           });
           yield* Effect.sync(() => {
             policy.active = replacement;
@@ -1512,9 +1623,25 @@ function updatePolicy(policy: Policy, request: typeof policyUpdateSchema.Type) {
   );
 }
 
-function buildPolicy(options: CapturedOptions, rules: readonly TextRule[]) {
+function buildPolicy(
+  options: CapturedOptions,
+  rules: readonly TextRule[],
+  contracts: readonly CompiledContract[],
+  contractsUsed: boolean,
+) {
   return Effect.gen(function* () {
-    const fixed = options.text?.fixedRules ?? [];
+    if (
+      new Set(contracts.map((contract) => contract.name)).size !==
+      contracts.length
+    ) {
+      return yield* new FirewallPolicyError({ reason: "build-failed" });
+    }
+    const fixed = [
+      ...(options.text?.fixedRules ?? []),
+      ...contracts.flatMap((contract) =>
+        contract.semanticRules.map((rule) => Struct.omit(rule, "act")),
+      ),
+    ];
     const documents = [...fixed, ...rules];
     if (documents.length > 0 && options.text === undefined) {
       return yield* new FirewallPolicyError({ reason: "not-configured" });
@@ -1525,6 +1652,7 @@ function buildPolicy(options: CapturedOptions, rules: readonly TextRule[]) {
       questionEdition: textQuestionEdition,
       chain: options.chain,
       rules: documents,
+      contracts,
       fixedRuleIds: fixed.map((rule) => rule.id),
       ...(options.text === undefined
         ? {}
@@ -1547,6 +1675,8 @@ function buildPolicy(options: CapturedOptions, rules: readonly TextRule[]) {
       configurationDigest,
       rules: documents,
       fixedRuleIds: metadata.fixedRuleIds,
+      contracts,
+      contractsUsed: contractsUsed || contracts.length !== 0,
     };
   }).pipe(
     Effect.catchTags({
@@ -1569,10 +1699,15 @@ function digest(value: unknown) {
 
 function persistRules(
   store: FirewallStore,
-  rules: readonly TextRule[],
+  active: ActiveRules,
   activation?: FirewallActivation,
 ) {
-  return canonicalBytes({ format: storedPolicyFormat, rules }).pipe(
+  return canonicalBytes({
+    format: storedPolicyFormat,
+    rules: active.editableRules,
+    contracts: active.contracts,
+    contractsUsed: active.contractsUsed,
+  }).pipe(
     Effect.flatMap((bytes) => store.writePolicy(bytes, activation)),
     Effect.catchTag("ClientRepresentationError", () =>
       Effect.fail(persistenceFailure()),
@@ -1581,15 +1716,21 @@ function persistRules(
 }
 
 /** Maps each `{behavior}` to a rule and reports invalid behavior at its index in `add`. */
-function resolvedChange(change: typeof policyUpdateSchema.Type) {
+function resolvedChange(change: PolicyEdit) {
   return Effect.gen(function* () {
     const captured = yield* Effect.try({
       try: () => structuredClone(change),
       catch: () => invalidRule("schema"),
     });
     freezeData(captured);
+    const ruleAdditions: Array<TextRule | { readonly behavior: string }> = [];
+    for (const item of captured.add ?? []) {
+      if (!("contract" in item)) {
+        ruleAdditions.push(item);
+      }
+    }
     const add = yield* Effect.forEach(
-      captured.add ?? [],
+      ruleAdditions,
       (item, index) =>
         "behavior" in item
           ? behaviorRule(item.behavior, ["add", index])
@@ -1598,7 +1739,18 @@ function resolvedChange(change: typeof policyUpdateSchema.Type) {
     );
     return {
       request: captured,
-      change: { add, remove: captured.remove ?? [] } satisfies RuleChange,
+      change: {
+        add,
+        remove: (captured.remove ?? []).filter(
+          (item) => typeof item === "string",
+        ),
+      } satisfies RuleChange,
+      contractAdd: (captured.add ?? []).flatMap((item) =>
+        "contract" in item ? [item.contract] : [],
+      ),
+      contractRemove: (captured.remove ?? []).flatMap((item) =>
+        typeof item === "string" ? [] : [item.norm],
+      ),
     };
   });
 }

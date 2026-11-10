@@ -15,6 +15,7 @@ import {
   FirewallRefusal,
   HistoryError,
   InboxError,
+  type InboxEvent,
   RegistrationError,
   RequestError,
   SendError,
@@ -78,6 +79,8 @@ type DomainFailure =
 export interface McpConnectionSettings {
   readonly endpoint: URL;
   readonly credential: Redacted.Redacted;
+  /** The host explicitly trusts plaintext HTTP on this connection. */
+  readonly allowHttp?: boolean;
 }
 
 /**
@@ -89,9 +92,6 @@ export interface InboxOptions {
   readonly onReady?: Effect.Effect<void>;
 }
 
-/** Inbox values contain a stable lookup token, content and saved local advice. */
-export type InboxEntry = ToolResult<"read_inbox">["items"][number];
-
 /**
  * Allows one inbox consumer at a time. Reading marks items delivered before the
  * callback runs. Callback failure stops reception; saved history retains the item.
@@ -100,18 +100,22 @@ export interface McpConnection {
   readonly client: Client;
   readonly consumeInbox: <E, R>(
     options: InboxOptions,
-    accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
+    accept: (entry: InboxEvent) => Effect.Effect<void, E, R>,
   ) => Effect.Effect<void, E | McpReceiveError, R>;
 }
 
-/** TLS and literal loopback can carry the private bearer without redirects. */
-export function safeCredentialEndpoint(endpoint: URL): boolean {
+/** TLS, literal loopback or host-approved HTTP can carry the private bearer. */
+export function safeCredentialEndpoint(
+  endpoint: URL,
+  allowHttp = false,
+): boolean {
   const privateAuthority =
     !endpoint.username && !endpoint.password && !endpoint.hash;
   const local =
     endpoint.hostname === "127.0.0.1" || endpoint.hostname === "[::1]";
   const secure =
-    endpoint.protocol === "https:" || (endpoint.protocol === "http:" && local);
+    endpoint.protocol === "https:" ||
+    (endpoint.protocol === "http:" && (local || allowHttp));
   return privateAuthority && secure;
 }
 
@@ -176,7 +180,7 @@ function acquireConnection(
         redirect: "error",
       },
     };
-    if (!safeCredentialEndpoint(endpoint)) {
+    if (!safeCredentialEndpoint(endpoint, settings.allowHttp)) {
       return yield* new McpConnectError({ reason: "transport-failed" });
     }
     const client = new Client(implementation, {
@@ -211,7 +215,7 @@ function acquireConnection(
       client,
       consumeInbox: <E, R>(
         options: InboxOptions,
-        accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
+        accept: (entry: InboxEvent) => Effect.Effect<void, E, R>,
       ) => {
         const ready = options.onReady ?? Effect.void;
         const wakeups =
@@ -379,7 +383,7 @@ function managementFailure(
 
 function consumePending<E, R>(
   client: Pick<Client, "callTool">,
-  accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
+  accept: (entry: InboxEvent) => Effect.Effect<void, E, R>,
 ): Effect.Effect<void, E | McpReceiveError, R> {
   return Effect.gen(function* () {
     let cursor: string | undefined;
@@ -420,7 +424,7 @@ function runReception<E, R>(
     readonly scope: Scope.Scope;
   },
   wakeups: Stream.Stream<undefined, McpReceiveError>,
-  accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
+  accept: (entry: InboxEvent) => Effect.Effect<void, E, R>,
 ) {
   return Effect.acquireUseRelease(
     Effect.forkIn(
@@ -438,7 +442,7 @@ function receiveInbox<E, R>(
   client: Pick<Client, "callTool">,
   receiving: Ref.Ref<boolean>,
   wakeups: Stream.Stream<undefined, McpReceiveError>,
-  accept: (entry: InboxEntry) => Effect.Effect<void, E, R>,
+  accept: (entry: InboxEvent) => Effect.Effect<void, E, R>,
 ) {
   return Effect.scoped(
     Effect.gen(function* () {

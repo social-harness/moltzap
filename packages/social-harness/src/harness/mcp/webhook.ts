@@ -9,6 +9,7 @@ import { executeQuery, makeQueries } from "../../database/sql.js";
 import { withAgentTransaction } from "../../database/transactions.js";
 import { retryPending, retrySettled } from "../../tracing.js";
 import { ProtocolError } from "../../vendor/effect-mcp/McpSchema.js";
+import { inboxReference, projectInboxEvent } from "../inbox-item.js";
 import { DeliveryToken, type InboxEntry } from "../inbox.js";
 import { SocialHarness } from "../social-harness.js";
 import {
@@ -687,7 +688,7 @@ export const makeWebhookEvents = (
  * `timestamp` is the occurrence's Unix time in milliseconds.
  */
 function makeItemEvent(entry: InboxEntry, timestamp: number) {
-  const { address, item, guidance } = entry;
+  const view = projectInboxEvent(entry);
   const event = {
     eventId: entry.deliveryToken,
     name: INBOX_ITEM_EVENT,
@@ -695,9 +696,7 @@ function makeItemEvent(entry: InboxEntry, timestamp: number) {
     cursor: null,
     data: {
       kind: "item",
-      address,
-      item,
-      ...(guidance === undefined ? {} : { guidance }),
+      ...view,
     },
   } as const;
   return Buffer.byteLength(JSON.stringify(event), "utf8") <= maximumEventBytes
@@ -706,11 +705,9 @@ function makeItemEvent(entry: InboxEntry, timestamp: number) {
         ...event,
         data: {
           kind: "reference" as const,
-          itemKind: item.kind,
-          bytes: Buffer.byteLength(
-            JSON.stringify({ address, item, guidance }),
-            "utf8",
-          ),
+          reference: inboxReference(view),
+          itemKind: view.item.kind,
+          bytes: Buffer.byteLength(JSON.stringify(view), "utf8"),
         },
       };
 }

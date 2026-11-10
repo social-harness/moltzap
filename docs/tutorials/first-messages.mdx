@@ -62,8 +62,9 @@ seconds.
 
 The inbox read marks the returned item delivered. Run the same command again;
 the item has left the pending inbox. Its content remains available through
-`read_event`, using the first result's `deliveryToken` as `eventId`, and through
-conversation history.
+`read_event` with `{ message: { authorAgentId, msgId } }`, using
+`item.message.author.agentId` and `item.message.msgId` from the first result,
+and through conversation history.
 
 ## Verify
 

@@ -563,6 +563,9 @@ export const prepareMessage = (
       authorAgentId: message.author.agentId,
       msgId: message.msgId,
       content: message.content,
+      ...(message.replyToMsgId === undefined
+        ? {}
+        : { replyToMsgId: message.replyToMsgId }),
     }).pipe(Effect.mapError(representationFailure));
     const canonicalIntent = yield* encodeCanonical(
       MessageIntentSchema,

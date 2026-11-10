@@ -24,9 +24,14 @@ import { randomUUID } from "node:crypto";
 // eslint-disable-next-line agent-code-guard/prefer-effect-platform -- NodeHttpServer accepts the native server constructor.
 import { createServer } from "node:http";
 import type { OwnerAccount } from "../ownership.js";
-import { Firewall } from "../../firewall/service.js";
+import {
+  FirewallPolicyError,
+  type policyUpdateSchema,
+} from "../../firewall/rules.js";
+import { Firewall, type PolicyEdit } from "../../firewall/service.js";
 import { AgentIdentityCard } from "../../identity/agent-cards.js";
 import { Identity } from "../../identity/service.js";
+import { compileNorm } from "../../norms/compiler.js";
 import {
   CallToolResult,
   McpServerClient,
@@ -35,6 +40,7 @@ import {
   ToolAnnotations,
 } from "../../vendor/effect-mcp/McpSchema.js";
 import { makeHttpApp, McpServer } from "../../vendor/effect-mcp/McpServer.js";
+import { projectInboxEvent } from "../inbox-item.js";
 import { InboxError } from "../inbox.js";
 import { validationIssues } from "../message-format.js";
 import { SocialHarness } from "../social-harness.js";
@@ -372,7 +378,7 @@ function installMessageTools(
               ),
             );
         }
-        return page;
+        return { ...page, items: page.items.map(projectInboxEvent) };
       }),
       failure: reasonError,
       visible: registered,
@@ -380,7 +386,7 @@ function installMessageTools(
     yield* bind(server, {
       name: "read_event",
       definition: toolDefinitions.read_event,
-      execute: ({ eventId }) => harness.getInboxEvent(eventId),
+      execute: harness.getInboxEvent,
       failure: reasonError,
       visible: registered,
     });
@@ -459,7 +465,10 @@ function installPolicyTools(
     yield* bind(server, {
       name: "policy_update",
       definition: toolDefinitions.policy_update,
-      execute: firewall.updatePolicy,
+      execute: (request) =>
+        compilePolicyEdit(request).pipe(
+          Effect.flatMap((edit) => firewall.updatePolicy(edit)),
+        ),
       failure: (error) =>
         new ProtocolError(-32603, error.message, {
           reason: error.reason,
@@ -756,3 +765,38 @@ export const serveMcp = Effect.fn("Mcp.serve")(function* (
   );
   yield* server.serve(app);
 });
+
+/** A malformed document fails the complete edit before any installed policy changes. */
+function compilePolicyEdit(
+  request: typeof policyUpdateSchema.Type,
+): Effect.Effect<PolicyEdit, FirewallPolicyError> {
+  return Effect.gen(function* () {
+    const add = yield* Effect.forEach(
+      request.add ?? [],
+      (
+        item,
+        index,
+      ): Effect.Effect<
+        NonNullable<PolicyEdit["add"]>[number],
+        FirewallPolicyError
+      > =>
+        "norm" in item
+          ? compileNorm(item.norm).pipe(
+              Effect.map((contract) => ({ contract })),
+              Effect.catchTag("NormDocumentError", (error) =>
+                Effect.fail(
+                  new FirewallPolicyError({
+                    reason: "invalid-rule",
+                    problem: "schema",
+                    path: ["add", index],
+                    detail: error.detail,
+                  }),
+                ),
+              ),
+            )
+          : Effect.succeed(item),
+      { concurrency: 1 },
+    );
+    return { add, remove: request.remove ?? [] };
+  }).pipe(Effect.withSpan("compilePolicyEdit"));
+}

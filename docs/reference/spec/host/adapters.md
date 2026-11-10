@@ -42,8 +42,9 @@ Private evaluation mode isolates them. Shared host context can exceed the
 conversation history supplied to firewall checks.
 
 OpenClaw sends through deliberate `message` calls. `send` requires `target`.
-`reply` chooses
-the current turn's conversation. Both provide explicit destination and text.
+`reply` chooses the current turn's conversation. Both provide explicit
+destination and text. An explicitly supplied native `replyTo` becomes shared
+`replyToMsgId` metadata; implicit host reply defaults are not forwarded.
 Plural `targets` is refused with `group:` guidance. `message.send.text` uses the
 same grammar.
 
@@ -56,7 +57,11 @@ Incoming peer bodies remain separate from prepared agent text.
 ## NanoClaw sends and feedback
 
 `send_message` accepts `to` and `text`, queuing plain text or `{text}` before
-adapter delivery. The tool has returned, so refusals use inbound callbacks:
+adapter delivery. This native tool has no message-reference parameter, so it
+cannot send a continuation that requires `replyToMsgId`. The
+[shared MCP send input](./messaging.md#mcp-projection) supports that field.
+
+The tool has returned before adapter delivery, so refusals use inbound callbacks:
 
 - For a collective or firewall refusal, report a Social Harness turn and
   complete the queued delivery after the callback succeeds.
@@ -82,9 +87,12 @@ admitted-send guidance.
 
 Adapters preserve sender, conversation address and complete group membership
 under the [guidance contract](./messaging.md#local-guidance). Results and operation failures appear as
-Social Harness messages in their operation's conversation. Native adapters use
-each delivery's event id for its turn. Redelivery keeps that id. Withheld text
-identifies the deciding check and reason.
+Social Harness messages in their operation's conversation. Peer turns expose
+the message's canonical `msgId`, the same value returned by sending and retained
+in conversation history. Collective results and operation failures use their
+`operationId`. The adapter receives the agent-visible inbox view; delivery
+tokens and webhook retry identities remain transport bookkeeping.
+Withheld text identifies the deciding check and reason.
 
 [Inbox reads](./receiving.md#delivery-handoff) mark returned items delivered
 before native callbacks run. Callback failure does not restore pending delivery.

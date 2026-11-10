@@ -40,8 +40,8 @@ import {
   type CheckedGuidance,
   checkedGuidanceSchema,
 } from "../firewall/check.js";
-import { AgentName } from "../identity/agent-cards.js";
-import { MessageAddress } from "./inbox.js";
+import { type AgentCard, AgentName } from "../identity/agent-cards.js";
+import { MessageAddress } from "./inbox-item.js";
 
 /* eslint-disable @typescript-eslint/naming-convention, @typescript-eslint/no-redeclare -- Effect schemas share the public names of their derived value types. */
 
@@ -56,6 +56,7 @@ const question = exactStruct({
 const response = Schema.Union(AcceptResponse, DeclineResponse);
 
 const MessageSendRequest = exactStruct({
+  replyToMsgId: Schema.optional(MsgId),
   to: MessageAddressInput,
   text: wellFormedString,
   collective: Schema.optionalWith(multicast, { exact: true }),
@@ -203,6 +204,22 @@ export function renderCollectiveResult(item: CollectiveResultItem): string {
   ].join("\n");
 }
 
+/** Conversation addresses omit the local agent only for direct conversations. */
+export function addressOf(
+  members: readonly AgentCard[],
+  localAgentId: AgentCard["agentId"],
+): MessageAddress {
+  const others = members.filter((member) => member.agentId !== localAgentId);
+  return others.length === 1
+    ? AgentAddress.make(`agent:${others[0]?.agentName}`)
+    : GroupAddress.make(
+        `group:${members
+          .map((member) => member.agentName)
+          .sort(compareAscii)
+          .join(",")}`,
+      );
+}
+
 /** Direct replies reach the author. Group replies keep every participant. */
 export function replyAddress(message: Pick<Message, "author" | "recipients">) {
   return message.recipients.length === 1
@@ -307,6 +324,7 @@ const decodeJsonText = Schema.decodeUnknownOption(
 export function parseMessageText(
   to: MessageAddressInput,
   text: string,
+  replyToMsgId?: string,
 ): Either.Either<SendRequest, MessageTextError> {
   const parsed = decodeJsonText(text);
   if (Option.isSome(parsed) && Predicate.isRecord(parsed.value)) {
@@ -327,7 +345,11 @@ export function parseMessageText(
       });
     }
   }
-  return decodeText("message", MessageSendRequest, { to, text });
+  return decodeText("message", MessageSendRequest, {
+    to,
+    text,
+    ...(replyToMsgId === undefined ? {} : { replyToMsgId }),
+  });
 }
 
 const MAXIMUM_VALIDATION_ISSUES = 20;
@@ -472,6 +494,7 @@ function renderInstructions(guidance: CheckedGuidance) {
   }));
 }
 
+/** Retained inbox items keep their original registered advice representation. */
 function instructionDetails(
   instruction: CheckedGuidance["instructions"][number],
 ) {

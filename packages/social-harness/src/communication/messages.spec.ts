@@ -927,3 +927,23 @@ describe("public message schemas", () => {
     });
   });
 });
+
+it("preserves an explicit reply reference through encoding and intent reconstruction", () =>
+  Effect.gen(function* () {
+    const original = yield* Message.create({
+      author: alice,
+      recipients: [bob],
+      content,
+      replyToMsgId: msgId,
+    });
+    const wire = yield* Schema.encode(Message)(original);
+    const decoded = yield* Schema.decodeUnknown(Message)(wire);
+    const reconstructed = yield* messageFromIntent([alice, bob], {
+      authorAgentId: alice.agentId,
+      msgId: original.msgId,
+      content: original.content,
+      replyToMsgId: original.replyToMsgId,
+    });
+    expect(decoded.replyToMsgId).toBe(msgId);
+    expect(reconstructed).toEqual(decoded);
+  }));

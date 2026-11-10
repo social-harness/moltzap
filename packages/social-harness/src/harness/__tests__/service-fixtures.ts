@@ -66,7 +66,6 @@ type Policy = Context.Tag.Service<typeof Firewall>;
 export function decisionResponse(
   request: DecisionRequest,
   compliance = "compliant",
-  expectation = "none",
 ): DecisionResponse {
   return {
     provider: "test",
@@ -76,12 +75,7 @@ export function decisionResponse(
     answers: Object.fromEntries(
       Object.entries(request.questions).map(([id, question]) => {
         const choices = Object.keys(question.criteria);
-        let preferred = expectation;
-        if (question.purpose === "subject") {
-          preferred = expectation === "required" ? "relevant" : "irrelevant";
-        } else if (request.stage === "compliance") {
-          preferred = compliance;
-        }
+        const preferred = compliance;
         const selected = choices.includes(preferred) ? preferred : "unresolved";
         return [
           id,

@@ -20,10 +20,13 @@ import {
 } from "effect";
 import { createHash } from "node:crypto";
 import type { FirewallEvidence } from "../firewall/chain.js";
+import type {
+  InboxEvent,
+  InboxReference,
+  MessageAddress,
+} from "./inbox-item.js";
 import { SendError } from "../communication/errors.js";
 import {
-  AgentAddress,
-  GroupAddress,
   type MessageAddressInput,
   messageFromParticipants,
   MsgId,
@@ -33,6 +36,7 @@ import {
   Communication,
   CommunicationError,
   type Conversation,
+  type HistoryPage,
   type Incoming,
   Message,
   type Outgoing,
@@ -66,13 +70,12 @@ import {
   type DeliveryToken,
   historyCursor,
   InboxError,
-  type InboxEvent,
   type InboxPage,
   makeInbox,
-  type MessageAddress,
   type PendingItem,
 } from "./inbox.js";
 import {
+  addressOf,
   canonicalMessageAddress,
   type SendRequest,
   type SendResult,
@@ -100,10 +103,7 @@ export type HistoryRecord =
         readonly msgId: Message["msgId"];
       };
     } & InboxEvent)
-  | ({
-      readonly kind: "result";
-      readonly deliveryToken: DeliveryToken;
-    } & InboxEvent);
+  | ({ readonly kind: "result" } & InboxEvent);
 /** A missing nextCursor ends this fixed-boundary history traversal. */
 export interface ReadHistoryResult extends PaginatedResult {
   readonly records: readonly HistoryRecord[];
@@ -153,7 +153,7 @@ interface SocialHarnessService {
   ) => Effect.Effect<InboxPage, InboxError>;
   /** Saved content remains readable after acknowledgment and restart. */
   readonly getInboxEvent: (
-    token: DeliveryToken,
+    reference: InboxReference,
   ) => Effect.Effect<InboxEvent, InboxError>;
   /** Repeating an acknowledgment is harmless and does not answer a request. */
   readonly acknowledgeDelivery: (
@@ -444,6 +444,10 @@ function makeHarness<R>(
                       author,
                       recipients: [first, ...rest],
                       content: [{ type: "text", text: request.text }],
+                      replyToMsgId:
+                        "replyToMsgId" in request
+                          ? request.replyToMsgId
+                          : undefined,
                     }).pipe(Effect.mapError(sendFailure));
             }
             const context = yield* evidenceFor(
@@ -451,6 +455,8 @@ function makeHarness<R>(
               communication,
               [value.author, ...value.recipients],
               historyLimit,
+              undefined,
+              firewall.requiresProtocolHistory(),
             );
             const decision = yield* firewall
               .checkOutgoing(value, context)
@@ -504,9 +510,9 @@ function makeHarness<R>(
               : waitForInbox(inbox, changes, page, wait),
           ),
         ),
-      getInboxEvent: (token) =>
+      getInboxEvent: (reference) =>
         requireRegistered(new InboxError({ reason: "not-registered" })).pipe(
-          Effect.zipRight(inbox.getInboxEvent(token)),
+          Effect.zipRight(inbox.getInboxEvent(reference)),
         ),
       acknowledgeDelivery: (token) =>
         requireRegistered(
@@ -671,7 +677,6 @@ function makeHarness<R>(
           for (const result of selected) {
             records.push({
               kind: "result",
-              deliveryToken: result.token,
               ...result.event,
             });
           }
@@ -720,6 +725,7 @@ function checkIncoming(
         [value.message.author, ...value.message.recipients],
         limit,
         value.message,
+        firewall.requiresProtocolHistory(),
       );
     } else if (value.kind === "result") {
       const question =
@@ -764,13 +770,28 @@ function checkIncoming(
       };
     }
     const decision = yield* firewall.checkIncoming(value, evidence);
-    const reply = yield* replyTo(value, decision, agentCardOf(card));
+    const proposedReply = yield* replyTo(value, decision, agentCardOf(card));
+    const replyEvidence = {
+      ...(evidence !== undefined && "history" in evidence
+        ? evidence
+        : { history: [], earlierHistoryOmitted: false, gaps: [] }),
+      references:
+        value.kind === "message" || value.kind === "request"
+          ? [value.message]
+          : [],
+    };
+    const replyDecision =
+      proposedReply === undefined
+        ? undefined
+        : yield* firewall.checkOutgoing(proposedReply, replyEvidence);
+    const reply = replyDecision?.kind === "allowed" ? proposedReply : undefined;
     const expired =
       value.kind === "request" &&
       (yield* Clock.currentTimeMillis) >= value.message.operation.deadlineAt;
     const sql = yield* SqlClient.SqlClient;
     yield* sql.withTransaction(
       decision.save.pipe(
+        Effect.zipRight(replyDecision?.save ?? Effect.void),
         Effect.zipRight(inbox.publish(entry, decision, expired)),
         Effect.tap(() =>
           reply === undefined
@@ -789,13 +810,7 @@ function checkIncoming(
   });
 }
 
-/**
- * The firewall's reply to a message it withheld, when a rule asked for one: an
- * ordinary message from this agent to the same conversation. Its id derives
- * from the withheld message, so checking that message again sends at most one
- * reply. A reply that is not a valid message is not sent, and the message
- * stays withheld.
- */
+/** Derives one policy-reply identity per withheld message; invalid replies remain unsent. */
 function replyTo(value: Incoming, decision: IncomingDecision, self: AgentCard) {
   if (
     decision.kind !== "withheld" ||
@@ -817,7 +832,11 @@ function replyTo(value: Incoming, decision: IncomingDecision, self: AgentCard) {
         [withheld.author, ...withheld.recipients].filter(
           (member) => member.agentId !== self.agentId,
         ),
-        { msgId, content: [{ type: "text", text }] },
+        {
+          msgId,
+          replyToMsgId: withheld.msgId,
+          content: [{ type: "text", text }],
+        },
       ),
     ),
     Effect.orElseSucceed(() => undefined),
@@ -857,68 +876,16 @@ function evidenceFor(
   members: readonly AgentCard[],
   limit: number,
   before?: Message,
+  protocol = false,
 ): Effect.Effect<FirewallEvidence, InboxError> {
-  return Effect.gen(function* () {
-    const selected = yield* conversation(members).pipe(
-      Effect.catchTag("HistoryError", () =>
-        Effect.fail(new InboxError({ reason: "persistence-failed" })),
-      ),
-    );
-    const page = yield* communication
-      .readHistory({
-        members: selected,
-        order: "newest",
-        limit,
-        ...(before === undefined
-          ? {}
-          : {
-              beforeMessage: {
-                authorAgentId: before.author.agentId,
-                msgId: before.msgId,
-              },
-            }),
-      })
-      .pipe(
-        Effect.catchTag("CommunicationError", (error) =>
-          error.reason === "history-gap" || error.reason === "unknown-message"
-            ? Effect.succeed(undefined)
-            : Effect.fail(new InboxError({ reason: "persistence-failed" })),
-        ),
-      );
-    if (page === undefined) {
-      return {
-        history: [],
-        earlierHistoryOmitted: false,
-        gaps: ["The preceding conversation history is unavailable."],
-      };
-    }
-    let bytes = 0;
-    const recent: Array<(typeof page.entries)[number]> = [];
-    for (const entry of [...page.entries].reverse()) {
-      if (bytes + entry.messageBytes > MAXIMUM_RUNTIME_ITEM_BYTES) {
-        break;
-      }
-      recent.push(entry);
-      bytes += entry.messageBytes;
-    }
-    recent.reverse();
-    const history = yield* inbox.visibleMessages(
-      recent.map((entry) => entry.message),
-    );
-    return {
-      history,
-      earlierHistoryOmitted:
-        page.earlierMessagesOmitted || recent.length < page.entries.length,
-      gaps: [
-        ...(page.pendingOutgoing
-          ? ["An earlier outgoing message is not yet complete."]
-          : []),
-        ...(recent.length < page.entries.length
-          ? ["The preceding history exceeds the evidence byte limit."]
-          : []),
-      ],
-    };
-  });
+  return conversation(members).pipe(
+    Effect.catchTag("HistoryError", () =>
+      Effect.fail(new InboxError({ reason: "persistence-failed" })),
+    ),
+    Effect.flatMap((selected) =>
+      readEvidence(inbox, communication, selected, { limit, before, protocol }),
+    ),
+  );
 }
 
 function conversation(
@@ -948,21 +915,6 @@ function incomingParticipants(incoming: Incoming): readonly AgentCard[] {
     default:
       return absurd(incoming);
   }
-}
-
-function addressOf(
-  members: readonly AgentCard[],
-  localAgentId: AgentCard["agentId"],
-): MessageAddress {
-  const others = members.filter((member) => member.agentId !== localAgentId);
-  return others.length === 1
-    ? AgentAddress.make(`agent:${others[0]?.agentName}`)
-    : GroupAddress.make(
-        `group:${members
-          .map((member) => member.agentName)
-          .sort(compareAscii)
-          .join(",")}`,
-      );
 }
 
 function sendFailure(error: CommunicationError): SendError {
@@ -1011,10 +963,12 @@ function historyFailure(error: unknown): HistoryError {
     return new HistoryError({ reason: "not-registered" });
   }
   if (error instanceof CommunicationError) {
-    if (error.reason === "invalid-cursor" || error.reason === "history-gap") {
-      return new HistoryError({ reason: error.reason });
-    }
-    return new HistoryError({ reason: "persistence-failed" });
+    return new HistoryError({
+      reason:
+        error.reason === "invalid-cursor" || error.reason === "history-gap"
+          ? error.reason
+          : "persistence-failed",
+    });
   }
   return new HistoryError({ reason: "invalid-address" });
 }
@@ -1027,4 +981,132 @@ function supervise<E, R>(
   return Effect.forkIn(Effect.interruptible(work), scope).pipe(
     Effect.flatMap((fiber) => FiberSet.add(workers, fiber)),
   );
+}
+
+/** Protocol completeness uses only the transport's public history contract. */
+function readEvidence(
+  inbox: Inbox,
+  communication: CommunicationService,
+  members: Conversation,
+  options: {
+    readonly limit: number;
+    readonly before?: Message;
+    readonly protocol?: boolean;
+  },
+): Effect.Effect<FirewallEvidence, InboxError> {
+  return Effect.gen(function* () {
+    const { limit, before, protocol = false } = options;
+    const full = protocol
+      ? yield* readProtocolHistory(communication, members, limit, before)
+      : undefined;
+    const page =
+      full === undefined
+        ? yield* readEvidencePage(communication, members, limit, before)
+        : {
+            entries: full.entries.slice(-limit),
+            earlierMessagesOmitted: full.entries.length > limit,
+          };
+    if (page === undefined) {
+      return {
+        history: [],
+        earlierHistoryOmitted: false,
+        gaps: ["The preceding conversation history is unavailable."],
+      };
+    }
+    let bytes = 0;
+    const recent: Array<(typeof page.entries)[number]> = [];
+    for (const entry of [...page.entries].reverse()) {
+      if (bytes + entry.messageBytes > MAXIMUM_RUNTIME_ITEM_BYTES) {
+        break;
+      }
+      recent.push(entry);
+      bytes += entry.messageBytes;
+    }
+    recent.reverse();
+    return {
+      history: yield* inbox.visibleMessages(
+        recent.map((entry) => entry.message),
+      ),
+      earlierHistoryOmitted:
+        page.earlierMessagesOmitted || recent.length < page.entries.length,
+      gaps:
+        full?.complete === false
+          ? ["The preceding conversation history is unavailable."]
+          : [],
+      ...(full === undefined
+        ? {}
+        : {
+            protocolHistory: {
+              messages: full.entries.map((entry) => entry.message),
+              complete: full.complete,
+            },
+          }),
+    };
+  }).pipe(Effect.withSpan("readEvidence"));
+}
+
+/** Incoming candidates stop the traversal at their own position, excluding future conversation messages. */
+function readProtocolHistory(
+  communication: CommunicationService,
+  members: Conversation,
+  limit: number,
+  before?: Message,
+) {
+  return Effect.gen(function* () {
+    const pages: Array<HistoryPage["entries"]> = [];
+    let boundary = before;
+    while (true) {
+      const page = yield* readEvidencePage(
+        communication,
+        members,
+        limit,
+        boundary,
+      );
+      if (page === undefined) {
+        return { entries: [...pages].reverse().flat(), complete: false };
+      }
+      pages.push(page.entries);
+      if (!page.earlierMessagesOmitted) {
+        return { entries: [...pages].reverse().flat(), complete: true };
+      }
+      const first = page.entries[0]?.message;
+      if (
+        first === undefined ||
+        (first.author.agentId === boundary?.author.agentId &&
+          first.msgId === boundary.msgId)
+      ) {
+        return { entries: [...pages].reverse().flat(), complete: false };
+      }
+      boundary = first;
+    }
+  });
+}
+
+function readEvidencePage(
+  communication: CommunicationService,
+  members: Conversation,
+  limit: number,
+  before?: Message,
+) {
+  return communication
+    .readHistory({
+      members,
+      order: "newest",
+      limit,
+      ...(before === undefined
+        ? {}
+        : {
+            beforeMessage: {
+              authorAgentId: before.author.agentId,
+              msgId: before.msgId,
+            },
+          }),
+    })
+    .pipe(
+      Effect.catchTag("CommunicationError", (error) =>
+        error.reason === "history-gap" || error.reason === "unknown-message"
+          ? Effect.succeed(undefined)
+          : Effect.fail(new InboxError({ reason: "persistence-failed" })),
+      ),
+    );
 }

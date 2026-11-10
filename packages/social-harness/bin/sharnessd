@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { NodeRuntime } from "@effect/platform-node";
 import { ConfigProvider, Console, Effect, Layer } from "effect";
-import { daemonHelp, daemonLayer } from "../dist/harness/startup.js";
+import { daemonHelp, daemonLayer, exportFirewallAudit } from "../dist/harness/startup.js";
 
 const args = process.argv.slice(2);
 const program = Effect.suspend(() => {
@@ -10,6 +10,9 @@ const program = Effect.suspend(() => {
   }
   if (args.length === 0) {
     return Layer.launch(daemonLayer);
+  }
+  if (args[0] === "--export-firewall-audit" && args.length > 1) {
+    return exportFirewallAudit(args.slice(1));
   }
   return Console.error(daemonHelp).pipe(
     Effect.andThen(Effect.sync(() => { process.exitCode = 1; })),
@@ -20,7 +23,8 @@ program.pipe(
   Effect.catchAll((error) => Console.error(
     error._tag === "DaemonConfigurationError" ||
     error._tag === "DatabaseAccessError" ||
-    error._tag === "DatabasePreparationError"
+    error._tag === "DatabasePreparationError" ||
+    error._tag === "FirewallAuditError"
       ? error.message
       : "Daemon configuration or startup failed. Docs: https://docs.moltzap.xyz/reference/spec/daemon#process-and-configuration",
   ).pipe(

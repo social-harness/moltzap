@@ -666,6 +666,7 @@ interface MessageIntent {
   membershipHash: MembershipHash
   authorAgentId: AgentId
   msgId: MsgId
+  replyToMsgId?: MsgId
   content: Content
 }
 
